@@ -46,32 +46,81 @@ De app draait dan op http://localhost:3000. Log in met `webmin` /
 
 ## Draaien op je Synology NAS via Portainer
 
-1. **Zorg voor een domein/subdomein met HTTPS** (aanbevolen, nodig zodat de
-   WhatsApp-links overal werken): stel in DSM een reverse proxy in
-   (Configuratiescherm → Aanmeldingsportaal → Geavanceerd → Reverse Proxy) die
-   bijvoorbeeld `https://ringpresidium.jouwdomein.nl` doorstuurt naar
-   `http://<NAS-IP>:3000`, met een Let's Encrypt-certificaat.
-2. Ga in **Portainer** naar **Stacks → Add stack**.
-3. Kies **Repository** als bron en vul de git-URL van deze repository in
-   (branch `main`), of plak de inhoud van `docker-compose.yml` onder **Web editor**.
-4. Vul de environment variables in (zie `.env.example` voor uitleg per variabele):
-   - `APP_BASE_URL`: de HTTPS-URL uit stap 1 — hiermee worden de WhatsApp-links
-     opgebouwd.
-   - `SESSION_SECRET`: verzin een lange, willekeurige tekst.
-   - `ADMIN_USERNAME` / `ADMIN_PASSWORD`: het admin-account. Standaard
-     `webmin` / `ldstools123!` — **verander dit wachtwoord** zodra de app draait
-     door de environment variable aan te passen en de stack te herstarten.
-   - `SMTP_*` en `MAIL_FROM`: nodig voor de 30-dagen-melding. Leeg laten mag,
-     dan wordt er alleen niet automatisch gemaild/opgeruimd totdat je dit invult.
-5. Klik op **Deploy the stack**. Portainer bouwt de image en start de container.
-6. Open de app via je domein en log in met het admin-account. Maak daarna via
-   **Gebruikers** de accounts voor de ringpresidiumleden aan.
+### Stap 1 — Mappen aanmaken op de NAS
 
-De data staat in het volume `ringpresidium_data` (bestand `/app/data/db.json`
-in de container) en blijft bewaard bij het updaten/herstarten van de stack.
+De app slaat alle gegevens op in één map (`/app/data` in de container), die we
+koppelen aan een echte map op je NAS zodat je hem terugziet in File Station en
+kunt back-uppen.
+
+1. Open **File Station** op je Synology.
+2. Zorg dat er een gedeelde map `docker` bestaat (die heb je meestal al als je
+   Container Manager/Docker eerder hebt gebruikt). Zo niet: **Shared Folder** →
+   **Create** → naam `docker`.
+3. Maak daarin de map **`docker/ringpresidium/data`** aan (dus: open `docker`,
+   maak submap `ringpresidium`, daarin submap `data`).
+
+Dat is de enige map die je hoeft aan te maken — de app zet zelf zijn
+databasebestand (`db.json`) in die map neer zodra hij voor het eerst opstart.
+
+Let op: als jouw NAS-volume niet `volume1` heet (te zien bovenin File Station,
+bijvoorbeeld `volume2` of `volume3`), pas dat dan hieronder in stap 3 aan.
+
+### Stap 2 — Domein/HTTPS instellen (aanbevolen)
+
+Nodig zodat de WhatsApp-links overal werken, niet alleen thuis. Stel in DSM
+een reverse proxy in: **Configuratiescherm → Aanmeldingsportaal → Geavanceerd
+→ Reverse Proxy**, die bijvoorbeeld `https://ringpresidium.jouwdomein.nl`
+doorstuurt naar `http://<NAS-IP>:3000`, met een Let's Encrypt-certificaat
+(**Configuratiescherm → Beveiliging → Certificaat**).
+
+### Stap 3 — Stack aanmaken in Portainer
+
+1. Open **Portainer** en ga naar **Stacks → Add stack**.
+2. Geef de stack een naam, bijvoorbeeld `ringpresidium`.
+3. Kies bij **Build method**:
+   - **Repository** (aanbevolen): vul de git-URL van deze repository in bij
+     *Repository URL*, en `claude/ringpresidium-webapp-veccye` (of `main`,
+     zodra het daarheen gemerged is) bij *Repository reference branch*.
+     Portainer haalt de code op en bouwt de image zelf via de `Dockerfile`.
+   - **Web editor**: plak dan de inhoud van `docker-compose.yml` uit deze
+     repository. Let op: bij deze methode moet je zelf de projectbestanden nog
+     ergens op de NAS zetten en `build: .` vervangen door een pad daarnaartoe,
+     dus de Repository-methode is eenvoudiger.
+4. Vul onderin bij **Environment variables** de volgende waarden in (zie ook
+   `.env.example` in de repository voor uitleg per variabele):
+
+   | Naam | Waarde |
+   |---|---|
+   | `APP_BASE_URL` | `https://ringpresidium.jouwdomein.nl` (je domein uit stap 2) |
+   | `SESSION_SECRET` | een lange, zelfverzonnen willekeurige tekst |
+   | `COOKIE_SECURE` | `true` (staat al goed als je HTTPS gebruikt) |
+   | `ADMIN_USERNAME` | `webmin` (of iets anders) |
+   | `ADMIN_PASSWORD` | `ldstools123!` (**verander dit** na de eerste keer inloggen) |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | voor de 30-dagen-mail; mag je (voorlopig) leeg laten |
+
+   Als je de Web editor-methode gebruikt, staan deze al als voorbeeldwaarden in
+   `docker-compose.yml` — pas ze daar direct aan in plaats van los als
+   environment variables.
+5. Controleer dat het volume-pad in `docker-compose.yml` overeenkomt met de map
+   uit stap 1, dus: `/volume1/docker/ringpresidium/data:/app/data` (pas
+   `volume1` aan indien nodig).
+6. Klik op **Deploy the stack**. Portainer bouwt de image (dit kan de eerste
+   keer een paar minuten duren) en start de container.
+7. Controleer via **Containers → ringpresidium → Logs** of je de regel
+   `[server] Ringpresidium-tool draait op poort 3000` ziet.
+8. Open de app via je domein (of `http://<NAS-IP>:3000` zonder reverse proxy)
+   en log in met het admin-account. Maak daarna via **Gebruikers** de accounts
+   voor de ringpresidiumleden aan, en voeg via **Hogeraad** de hogeraadsleden toe.
+
+### Bijwerken naar een nieuwe versie
+
+Ga in Portainer naar de stack → **Pull and redeploy** (bij de Repository-
+methode) of **Update the stack** (bij Web editor, na het aanpassen van de
+inhoud). Je data in de `data`-map blijft altijd staan; alleen de
+applicatiecode wordt vervangen.
 
 ## Back-up
 
-Maak af en toe een kopie van het volume `ringpresidium_data` (bijvoorbeeld via
-Synology's Hyper Backup op de Docker-volumemap), zodat de lijst met
-hogeraadsleden en gebruikersaccounts niet verloren gaat.
+Neem de map `/volume1/docker/ringpresidium/data` (met daarin `db.json`) mee in
+je Synology Hyper Backup-taak, zodat de lijst met hogeraadsleden,
+gebruikersaccounts en openstaande roepingen niet verloren gaat.
