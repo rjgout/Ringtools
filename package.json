@@ -1,0 +1,22 @@
+{
+  "name": "ringpresidium-tool",
+  "version": "1.0.0",
+  "description": "Webapp voor het ringpresidium om roepingen te laten steunen door de hogeraad",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-session": "^2.1.0",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^5.2.1",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^10.0.9"
+  }
+}

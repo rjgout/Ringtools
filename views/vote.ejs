@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body class="centered-page">
+  <main class="auth-card">
+    <h1><%= calling.name %></h1>
+    <p class="muted"><%= calling.functie %></p>
+
+    <% if (error) { %>
+      <p class="alert alert--error"><%= error %></p>
+    <% } %>
+
+    <% if (pendingMembers.length === 0) { %>
+      <p class="alert alert--info">Iedereen heeft al gereageerd op deze roeping. Bedankt!</p>
+    <% } else { %>
+      <form method="post" action="/vote/<%= calling.token %>" class="stack">
+        <label>
+          Wie ben jij?
+          <select name="memberId" required>
+            <option value="" disabled selected>Kies je naam</option>
+            <% pendingMembers.forEach(m => { %>
+              <option value="<%= m.id %>"><%= m.name %></option>
+            <% }) %>
+          </select>
+        </label>
+        <p class="muted">Steun jij deze roeping?</p>
+        <div class="btn-row">
+          <button type="submit" name="support" value="true" class="btn btn--success btn--big">✔ Ik steun</button>
+          <button type="submit" name="support" value="false" class="btn btn--danger btn--big">✘ Ik steun niet</button>
+        </div>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      </form>
+    <% } %>
+  </main>
+</body>
+</html>

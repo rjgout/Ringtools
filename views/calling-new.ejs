@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/nav') %>
+  <main class="page">
+    <h1>Nieuwe roeping</h1>
+    <% if (error) { %>
+      <p class="alert alert--error"><%= error %></p>
+    <% } %>
+    <p class="muted">
+      Er wordt een link gegenereerd die je via WhatsApp kunt delen met de hogeraad
+      (<%= members.length %> lid/leden bekend).
+    </p>
+    <form method="post" action="/callings" class="stack">
+      <label>
+        Naam
+        <input type="text" name="name" placeholder="Bijv. Jan Jansen" required autofocus />
+      </label>
+      <label>
+        Functie
+        <input type="text" name="functie" placeholder="Bijv. Bisschop van de wijk X" required />
+      </label>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <button type="submit" class="btn btn--primary btn--block">Aanmaken</button>
+    </form>
+  </main>
+</body>
+</html>

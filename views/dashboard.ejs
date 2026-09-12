@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/nav') %>
+  <main class="page">
+    <div class="page__header">
+      <h1>Dashboard</h1>
+      <a href="/callings/new" class="btn btn--primary">+ Nieuwe roeping</a>
+    </div>
+
+    <section>
+      <h2>Te verwerken (<%= teVerwerken.length %>)</h2>
+      <% if (teVerwerken.length === 0) { %>
+        <p class="muted">Geen roepingen die klaar zijn om te verwerken.</p>
+      <% } else { %>
+        <div class="card-list">
+          <% teVerwerken.forEach(c => { %>
+            <a class="card card--clickable" href="/callings/<%= c.id %>">
+              <div class="card__title"><%= c.name %></div>
+              <div class="card__subtitle"><%= c.functie %></div>
+              <div class="badge badge--done">Volledig gereageerd</div>
+            </a>
+          <% }) %>
+        </div>
+      <% } %>
+    </section>
+
+    <section>
+      <h2>Open roepingen (<%= open.length %>)</h2>
+      <% if (open.length === 0) { %>
+        <p class="muted">Geen openstaande roepingen.</p>
+      <% } else { %>
+        <div class="card-list">
+          <% open.forEach(c => {
+            const responded = c.votes.length;
+            const total = c.expectedMembers.length;
+          %>
+            <a class="card card--clickable" href="/callings/<%= c.id %>">
+              <div class="card__title"><%= c.name %></div>
+              <div class="card__subtitle"><%= c.functie %></div>
+              <div class="badge badge--pending"><%= responded %> / <%= total %> gereageerd</div>
+            </a>
+          <% }) %>
+        </div>
+      <% } %>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/nav') %>
+  <main class="page">
+    <h1>Gebruikersbeheer</h1>
+    <p class="muted">Hier maak je inlogaccounts aan voor het ringpresidium. Het e-mailadres wordt gebruikt voor de melding als een roeping na 30 dagen nog niet verwerkt is.</p>
+
+    <% if (error) { %>
+      <p class="alert alert--error"><%= error %></p>
+    <% } %>
+
+    <form method="post" action="/admin/users" class="stack card">
+      <h2>Nieuwe gebruiker</h2>
+      <label>
+        Gebruikersnaam
+        <input type="text" name="username" required />
+      </label>
+      <label>
+        Wachtwoord
+        <input type="password" name="password" required minlength="6" />
+      </label>
+      <label>
+        E-mailadres
+        <input type="email" name="email" required />
+      </label>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <button type="submit" class="btn btn--primary btn--block">Aanmaken</button>
+    </form>
+
+    <div class="card-list">
+      <% users.forEach(u => { %>
+        <div class="card card--row">
+          <div>
+            <div class="card__title"><%= u.username %><%= u.isAdmin ? ' (admin)' : '' %></div>
+            <div class="card__subtitle"><%= u.email || 'geen e-mailadres' %></div>
+          </div>
+          <% if (!u.isAdmin) { %>
+            <form method="post" action="/admin/users/<%= u.id %>/delete" onsubmit="return confirm('Gebruiker verwijderen?');">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <button type="submit" class="btn btn--ghost btn--danger">Verwijderen</button>
+            </form>
+          <% } %>
+        </div>
+      <% }) %>
+    </div>
+  </main>
+</body>
+</html>

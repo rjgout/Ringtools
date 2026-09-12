@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body class="centered-page">
+  <main class="auth-card">
+    <h1>Ringpresidium</h1>
+    <p class="muted">Log in om verder te gaan.</p>
+    <% if (error) { %>
+      <p class="alert alert--error"><%= error %></p>
+    <% } %>
+    <form method="post" action="/login" class="stack">
+      <label>
+        Gebruikersnaam
+        <input type="text" name="username" autocomplete="username" required autofocus />
+      </label>
+      <label>
+        Wachtwoord
+        <input type="password" name="password" autocomplete="current-password" required />
+      </label>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <button type="submit" class="btn btn--primary btn--block">Inloggen</button>
+    </form>
+  </main>
+</body>
+</html>

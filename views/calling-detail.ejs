@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+  <%- include('partials/nav') %>
+  <main class="page">
+    <div class="page__header">
+      <div>
+        <h1><%= calling.name %></h1>
+        <p class="muted"><%= calling.functie %></p>
+      </div>
+      <% if (calling.status === 'te_verwerken') { %>
+        <form method="post" action="/callings/<%= calling.id %>/process" onsubmit="return confirm('Deze roeping wordt daarna permanent verwijderd. Doorgaan?');">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <button type="submit" class="btn btn--primary">Markeer als verwerkt</button>
+        </form>
+      <% } %>
+    </div>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <p class="alert alert--error"><%= error %></p>
+    <% } %>
+
+    <section class="card">
+      <h2>Deel deze link</h2>
+      <p class="muted">Stuur deze link naar de hogeraad via WhatsApp om steun te vragen.</p>
+      <div class="share-row">
+        <input type="text" readonly value="<%= link %>" id="shareLink" onclick="this.select()" />
+        <button type="button" class="btn btn--ghost" data-copy="<%= link %>">Kopieer</button>
+      </div>
+      <a class="btn btn--whatsapp btn--block" href="<%= whatsappHref %>" target="_blank" rel="noopener">Deel via WhatsApp</a>
+    </section>
+
+    <section>
+      <h2>Reacties (<%= calling.votes.length %> / <%= calling.expectedMembers.length %>)</h2>
+      <div class="card-list">
+        <% calling.expectedMembers.forEach(m => {
+          const vote = calling.votes.find(v => v.memberId === m.id);
+        %>
+          <div class="card card--row">
+            <span><%= m.name %></span>
+            <% if (vote) { %>
+              <span class="badge <%= vote.support ? 'badge--done' : 'badge--danger' %>">
+                <%= vote.support ? 'Steunt' : 'Steunt niet' %><%= vote.byBackend ? ' (handmatig)' : '' %>
+              </span>
+            <% } else { %>
+              <span class="badge badge--pending">Nog geen reactie</span>
+            <% } %>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+
+    <% if (pendingMembers.length > 0) { %>
+    <section class="card">
+      <h2>Handmatig invoeren</h2>
+      <p class="muted">Heeft iemand mondeling of telefonisch gereageerd? Vul het hier in.</p>
+      <form method="post" action="/callings/<%= calling.id %>/vote" class="stack">
+        <label>
+          Hogeraadslid
+          <select name="memberId" required>
+            <option value="" disabled selected>Kies een naam</option>
+            <% pendingMembers.forEach(m => { %>
+              <option value="<%= m.id %>"><%= m.name %></option>
+            <% }) %>
+          </select>
+        </label>
+        <div class="btn-row">
+          <button type="submit" name="support" value="true" class="btn btn--success">Steunt</button>
+          <button type="submit" name="support" value="false" class="btn btn--danger">Steunt niet</button>
+        </div>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      </form>
+    </section>
+    <% } %>
+  </main>
+  <script src="/js/app.js"></script>
+</body>
+</html>
