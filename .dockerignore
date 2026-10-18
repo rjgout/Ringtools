@@ -1,7 +1,10 @@
 node_modules
-npm-debug.log
+.next
 .git
-.gitignore
 .env
-data/*.json
+.env.*
+!.env.example
+npm-debug.log
+tests
+vitest.config.ts
 README.md

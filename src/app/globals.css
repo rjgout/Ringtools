@@ -1,0 +1,170 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #eef1f8;
+  --bg-accent-1: #c7d2fe;
+  --bg-accent-2: #fbcfe8;
+  --surface: 255 255 255;
+  --surface-alpha: 0.6;
+  --surface-border: 255 255 255;
+  --surface-border-alpha: 0.5;
+  --text: #0f1222;
+  --text-muted: #5b5f78;
+  --primary: #4f46e5;
+  --primary-ink: #ffffff;
+  --success: #15803d;
+  --success-bg: #dcfce7;
+  --danger: #b91c1c;
+  --danger-bg: #fee2e2;
+  --warning-bg: #fef3c7;
+  --warning-ink: #92400e;
+  --ring: #6366f1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0c14;
+    --bg-accent-1: #1e1b4b;
+    --bg-accent-2: #3b0764;
+    --surface: 24 26 42;
+    --surface-alpha: 0.55;
+    --surface-border: 255 255 255;
+    --surface-border-alpha: 0.12;
+    --text: #f2f3fb;
+    --text-muted: #a3a7c2;
+    --primary: #818cf8;
+    --primary-ink: #0b0c14;
+    --success: #4ade80;
+    --success-bg: rgba(34, 197, 94, 0.16);
+    --danger: #f87171;
+    --danger-bg: rgba(239, 68, 68, 0.16);
+    --warning-bg: rgba(245, 158, 11, 0.16);
+    --warning-ink: #fbbf24;
+    --ring: #818cf8;
+  }
+}
+
+* {
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  min-height: 100dvh;
+  background-image: radial-gradient(60% 50% at 10% 0%, var(--bg-accent-1) 0%, transparent 60%),
+    radial-gradient(50% 40% at 100% 10%, var(--bg-accent-2) 0%, transparent 60%);
+  background-attachment: fixed;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+}
+
+@utility glass {
+  background: rgb(var(--surface) / var(--surface-alpha));
+  border: 1px solid rgb(var(--surface-border) / var(--surface-border-alpha));
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03), 0 8px 30px rgba(15, 18, 34, 0.08);
+}
+
+@utility btn {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 1rem;
+  padding-inline: 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: transform 150ms;
+}
+.btn:active {
+  transform: scale(0.98);
+}
+.btn:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+@layer components {
+  .glass-card {
+    @apply glass rounded-3xl p-5 sm:p-6;
+  }
+
+  .glass-panel {
+    @apply glass rounded-2xl p-4;
+  }
+
+  .btn-primary {
+    @apply btn text-white shadow-lg shadow-indigo-500/20;
+    background: linear-gradient(180deg, var(--primary), color-mix(in srgb, var(--primary) 80%, black));
+    color: var(--primary-ink);
+  }
+
+  .btn-success {
+    @apply btn text-white flex-1;
+    background: linear-gradient(180deg, #22c55e, #15803d);
+  }
+
+  .btn-danger {
+    @apply btn text-white flex-1;
+    background: linear-gradient(180deg, #ef4444, #b91c1c);
+  }
+
+  .btn-ghost {
+    @apply btn glass;
+    color: var(--text);
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-black/10 bg-white/70 px-4 py-3 text-[0.95rem] text-[var(--text)]
+      placeholder:text-[var(--text-muted)] outline-none transition
+      focus:border-transparent focus:ring-2 focus:ring-[var(--ring)] dark:bg-white/5 dark:border-white/10;
+  }
+
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-[var(--text-muted)];
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold;
+  }
+
+  .badge-pending {
+    background: var(--warning-bg);
+    color: var(--warning-ink);
+  }
+
+  .badge-success {
+    background: var(--success-bg);
+    color: var(--success);
+  }
+
+  .badge-danger {
+    background: var(--danger-bg);
+    color: var(--danger);
+  }
+
+  .badge-neutral {
+    @apply glass;
+    color: var(--text-muted);
+  }
+
+  .bottom-nav {
+    @apply glass fixed inset-x-3 bottom-3 z-40 flex items-center justify-between gap-1 rounded-3xl p-2 sm:hidden;
+  }
+
+  .bottom-nav-item {
+    @apply flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-2 text-[0.68rem] font-medium text-[var(--text-muted)]
+      transition active:scale-95;
+  }
+
+  .bottom-nav-item.active {
+    color: var(--primary);
+    background: rgb(var(--surface) / 0.5);
+  }
+}

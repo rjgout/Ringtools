@@ -1,28 +1,41 @@
-version: "3.8"
-
 services:
-  ringpresidium:
-    build: .
-    container_name: ringpresidium
+  db:
+    image: postgres:16-alpine
     restart: unless-stopped
-    ports:
-      - "3000:3000"
     environment:
-      # Pas deze waarden aan in Portainer (Stack -> Environment variables)
-      APP_BASE_URL: "https://ringpresidium.jouwdomein.nl"
-      SESSION_SECRET: "verander-dit-in-een-lange-willekeurige-tekst"
-      COOKIE_SECURE: "true"
-      ADMIN_USERNAME: "webmin"
-      ADMIN_PASSWORD: "ldstools123!"
-      SMTP_HOST: ""
-      SMTP_PORT: "587"
-      SMTP_SECURE: "false"
-      SMTP_USER: ""
-      SMTP_PASS: ""
-      MAIL_FROM: "Ringpresidium <noreply@jouwdomein.nl>"
-      PORT: "3000"
+      POSTGRES_USER: ${POSTGRES_USER:-ringtools}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-ringtools}
     volumes:
-      # Map naar een map op je NAS, zodat je de data terugvindt in File Station
-      # en makkelijk kunt back-uppen. Pas "/volume1" aan als jouw NAS een ander
-      # volume gebruikt (bv. /volume2).
-      - /volume1/docker/ringpresidium/data:/app/data
+      - ringtools_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ringtools} -d ${POSTGRES_DB:-ringtools}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    # Standaard: kant-en-klare image van GitHub Container Registry (gebouwd
+    # door de GitHub Actions-workflow bij elke push naar main). Dit voorkomt
+    # dat Portainer/Docker op de Synology zelf een multi-stage build moet
+    # draaien, wat op sommige DSM/Container Manager-versies kan mislukken.
+    # Wil je toch lokaal bouwen vanaf de broncode? Vervang de regel hieronder
+    # door: build: .
+    image: ghcr.io/rjgout/ringtools:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ringtools}:${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ringtools}?schema=public
+      APP_BASE_URL: ${APP_BASE_URL:?zet APP_BASE_URL}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-webmin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?zet BOOTSTRAP_ADMIN_PASSWORD}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?zet SETTINGS_ENCRYPTION_KEY}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      PORT: 2809
+    ports:
+      - "2809:2809"
+
+volumes:
+  ringtools_db:

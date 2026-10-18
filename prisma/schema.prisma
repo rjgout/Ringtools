@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  RINGPRESIDIUM
+  RINGSECRETARIS
+  RINGADMINISTRATEUR
+  HOGERAAD
+}
+
+enum VoteStage {
+  PRESIDIUM
+  HOGERAAD
+}
+
+enum CallingStatus {
+  PRESIDIUM_VOTING
+  PRESIDIUM_PAUSED
+  HOGERAAD_VOTING
+  HOGERAAD_PAUSED
+  APPROVED
+  PROCESSED
+}
+
+enum OndersteuningContext {
+  AVONDMAALSVERGADERING
+  RINGCONFERENTIE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  role         Role
+  active       Boolean  @default(true)
+  passwordHash String? // alleen gevuld voor de systeemadministrator (webmin)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  magicLinkTokens MagicLinkToken[]
+  sessions        Session[]
+
+  createdCallings   Calling[]       @relation("CallingCreatedBy")
+  eligibleVotes     EligibleVoter[]
+  votes             Vote[]
+  roepenAssigned    Calling[]       @relation("RoepenAssignee")
+  roepenDone        Calling[]       @relation("RoepenDoneBy")
+  ondersteunenAssigned Calling[]    @relation("OndersteunenAssignee")
+  ondersteunenDone  Calling[]       @relation("OndersteunenDoneBy")
+  aanstellenAssigned Calling[]      @relation("AanstellenAssignee")
+  aanstellenDone    Calling[]       @relation("AanstellenDoneBy")
+  processedCallings Calling[]       @relation("ProcessedBy")
+  smtpSettingsUpdatedBy SmtpSettings[]
+
+  @@index([role, active])
+}
+
+model MagicLinkToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Calling {
+  id           String        @id @default(cuid())
+  personName   String
+  functionTitle String
+  status       CallingStatus @default(PRESIDIUM_VOTING)
+
+  createdById  String
+  createdBy    User          @relation("CallingCreatedBy", fields: [createdById], references: [id])
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  approvedAt   DateTime?
+  processedAt  DateTime?
+  processedById String?
+  processedBy  User?         @relation("ProcessedBy", fields: [processedById], references: [id])
+
+  reminder30SentAt DateTime? // eenmalige herinnering 30 dagen na aanmaken
+
+  // Taak: Roepen
+  roepenAssigneeId String?
+  roepenAssignee   User?     @relation("RoepenAssignee", fields: [roepenAssigneeId], references: [id])
+  roepenDoneById   String?
+  roepenDoneBy     User?     @relation("RoepenDoneBy", fields: [roepenDoneById], references: [id])
+  roepenDoneAt     DateTime?
+
+  // Taak: Ondersteunen
+  ondersteunenAssigneeId String?
+  ondersteunenAssignee   User?     @relation("OndersteunenAssignee", fields: [ondersteunenAssigneeId], references: [id])
+  ondersteunenDoneById   String?
+  ondersteunenDoneBy     User?     @relation("OndersteunenDoneBy", fields: [ondersteunenDoneById], references: [id])
+  ondersteunenDoneAt     DateTime?
+  ondersteunenContext    OndersteuningContext?
+
+  // Taak: Aanstellen
+  aanstellenAssigneeId String?
+  aanstellenAssignee   User?     @relation("AanstellenAssignee", fields: [aanstellenAssigneeId], references: [id])
+  aanstellenDoneById   String?
+  aanstellenDoneBy     User?     @relation("AanstellenDoneBy", fields: [aanstellenDoneById], references: [id])
+  aanstellenDoneAt     DateTime?
+
+  eligibleVoters EligibleVoter[]
+  votes          Vote[]
+
+  @@index([status])
+  @@index([processedAt])
+  @@index([createdAt])
+}
+
+// Bevroren snapshot van wie stemgerechtigd was op het moment dat een
+// stemfase startte, zodat latere wijzigingen in gebruikersbeheer een
+// lopende stemming niet kunnen beinvloeden.
+model EligibleVoter {
+  id        String    @id @default(cuid())
+  callingId String
+  calling   Calling   @relation(fields: [callingId], references: [id], onDelete: Cascade)
+  stage     VoteStage
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  createdAt DateTime  @default(now())
+
+  @@unique([callingId, stage, userId])
+  @@index([callingId, stage])
+}
+
+model Vote {
+  id        String    @id @default(cuid())
+  callingId String
+  calling   Calling   @relation(fields: [callingId], references: [id], onDelete: Cascade)
+  stage     VoteStage
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  support   Boolean
+  votedAt   DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([callingId, stage, userId])
+  @@index([callingId, stage])
+}
+
+model SmtpSettings {
+  id                  Int      @id @default(1)
+  host                String?
+  port                Int      @default(587)
+  security            String   @default("STARTTLS") // NONE | TLS | STARTTLS
+  username            String?
+  encryptedPassword   String? // AES-256-GCM, versleuteld met SETTINGS_ENCRYPTION_KEY
+  fromAddress          String   @default("noreply@ringapeldoorn.nl")
+  fromName             String   @default("Ringtools")
+  updatedAt            DateTime @updatedAt
+  updatedById          String?
+  updatedBy            User?    @relation(fields: [updatedById], references: [id])
+}
