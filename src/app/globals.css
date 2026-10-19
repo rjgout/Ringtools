@@ -155,7 +155,9 @@ body {
   }
 
   .bottom-nav {
-    @apply glass fixed inset-x-3 bottom-3 z-40 flex items-center justify-between gap-1 rounded-3xl p-2 sm:hidden;
+    @apply glass fixed inset-x-3 z-40 flex items-center justify-between gap-1 rounded-3xl p-2 sm:hidden;
+    /* Houd rekening met veilige schermranden (bv. de homebalk op iPhone). */
+    bottom: calc(0.75rem + env(safe-area-inset-bottom));
   }
 
   .bottom-nav-item {
@@ -166,5 +168,16 @@ body {
   .bottom-nav-item.active {
     color: var(--primary);
     background: rgb(var(--surface) / 0.5);
+  }
+
+  .app-content-padding {
+    /* Ruimte onderaan voor de vaste bottom-nav + veilige schermranden op
+       mobiel; op desktop (waar de bottom-nav verborgen is) is dit niet nodig. */
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+  @media (min-width: 640px) {
+    .app-content-padding {
+      padding-bottom: 1.5rem;
+    }
   }
 }

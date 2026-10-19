@@ -11,6 +11,7 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 - [Environment variables](#environment-variables)
 - [Lokaal draaien](#lokaal-draaien-ontwikkeling)
 - [Installeren op de Synology NAS via Portainer](#installeren-op-de-synology-nas-via-portainer)
+- [PWA en Web Push](#pwa-en-web-push)
 - [Bijwerken naar een nieuwe versie](#bijwerken-naar-een-nieuwe-versie)
 - [Back-up](#back-up)
 - [Tests](#tests)
@@ -40,6 +41,15 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
   persoonlijke links) via de deelmogelijkheden van het apparaat, met een
   kopieer-fallback.
 - **Ontwerp**: mobile-first, "Liquid Glass"-geïnspireerd, licht/donker.
+- **Progressive Web App**: installeerbaar op beginscherm (iPhone/iPad/Android/
+  desktop) zonder app store, met automatische updates en een offline-pagina.
+  Geen vertrouwelijke data wordt offline gecachet.
+- **Web Push**: pushnotificaties (met toestemming, nooit automatisch gevraagd)
+  bij de belangrijkste workflow-gebeurtenissen, met algemene, niet-
+  vertrouwelijke tekst. Meerdere apparaten per gebruiker. Beheer via
+  **Profiel → Pushnotificaties / E-mailmeldingen**.
+- **App-badge**: toont (waar ondersteund) het aantal openstaande acties op het
+  app-icoon.
 
 ## Techniek
 
@@ -52,6 +62,10 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
   `node-cron`, lezen hun werk telkens uit de database en overleven dus een
   herstart van de container zonder dubbele e-mails.
 - SMTP-wachtwoord versleuteld (AES-256-GCM) opgeslagen in de database.
+- Web App Manifest (`src/app/manifest.ts`) + handgeschreven service worker
+  (`public/sw.js`) voor PWA-installatie, auto-update en een offline-fallback.
+- Web Push via de `web-push`-library (VAPID), subscriptions in PostgreSQL
+  (`PushSubscription`-model) — geen Firebase of andere externe pushdienst.
 
 ## Environment variables
 
@@ -64,6 +78,8 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 | `SETTINGS_ENCRYPTION_KEY` | Ja | Lange, willekeurige sleutel voor het versleutelen van het SMTP-wachtwoord (bv. `openssl rand -hex 32`). Bewaar deze goed. |
 | `COOKIE_SECURE` | Nee (standaard `true`) | Zet op `false` als je zonder HTTPS test. |
 | `PORT` | Nee (standaard `2809`) | Poort waarop de applicatie luistert. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Nee | Nodig voor Web Push. Leeg laten schakelt pushnotificaties uit; de rest van de app blijft normaal werken. Genereren en bewaren: zie [PWA en Web Push](#pwa-en-web-push). |
+| `VAPID_SUBJECT` | Nee (standaard `mailto:beheer@ringapeldoorn.nl`) | Contactadres dat pushdiensten mogen gebruiken bij misbruik, als `mailto:` of `https://` URL. |
 
 SMTP-gegevens worden **niet** via environment variables ingesteld, maar via
 **Instellingen → E-mail** in de applicatie zelf (zie sectie hieronder),
@@ -128,6 +144,75 @@ applicatie zelf heeft geen bestandsopslag nodig.
    magic-link-logins en alle automatische e-mails) en maak via
    **Gebruikers** de eerste accounts aan.
 
+## PWA en Web Push
+
+### App installeren
+
+Open de applicatie in de browser en ga naar **Profiel**. Daar staat een
+installatiehulp die zichzelf aanpast aan het platform en verdwijnt zodra de
+app al als PWA draait:
+
+- **iPhone/iPad (Safari)**: toont de stappen om via het deelmenu ("Zet op
+  beginscherm") te installeren — iOS biedt geen automatisch installatie-
+  venster aan.
+- **Android/desktop (Chrome, Edge)**: toont een knop die de browsereigen
+  installatie-prompt opent, zodra de browser aangeeft dat dat kan.
+
+Vereisten die al voldaan zijn door deze deployment: een geldig Web App
+Manifest, een geregistreerde service worker, en HTTPS (via je reverse
+proxy) — zonder HTTPS beschouwen browsers de app niet als installeerbaar
+(`localhost` is als uitzondering altijd toegestaan voor lokaal testen).
+
+### VAPID-sleutels genereren (voor Web Push)
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Zet de twee uitkomsten als `VAPID_PUBLIC_KEY` en `VAPID_PRIVATE_KEY` in de
+Portainer-stack, en `VAPID_SUBJECT` op een `mailto:`-adres. **Genereer deze
+sleutels precies één keer** en bewaar ze net zo zorgvuldig als een
+wachtwoord: wijzig je ze later, dan werken alle tot dan toe geregistreerde
+push-abonnementen niet meer en moet iedereen opnieuw inschakelen via
+**Profiel → Pushnotificaties**. Omdat ze als environment variable in de
+stack staan (niet in de broncode of image), blijven ze vanzelf behouden bij
+het updaten van de container — zorg wel dat je de Portainer-stackconfiguratie
+zelf meeneemt in je reguliere back-up.
+
+Laat je `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` leeg, dan toont de app
+duidelijk dat pushnotificaties niet geconfigureerd zijn; al het overige
+blijft normaal werken.
+
+### Testen op iPhone/iPad
+
+1. Zorg dat de site via HTTPS bereikbaar is (reverse proxy).
+2. Installeer Ringtools via **Profiel** op het beginscherm (zie hierboven) —
+   dit is op iOS verplicht: Safari zelf ondersteunt geen Web Push, alleen een
+   vanaf het beginscherm geopende PWA (vanaf iOS 16.4).
+3. Open de geïnstalleerde app (niet Safari) en ga naar **Profiel →
+   Pushnotificaties → 🔔 Pushnotificaties inschakelen**.
+4. Sta de systeemmelding toe; verstuur daarna een testnotificatie via
+   dezelfde pagina.
+
+### Testen op Android
+
+1. Open de site in Chrome (of een andere Chromium-browser).
+2. Ga naar **Profiel → Pushnotificaties → 🔔 Pushnotificaties inschakelen**
+   (dit werkt ook zonder dat de app als PWA geïnstalleerd is, al raden we
+   installeren wel aan voor de volledige ervaring).
+3. Sta de systeemmelding toe en verstuur een testnotificatie.
+
+### Probleemoplossing
+
+| Probleem | Mogelijke oorzaak |
+|---|---|
+| Geen installatieknop op Android/desktop | De browser biedt op dat moment geen `beforeinstallprompt` aan (al geïnstalleerd, of nog niet aan de installatiecriteria voldaan). Gebruik het browsermenu ("App installeren") als alternatief. |
+| "Pushnotificaties zijn niet geconfigureerd" | `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` ontbreken in de stack. |
+| Geen pushknop zichtbaar op iPhone/iPad | Ringtools is nog niet op het beginscherm geïnstalleerd, of je gebruikt Safari in plaats van de geïnstalleerde app. |
+| "Meldingen zijn geblokkeerd" | De systeem- of browsertoestemming staat op geweigerd; dit is alleen in de systeem-/browserinstellingen van het apparaat zelf te herstellen. |
+| Pushmelding komt niet aan, geen foutmelding in de app | Controleer de servercontainerlogs; een verlopen abonnement wordt automatisch opgeruimd (zichtbaar doordat het apparaat verdwijnt uit **Profiel → Jouw apparaten**). |
+| App laadt oude versie na een update | De service worker ververst zichzelf automatisch zodra de nieuwe versie de controle overneemt; sluit en heropen de app als dit lang duurt. |
+
 ## Bijwerken naar een nieuwe versie
 
 Push naar `main` → GitHub Actions bouwt en publiceert automatisch een nieuwe
@@ -155,6 +240,12 @@ Zie het testrapport dat bij de implementatie is opgeleverd voor een overzicht
 van welke van de 25 gevraagde testscenario's geautomatiseerd zijn gedekt en
 welke (zoals het daadwerkelijk ontvangen van e-mail, of een Docker-build op
 een echte Synology) niet in deze ontwikkelomgeving konden worden uitgevoerd.
+Voor de PWA/pushtests (sectie 31 van de opdracht) geldt hetzelfde: manifest,
+service worker, subscribe/unsubscribe, meerdere apparaten, de 7
+workflow-gebeurtenissen en het ontbreken van vertrouwelijke data zijn
+geautomatiseerd gedekt (`tests/push.test.ts`, `e2e/pwa.spec.ts`); een
+daadwerkelijke pushmelding op een fysieke iPhone/Android-toestel is in deze
+ontwikkelomgeving niet uit te voeren.
 
 ## Bekende beperkingen
 
@@ -171,3 +262,13 @@ een echte Synology) niet in deze ontwikkelomgeving konden worden uitgevoerd.
   uitsluitend build-/CLI-tooling-afhankelijkheden (niet meegeleverd in de
   runtime-container) zonder niet-risicovolle oplossing die compatibel blijft
   met de huidige Next.js/Prisma-versies.
+- Web Push op iOS werkt uitsluitend vanuit de op het beginscherm
+  geïnstalleerde app (Apple-beperking vanaf iOS 16.4), niet vanuit Safari
+  zelf. De installatiehulp op **Profiel** wijst hier expliciet op.
+- Wijzig je de VAPID-sleutels na de eerste configuratie, dan verliezen alle
+  al geregistreerde apparaten hun pushabonnement en moet iedereen dit
+  opnieuw inschakelen.
+- De service worker cachet bewust alleen statische, niet-gevoelige
+  bestanden (iconen, build-assets, de offline-pagina). Dat betekent ook dat
+  de app zonder internetverbinding geen eerder bekeken roepingen/gegevens
+  toont — alleen een duidelijke offline-melding.

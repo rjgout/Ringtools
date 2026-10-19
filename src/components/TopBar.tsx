@@ -2,13 +2,14 @@ import type { Role } from "@prisma/client";
 import { ROLE_LABELS } from "@/lib/format";
 import { logoutAction } from "@/lib/actions/auth.actions";
 
-type NavFlags = { dashboard: boolean; roepingen: boolean; gebruikers: boolean; instellingen: boolean };
+type NavFlags = { dashboard: boolean; roepingen: boolean; gebruikers: boolean; instellingen: boolean; profiel: boolean };
 
 const LINKS: { key: keyof NavFlags; href: string; label: string }[] = [
   { key: "dashboard", href: "/dashboard", label: "Dashboard" },
   { key: "roepingen", href: "/roepingen", label: "Roepingen" },
   { key: "gebruikers", href: "/gebruikers", label: "Gebruikers" },
   { key: "instellingen", href: "/instellingen", label: "Instellingen" },
+  { key: "profiel", href: "/profiel", label: "Profiel" },
 ];
 
 export function TopBar({ user, nav }: { user: { name: string; role: Role }; nav: NavFlags }) {

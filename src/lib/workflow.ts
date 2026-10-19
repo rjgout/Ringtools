@@ -4,6 +4,7 @@ import { env } from "./env";
 import { createMagicLinkToken } from "./auth";
 import { sendMail, voteInviteEmail, taskAssignedEmail, reminder30Email } from "./mailer";
 import { allTasksDone, isReadyToProcess, phaseLabel, type TaskKey } from "./status";
+import { pushNotify, type PushEvent } from "./notifications";
 
 export class WorkflowError extends Error {}
 
@@ -17,15 +18,22 @@ async function buildMagicVoteLink(userId: string, callingId: string): Promise<st
   return `${env.appBaseUrl}/auth/magic/${rawToken}?redirect=${redirect}`;
 }
 
-/** Stuurt stemuitnodigingen naar (een deel van) de stemgerechtigden van een fase. Fouten bij verzending worden gelogd, niet gegooid: een mislukte e-mail mag nooit een voorstel/stem laten verdwijnen. */
+/**
+ * Stuurt stemuitnodigingen naar (een deel van) de stemgerechtigden van een
+ * fase: een gedetailleerde e-mail (met naam/functie, tenzij de gebruiker
+ * e-mailmeldingen heeft uitgezet) en een generieke pushmelding. Fouten bij
+ * verzending worden gelogd, niet gegooid: een mislukte melding mag nooit een
+ * voorstel/stem laten verdwijnen.
+ */
 async function notifyVoters(
   calling: Calling,
   stage: "PRESIDIUM" | "HOGERAAD",
   userIds: string[],
-  isReinvite: boolean
+  opts: { isReinvite: boolean; pushEvent: PushEvent }
 ) {
   const users = await prisma.user.findMany({ where: { id: { in: userIds } } });
   for (const user of users) {
+    if (!user.emailNotificationsEnabled) continue;
     try {
       const link = await buildMagicVoteLink(user.id, calling.id);
       const { subject, text } = voteInviteEmail({
@@ -33,13 +41,14 @@ async function notifyVoters(
         personName: calling.personName,
         functionTitle: calling.functionTitle,
         link,
-        isReinvite,
+        isReinvite: opts.isReinvite,
       });
       await sendMail({ to: user.email, subject, text });
     } catch (err) {
       console.error(`[workflow] Versturen stemuitnodiging naar ${user.email} mislukt:`, err);
     }
   }
+  await pushNotify(userIds, opts.pushEvent, `/roepingen/${calling.id}`);
 }
 
 export async function notifyTaskAssignee(callingId: string, task: TaskKey, assigneeId: string) {
@@ -48,18 +57,32 @@ export async function notifyTaskAssignee(callingId: string, task: TaskKey, assig
     prisma.user.findUniqueOrThrow({ where: { id: assigneeId } }),
   ]);
   const label = TASK_LABELS[task];
-  try {
-    const { subject, text } = taskAssignedEmail({
-      name: user.name,
-      taskLabel: label,
-      personName: calling.personName,
-      functionTitle: calling.functionTitle,
-      link: callingUrl(calling.id),
-    });
-    await sendMail({ to: user.email, subject, text });
-  } catch (err) {
-    console.error(`[workflow] Versturen taakmelding naar ${user.email} mislukt:`, err);
+  if (user.emailNotificationsEnabled) {
+    try {
+      const { subject, text } = taskAssignedEmail({
+        name: user.name,
+        taskLabel: label,
+        personName: calling.personName,
+        functionTitle: calling.functionTitle,
+        link: callingUrl(calling.id),
+      });
+      await sendMail({ to: user.email, subject, text });
+    } catch (err) {
+      console.error(`[workflow] Versturen taakmelding naar ${user.email} mislukt:`, err);
+    }
   }
+  await pushNotify([assigneeId], "TASK_ASSIGNED", `/roepingen/${calling.id}`);
+}
+
+/** Informeert het ringpresidium (alleen via push, geen vertrouwelijke inhoud) dat een voorstel is gepauzeerd. */
+async function notifyPaused(calling: Calling): Promise<void> {
+  const presidiumUsers = await prisma.user.findMany({ where: { role: "RINGPRESIDIUM", active: true }, select: { id: true } });
+  await pushNotify(presidiumUsers.map((u) => u.id), "PAUSED", `/roepingen/${calling.id}`);
+}
+
+/** Informeert de aanmaker van de roeping (via push) dat een toegewezen taak is afgerond. */
+async function notifyTaskCompleted(calling: Calling): Promise<void> {
+  await pushNotify([calling.createdById], "TASK_COMPLETED", `/roepingen/${calling.id}`);
 }
 
 export const TASK_LABELS: Record<TaskKey, string> = {
@@ -104,7 +127,10 @@ export async function createCalling(input: {
     },
   });
 
-  await notifyVoters(calling, "PRESIDIUM", presidiumVoters.map((u) => u.id), false);
+  await notifyVoters(calling, "PRESIDIUM", presidiumVoters.map((u) => u.id), {
+    isReinvite: false,
+    pushEvent: "NEW_PROPOSAL",
+  });
 
   for (const [task, assigneeId] of [
     ["ROEPEN", input.roepenAssigneeId],
@@ -148,10 +174,10 @@ export async function castVote(input: { callingId: string; userId: string; suppo
 
 /** Herberekent de status van een roeping op basis van de daadwerkelijke stemmen (idempotent, veilig na elke stemwijziging opnieuw uit te voeren). */
 async function recomputeCallingState(callingId: string): Promise<Calling> {
-  const { calling, hogeraadVoterIds } = await prisma.$transaction(async (tx) => {
+  const { calling, hogeraadVoterIds, justPaused } = await prisma.$transaction(async (tx) => {
     const calling = await tx.calling.findUniqueOrThrow({ where: { id: callingId } });
     const stage = stageForStatus(calling.status);
-    if (!stage) return { calling, hogeraadVoterIds: null as string[] | null };
+    if (!stage) return { calling, hogeraadVoterIds: null as string[] | null, justPaused: false };
 
     const [eligibleVoters, votes] = await Promise.all([
       tx.eligibleVoter.findMany({ where: { callingId, stage } }),
@@ -164,8 +190,9 @@ async function recomputeCallingState(callingId: string): Promise<Calling> {
 
     if (anyNegative) {
       const pausedStatus = stage === "PRESIDIUM" ? "PRESIDIUM_PAUSED" : "HOGERAAD_PAUSED";
+      const wasAlreadyPaused = calling.status === pausedStatus;
       const updated = await tx.calling.update({ where: { id: callingId }, data: { status: pausedStatus } });
-      return { calling: updated, hogeraadVoterIds: null };
+      return { calling: updated, hogeraadVoterIds: null, justPaused: !wasAlreadyPaused };
     }
 
     if (allPositive) {
@@ -179,7 +206,7 @@ async function recomputeCallingState(callingId: string): Promise<Calling> {
             where: { id: callingId },
             data: { status: "APPROVED", approvedAt: new Date() },
           });
-          return { calling: updated, hogeraadVoterIds: null };
+          return { calling: updated, hogeraadVoterIds: null, justPaused: false };
         }
 
         await tx.eligibleVoter.createMany({
@@ -187,26 +214,32 @@ async function recomputeCallingState(callingId: string): Promise<Calling> {
           skipDuplicates: true,
         });
         const updated = await tx.calling.update({ where: { id: callingId }, data: { status: "HOGERAAD_VOTING" } });
-        return { calling: updated, hogeraadVoterIds: hogeraadVoters.map((u) => u.id) };
+        return { calling: updated, hogeraadVoterIds: hogeraadVoters.map((u) => u.id), justPaused: false };
       } else {
         const updated = await tx.calling.update({
           where: { id: callingId },
           data: { status: "APPROVED", approvedAt: new Date() },
         });
-        return { calling: updated, hogeraadVoterIds: null };
+        return { calling: updated, hogeraadVoterIds: null, justPaused: false };
       }
     }
 
     // Niemand tegen, maar nog niet iedereen heeft gestemd: open/hervat.
     const votingStatus = stage === "PRESIDIUM" ? "PRESIDIUM_VOTING" : "HOGERAAD_VOTING";
     const updated = await tx.calling.update({ where: { id: callingId }, data: { status: votingStatus } });
-    return { calling: updated, hogeraadVoterIds: null };
+    return { calling: updated, hogeraadVoterIds: null, justPaused: false };
   });
 
-  // Bewust buiten de transactie: een mislukte e-mail mag de al opgeslagen
+  // Bewust buiten de transactie: een mislukte melding mag de al opgeslagen
   // statusovergang niet terugdraaien.
+  if (justPaused) {
+    await notifyPaused(calling);
+  }
   if (hogeraadVoterIds) {
-    await notifyVoters(calling, "HOGERAAD", hogeraadVoterIds, false);
+    await notifyVoters(calling, "HOGERAAD", hogeraadVoterIds, {
+      isReinvite: false,
+      pushEvent: "ADVANCED_TO_HOGERAAD",
+    });
   }
 
   return calling;
@@ -224,7 +257,7 @@ export async function reinviteVoter(input: { callingId: string; userId: string }
   if (!eligible) {
     throw new WorkflowError("Deze persoon is niet stemgerechtigd voor deze fase.");
   }
-  await notifyVoters(calling, stage, [input.userId], true);
+  await notifyVoters(calling, stage, [input.userId], { isReinvite: true, pushEvent: "REINVITE" });
 }
 
 export async function assignTask(input: { callingId: string; task: TaskKey; assigneeId: string | null }): Promise<Calling> {
@@ -262,6 +295,7 @@ export async function completeTask(input: {
   }
 
   const prefix = TASK_FIELD_PREFIX[input.task];
+  const wasAlreadyDone = calling[`${prefix}DoneAt` as const] !== null;
   const data: Record<string, unknown> = {
     [`${prefix}DoneById`]: input.doneById,
     [`${prefix}DoneAt`]: input.doneAt,
@@ -270,7 +304,15 @@ export async function completeTask(input: {
     data.ondersteunenContext = input.ondersteunenContext;
   }
 
-  return prisma.calling.update({ where: { id: input.callingId }, data: data as Prisma.CallingUpdateInput });
+  const updated = await prisma.calling.update({ where: { id: input.callingId }, data: data as Prisma.CallingUpdateInput });
+
+  // Alleen bij de eerste keer afronden melden, niet bij een correctie van een
+  // al afgeronde taak (voorkomt dubbele meldingen).
+  if (!wasAlreadyDone) {
+    await notifyTaskCompleted(updated);
+  }
+
+  return updated;
 }
 
 export async function markProcessed(input: { callingId: string; processedById: string }): Promise<Calling> {
@@ -299,6 +341,7 @@ export async function sendDue30DayReminders(): Promise<number> {
 
   for (const calling of due) {
     for (const user of presidiumUsers) {
+      if (!user.emailNotificationsEnabled) continue;
       try {
         const { subject, text } = reminder30Email({
           name: user.name,
@@ -312,6 +355,7 @@ export async function sendDue30DayReminders(): Promise<number> {
         console.error(`[cron] Herinnering naar ${user.email} mislukt voor roeping ${calling.id}:`, err);
       }
     }
+    await pushNotify(presidiumUsers.map((u) => u.id), "REMINDER_30_DAYS", `/roepingen/${calling.id}`);
     // Pas na het (proberen te) versturen markeren, zodat een gedeeltelijke
     // storing bij de volgende cron-run opnieuw wordt opgepakt. Bij
     // succesvolle verzending voorkomt dit duplicaten bij elke volgende run.

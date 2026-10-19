@@ -33,6 +33,11 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?zet BOOTSTRAP_ADMIN_PASSWORD}
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?zet SETTINGS_ENCRYPTION_KEY}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      # Web Push (optioneel): leeg laten schakelt pushnotificaties uit zonder
+      # de rest van de app te beïnvloeden. Zie README "Web Push".
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:beheer@ringapeldoorn.nl}
       PORT: 2809
     ports:
       - "2809:2809"

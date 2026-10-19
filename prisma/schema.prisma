@@ -41,11 +41,15 @@ model User {
   role         Role
   active       Boolean  @default(true)
   passwordHash String? // alleen gevuld voor de systeemadministrator (webmin)
+  // E-mailmeldingen voor de workflow (stemuitnodigingen, taken, herinneringen)
+  // zijn uit te zetten; de inlog-/magic-link-mail zelf blijft altijd werken.
+  emailNotificationsEnabled Boolean @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   magicLinkTokens MagicLinkToken[]
   sessions        Session[]
+  pushSubscriptions PushSubscription[]
 
   createdCallings   Calling[]       @relation("CallingCreatedBy")
   eligibleVotes     EligibleVoter[]
@@ -178,4 +182,20 @@ model SmtpSettings {
   updatedAt            DateTime @updatedAt
   updatedById          String?
   updatedBy            User?    @relation(fields: [updatedById], references: [id])
+}
+
+// Eén rij per geabonneerd apparaat/browser (Web Push). Eén gebruiker kan
+// meerdere actieve subscriptions hebben (bv. iPhone + iPad).
+model PushSubscription {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
 }
