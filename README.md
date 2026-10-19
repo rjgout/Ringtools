@@ -14,6 +14,7 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 - [PWA en Web Push](#pwa-en-web-push)
 - [Notificatiecentrum](#notificatiecentrum)
 - [Multifactorauthenticatie (MFA)](#multifactorauthenticatie-mfa)
+- [Meerdere ringen en ondersteuningsrondes](#meerdere-ringen-en-ondersteuningsrondes)
 - [Bijwerken naar een nieuwe versie](#bijwerken-naar-een-nieuwe-versie)
 - [Back-up](#back-up)
 - [Tests](#tests)
@@ -21,8 +22,13 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 
 ## Functionaliteit
 
-- **Rollen**: systeembeheerder (`webmin`), ringpresidium, ringsecretaris,
-  ringadministrateur, hoge raad — elk met eigen rechten (zie `src/lib/rbac.ts`).
+- **Meerdere ringen**: de systeembeheerder (`webmin`) maakt ringen aan; elke
+  ring beheert zijn eigen gebruikers via een ringbeheerder. Ringen zijn
+  strikt gescheiden. Zie
+  [Meerdere ringen en ondersteuningsrondes](#meerdere-ringen-en-ondersteuningsrondes).
+- **Rollen**: systeembeheerder (`webmin`) en, per ring, ringpresidium,
+  ringsecretaris, ringadministrateur, hoge raad — elk met eigen rechten (zie
+  `src/lib/rbac.ts`). Ringbeheerder is een aparte beheerrecht, los van de rol.
 - **Inloggen**: reguliere gebruikers loggen in met een magic link per e-mail
   (geen wachtwoord, geen openbare registratiepagina). De systeembeheerder
   logt in met gebruikersnaam/wachtwoord.
@@ -33,13 +39,14 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
   Zie [Multifactorauthenticatie (MFA)](#multifactorauthenticatie-mfa).
 - **Roepingen**: aanmaken (naam + functie), met optioneel direct of later toe
   te wijzen verantwoordelijken voor roepen/ondersteunen/aanstellen.
-- **Stemming ringpresidium → hoge raad**: automatische e-mailuitnodigingen,
-  een tegenstem pauzeert het voorstel (met zichtbare uitslag en een
-  "opnieuw uitnodigen"-knop), unanimiteit schakelt automatisch door.
+- **Ondersteuningsronde ringpresidium → hoge raad**: automatische
+  e-mailuitnodigingen, een reactie "Ondersteunt niet" pauzeert het voorstel
+  (met zichtbare uitslag en een "Opnieuw ondersteuning vragen"-knop);
+  wanneer iedereen ondersteunt gaat het voorstel automatisch door.
 - **Uitvoering**: roepen, ondersteunen (met avondmaalsvergadering/
   ringconferentie) en aanstellen worden onafhankelijk geregistreerd.
 - **Verwerken**: na afronding markeren als verwerkt; na 30 dagen wordt de
-  roeping (en alle gekoppelde persoonsgegevens/stemmen) automatisch
+  roeping (en alle gekoppelde persoonsgegevens/ondersteuningsreacties) automatisch
   verwijderd. Een onverwerkte roeping krijgt na 30 dagen sinds aanmaken een
   eenmalige herinnering per e-mail naar het ringpresidium.
 - **Instellingen**: SMTP-configuratie (versleuteld opgeslagen wachtwoord) met
@@ -240,7 +247,7 @@ dropdown/bottom sheet opent met de meldingenlijst
 ### Eén centraal proces, geen tweede systeem
 
 Alle 7 workflow-gebeurtenissen (nieuw voorstel, doorgestuurd naar hoge raad,
-opnieuw uitnodigen na tegenstem, gepauzeerd door tegenstem, nieuwe taak
+opnieuw ondersteuning gevraagd, gepauzeerd door een negatieve reactie, nieuwe taak
 toegewezen, toegewezen taak afgerond, herinnering na 30 dagen onverwerkt)
 lopen via **één** functie, `notify()` in `src/lib/notifications.ts`, die
 vanuit `src/lib/workflow.ts` wordt aangeroepen. Voor elke gebeurtenis doet
@@ -272,7 +279,7 @@ dezelfde koppelpunten als de bestaande e-mail/push-infrastructuur.
   nooit op basis van client-input.
 - Een melding **openen** markeert hem meteen als gelezen
   (`markNotificationReadAction`) en navigeert naar de bijbehorende pagina
-  (`targetUrl`) — dit voert **nooit** automatisch een stem uit of rondt een
+  (`targetUrl`) — dit voert **nooit** automatisch een ondersteuningsreactie uit of rondt een
   taak af, dat vereist altijd een expliciete actie van de gebruiker op die
   pagina zelf. Omdat de doelpagina's zelf server-side autorisatie afdwingen,
   kan een meldingslink die rechten nooit omzeilen.
@@ -379,7 +386,7 @@ een nieuwe TOTP-code/passkeybevestiging gevraagd
 
 ### Admin-reset van de MFA van een gebruiker
 
-Een systeembeheerder kan via **Gebruikers** de MFA van een reguliere
+Een systeembeheerder kan via **Ringen → (ring)** de MFA van een reguliere
 gebruiker resetten (vereist zelf een recente verificatie). Dit verwijdert
 direct alle passkeys en actieve sessies van die gebruiker en registreert
 wie de reset uitvoerde en wanneer (`SecurityEvent`, type
@@ -428,6 +435,84 @@ een MFA-reset van de beheerder zelf mag nooit via de webapplicatie kunnen.
   autorisatie/MFA afdwingt; een pushmelding opent dus nooit meer toegang
   dan een gewone navigatie.
 
+## Meerdere ringen en ondersteuningsrondes
+
+### Ringen en rollen
+
+- Alleen de **systeembeheerder** maakt en beheert ringen (menu **Ringen**).
+  Bij het aanmaken kiest of maakt de webmin de **eerste gebruiker** met naam,
+  e-mailadres, kerkelijke functie, rol in Ringtools en de verantwoordelijkheid
+  als **ringbeheerder**.
+- Een **ringbeheerder** voegt gebruikers van de **eigen ring** toe, wijzigt en
+  deactiveert ze (menu **Gebruikers**). Een ring heeft altijd minstens één
+  actieve ringbeheerder: de laatste kan niet worden gedeactiveerd of
+  gedegradeerd (dit wordt in dezelfde databasetransactie afgedwongen).
+- **Kerkelijke functie** (vrije tekst, geeft geen rechten), **rol in
+  Ringtools** (ringpresidium, ringsecretaris, ringadministrateur, hoge raad)
+  en **ringbeheerder** zijn gescheiden. Een ringbeheerder die secretaris of
+  administrateur is, doet niet mee aan ondersteuningsrondes.
+- Een gebruiker kan in **meerdere ringen** lid zijn met per ring een eigen
+  functie en rol; een ringwisselaar bovenaan verschijnt bij meer dan één ring.
+- **Tenantisolatie**: voorstellen, ondersteuningsrondes, taken en meldingen
+  hebben een `ringId`; elke query en elke autorisatiecontrole gebeurt
+  server-side op basis van het (actieve) lidmaatschap. De gekozen ring (cookie)
+  wordt altijd tegen de lidmaatschappen gevalideerd.
+
+### Ondersteuningsprocedure
+
+De negenstapsprocedure is ongewijzigd. De terminologie is overal aangepast
+(Ondersteuning uitbrengen, Ondersteuningsronde, Ondersteunt / Ondersteunt niet,
+Nog niet gereageerd, Opnieuw ondersteuning vragen). Interne tabel- en
+functienamen (`Vote`, `castVote`, …) zijn bewust ongewijzigd gebleven; bestaande
+data blijft ongewijzigd.
+
+- **Ondersteunt niet** pauzeert het voorstel. Het ringpresidium kan voor die
+  persoon op **Opnieuw ondersteuning vragen** klikken; die persoon krijgt een
+  nieuwe persoonlijke uitnodiging en kan de eigen reactie wijzigen. Reacties
+  van anderen blijven behouden.
+- **Handmatige herinneringen**: per ronde ziet het ringpresidium wie
+  ondersteunt, wie niet, wie nog niet heeft gereageerd en wanneer voor het
+  laatst is uitgenodigd. **Herinnering versturen** (per persoon) en **Iedereen
+  herinneren** (alleen wie nog niet reageerde) gebruiken de bestaande
+  meldingen-, push- en e-mailinfrastructuur en respecteren de voorkeuren.
+  Dubbel versturen wordt voorkomen: per persoon geldt een wachttijd van
+  1 uur sinds de laatste uitnodiging/herinnering, atomair afgedwongen.
+- **Nieuwe leden tijdens een lopende ronde**: een nieuw (of geactiveerd /
+  van rol gewijzigd) ringpresidium- of hogeraadslid wordt automatisch
+  toegevoegd aan de onafgeronde rondes van de eigen groep in dezelfde ring,
+  krijgt een persoonlijk verzoek en staat op "Nog niet gereageerd". Bestaande
+  reacties blijven staan; een ronde rondt pas af als alle betrokkenen positief
+  zijn (opnieuw gecontroleerd in dezelfde transactie). Afgeronde rondes
+  worden nooit heropend of gewijzigd.
+- **Gedeactiveerde of van rol gewijzigde deelnemers** veroorzaken nooit
+  stilzwijgend een goedkeuring. De persoon staat nog in de ronde, wordt als
+  "niet meer betrokken" gemarkeerd en kan niet meer reageren; het ringpresidium
+  beslist expliciet met **Uit ronde verwijderen**.
+- **Voorstel verwijderen** (ringpresidium, secretaris, administrateur en
+  systeembeheerder, alleen in de eigen ring, zolang het voorstel niet is
+  verwerkt): na een bevestigingsdialoog worden voorstel, ondersteuningsreacties,
+  deelnemerslijsten, taken en interne meldingen in één transactie verwijderd.
+  Accounts en ring blijven bestaan; er volgen geen e-mails of pushmeldingen
+  meer en oude persoonlijke links tonen niets vertrouwelijks (404). Verwerkte
+  voorstellen vallen onder de bestaande verwijdering na 30 dagen.
+
+### Migratie
+
+De migratie `20261019104633_multi_ring` behoudt alle data:
+
+1. Nieuwe tabellen `Ring` en `RingMembership`; nullable `ringId`-kolommen.
+2. Bestaat er data, dan wordt één ring **"Ring Apeldoorn"** aangemaakt; alle
+   bestaande gebruikers worden lid met hun huidige rol, en alle bestaande
+   voorstellen en meldingen horen bij die ring. Bij een lege database wordt
+   geen ring aangemaakt (de webmin maakt de eerste ring).
+3. Bestaande ringpresidium-, secretaris- en administrateur-gebruikers worden
+   **ringbeheerder** (zij konden voorheen al gebruikers beheren), zodat de ring
+   een beheerder heeft.
+4. Pas daarna worden de kolommen verplicht gemaakt (`NOT NULL`).
+
+Na het uitrollen: controleer onder **Ringen** (als webmin) of de ring en
+ringbeheerders kloppen.
+
 ## Bijwerken naar een nieuwe versie
 
 Push naar `main` → GitHub Actions bouwt en publiceert automatisch een nieuwe
@@ -446,7 +531,7 @@ persistente opslag van de applicatie.
 ```bash
 npm test        # Vitest: kritieke workflow-, autorisatie- en authenticatielogica
                  # (draait tegen een echte PostgreSQL-database)
-npm run test:e2e  # Playwright: inlog-, gebruikersbeheer- en stem-flows in een echte browser
+npm run test:e2e  # Playwright: inlog-, ring-, ondersteunings- en verwijderflows in een echte browser
 npx tsc --noEmit  # TypeScript-build
 npx eslint .      # Linting
 ```
@@ -488,7 +573,7 @@ geautomatiseerd gedekt:
   die altijd wordt afgewezen, een gesimuleerde tellerterugval (mogelijk
   gekloond apparaat), de verplichte MFA-gate op sessieniveau (een sessie
   direct na de magic link/het wachtwoord geeft nog geen toegang), sessie-
-  rotatie na promotie, en dat bestaande stem-/workflowlogica ongewijzigd
+  rotatie na promotie, en dat bestaande ondersteunings-/workflowlogica ongewijzigd
   blijft werken.
 - `e2e/mfa.spec.ts` (Playwright, een echte browser): een ongeldige TOTP-code
   wordt afgewezen, een magic link zonder passkey-stap geeft geen toegang,
@@ -504,8 +589,10 @@ geautomatiseerd gedekt:
   verplichte MFA-stap doorlopen (TOTP resp. passkey via dezelfde
   CDP-authenticator).
 
-Laatste volledige validatieronde in deze ontwikkelomgeving: 74/74
-Vitest-tests, 23/23 Playwright-tests, `npx eslint .`, `npx tsc --noEmit`,
+Laatste volledige validatieronde in deze ontwikkelomgeving: 108/108
+Vitest-tests (waarvan 34 nieuw voor multi-ring, herinneringen, nieuwe
+deelnemers en verwijderen: `tests/rings.test.ts`, `tests/support.test.ts`),
+26/26 Playwright-tests (incl. `e2e/rings.spec.ts`), `npx eslint .`, `npx tsc --noEmit`,
 `npx prisma validate` en een production build (`npm run build`) allemaal
 zonder fouten. Een daadwerkelijke Docker-build/-run op een fysieke Synology
 NAS, en een daadwerkelijke passkey-ceremonie op een fysiek iPhone/Android-

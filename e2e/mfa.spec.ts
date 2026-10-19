@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { prisma } from "../src/lib/prisma";
 import { createMagicLinkToken } from "../src/lib/auth";
 import { regenerateRecoveryCodes } from "../src/lib/mfa";
+import { createE2eUser } from "./helpers/data";
 import { loginAsAdmin, loginWithMagicLink, addVirtualAuthenticator } from "./helpers/mfa";
 
 test("een ongeldige TOTP-code wordt afgewezen bij het inloggen", async ({ page }) => {
@@ -20,9 +21,7 @@ test("een ongeldige TOTP-code wordt afgewezen bij het inloggen", async ({ page }
 });
 
 test("een magic link alleen geeft geen toegang: de passkey-stap is verplicht", async ({ page }) => {
-  const user = await prisma.user.create({
-    data: { name: `Alleen link ${Date.now()}`, email: `alleen.link.${Date.now()}@test.ringapeldoorn.nl`, role: "HOGERAAD", active: true },
-  });
+  const { user } = await createE2eUser("HOGERAAD", `Alleen link ${Date.now()}`);
   const { rawToken } = await createMagicLinkToken(user.id);
 
   await page.goto(`/auth/magic/${rawToken}`);
@@ -34,9 +33,7 @@ test("een magic link alleen geeft geen toegang: de passkey-stap is verplicht", a
 });
 
 test("passkeyregistratie en een latere passkeylogin werken met user verification", async ({ page }) => {
-  const user = await prisma.user.create({
-    data: { name: `Passkey ${Date.now()}`, email: `passkey.${Date.now()}@test.ringapeldoorn.nl`, role: "HOGERAAD", active: true },
-  });
+  const { user } = await createE2eUser("HOGERAAD", `Passkey ${Date.now()}`);
 
   const { rawToken: firstToken } = await createMagicLinkToken(user.id);
   await loginWithMagicLink(page, `/auth/magic/${firstToken}`);
@@ -57,9 +54,7 @@ test("passkeyregistratie en een latere passkeylogin werken met user verification
 });
 
 test("zonder user verification door de authenticator wordt de passkey geweigerd", async ({ page }) => {
-  const user = await prisma.user.create({
-    data: { name: `GeenUV ${Date.now()}`, email: `geen.uv.${Date.now()}@test.ringapeldoorn.nl`, role: "HOGERAAD", active: true },
-  });
+  const { user } = await createE2eUser("HOGERAAD", `GeenUV ${Date.now()}`);
   const { rawToken } = await createMagicLinkToken(user.id);
 
   await page.goto(`/auth/magic/${rawToken}`);
@@ -123,16 +118,14 @@ test("een API-route geeft geen toegang zonder volledig afgeronde MFA", async ({ 
 });
 
 test("een admin kan de MFA van een gebruiker resetten; de gebruiker moet daarna opnieuw registreren", async ({ page }) => {
-  const user = await prisma.user.create({
-    data: { name: `Reset Mij ${Date.now()}`, email: `reset.mij.${Date.now()}@test.ringapeldoorn.nl`, role: "HOGERAAD", active: true },
-  });
+  const { user, ringId } = await createE2eUser("HOGERAAD", `Reset Mij ${Date.now()}`);
   const { rawToken: enrollToken } = await createMagicLinkToken(user.id);
   await loginWithMagicLink(page, `/auth/magic/${enrollToken}`);
   await expect(page).toHaveURL(/\/dashboard/);
   await page.getByRole("button", { name: "Uitloggen" }).click();
 
   await loginAsAdmin(page, "webmin", "e2e-test-wachtwoord-123");
-  await page.goto("/gebruikers");
+  await page.goto(`/ringen/${ringId}`);
   const row = page.locator("details", { hasText: user.email });
   await row.locator("summary").click();
 
@@ -150,10 +143,8 @@ test("een admin kan de MFA van een gebruiker resetten; de gebruiker moet daarna 
   await expect(page.getByRole("button", { name: "Passkey registreren" })).toBeVisible();
 });
 
-test("een niet-adminrol ziet geen 'MFA resetten'-knop in gebruikersbeheer", async ({ page }) => {
-  const manager = await prisma.user.create({
-    data: { name: `Manager ${Date.now()}`, email: `manager.${Date.now()}@test.ringapeldoorn.nl`, role: "RINGPRESIDIUM", active: true },
-  });
+test("een ringbeheerder (geen webmin) ziet geen 'MFA resetten'-knop in gebruikersbeheer", async ({ page }) => {
+  const { user: manager } = await createE2eUser("RINGSECRETARIS", `Manager ${Date.now()}`, { isRingManager: true });
   const { rawToken } = await createMagicLinkToken(manager.id);
   await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
   await expect(page).toHaveURL(/\/dashboard/);
@@ -166,9 +157,7 @@ test.describe("Mobiele interface", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test("de passkey-inschrijving is op mobiel bruikbaar", async ({ page }) => {
-    const user = await prisma.user.create({
-      data: { name: `Mobiel MFA ${Date.now()}`, email: `mobiel.mfa.${Date.now()}@test.ringapeldoorn.nl`, role: "HOGERAAD", active: true },
-    });
+    const { user } = await createE2eUser("HOGERAAD", `Mobiel MFA ${Date.now()}`);
     const { rawToken } = await createMagicLinkToken(user.id);
 
     await page.goto(`/auth/magic/${rawToken}`);

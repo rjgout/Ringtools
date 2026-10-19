@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/session";
+import { requireRingContext } from "@/lib/ringContext";
 import { isStaff } from "@/lib/rbac";
 import { getStaffDashboardCounts, listAttentionCallingsForStaff, getHogeraadOverview } from "@/lib/queries";
 import { phaseLabel } from "@/lib/status";
@@ -13,13 +14,13 @@ export default async function DashboardPage() {
       <div className="space-y-4 py-4">
         <h1 className="text-xl font-semibold">Welkom, {user.name}</h1>
         <p className="text-[var(--text-muted)]">
-          Als systeembeheerder beheer je gebruikers en de technische instellingen van Ringtools.
+          Als systeembeheerder beheer je de ringen, hun ringbeheerders en de technische instellingen van Ringtools.
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <a href="/gebruikers" className="glass-card block">
-            <div className="text-lg font-semibold">Gebruikersbeheer</div>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">Accounts aanmaken, rollen toewijzen, deactiveren.</p>
-          </a>
+          <Link href="/ringen" className="glass-card block">
+            <div className="text-lg font-semibold">Ringbeheer</div>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">Ringen aanmaken, ringbeheerders aanwijzen en gebruikers beheren.</p>
+          </Link>
           <a href="/instellingen" className="glass-card block">
             <div className="text-lg font-semibold">Instellingen</div>
             <p className="mt-1 text-sm text-[var(--text-muted)]">SMTP-configuratie en wachtwoord beheren.</p>
@@ -29,11 +30,17 @@ export default async function DashboardPage() {
     );
   }
 
-  if (isStaff(user.role)) {
-    const [counts, attention] = await Promise.all([getStaffDashboardCounts(), listAttentionCallingsForStaff()]);
+  const ctx = await requireRingContext();
+
+  if (isStaff(ctx.membership.role)) {
+    const [counts, attention] = await Promise.all([
+      getStaffDashboardCounts(ctx.ring.id),
+      listAttentionCallingsForStaff(ctx.ring.id),
+    ]);
     return (
       <div className="space-y-6 py-4">
         <h1 className="text-xl font-semibold">Welkom, {user.name}</h1>
+        <p className="-mt-4 text-sm text-[var(--text-muted)]">{ctx.ring.name}</p>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard label="Bij ringpresidium" value={counts.presidium} href="/roepingen?filter=presidium" />
@@ -71,15 +78,15 @@ export default async function DashboardPage() {
   }
 
   // HOGERAAD
-  const { pendingVotes, tasks } = await getHogeraadOverview(user.id);
+  const { pendingVotes, tasks } = await getHogeraadOverview(user.id, ctx.ring.id);
   return (
     <div className="space-y-6 py-4">
       <h1 className="text-xl font-semibold">Welkom, {user.name}</h1>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-[var(--text-muted)]">Jouw openstaande stemverzoeken</h2>
+        <h2 className="mb-2 text-sm font-semibold text-[var(--text-muted)]">Jouw openstaande ondersteuningsverzoeken</h2>
         {pendingVotes.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)]">Je hebt geen openstaande stemverzoeken.</p>
+          <p className="text-sm text-[var(--text-muted)]">Je hebt geen openstaande ondersteuningsverzoeken.</p>
         ) : (
           <div className="space-y-2">
             {pendingVotes.map((c) => (
@@ -88,7 +95,7 @@ export default async function DashboardPage() {
                   <div className="font-medium">{c.personName}</div>
                   <div className="text-sm text-[var(--text-muted)]">{c.functionTitle}</div>
                 </div>
-                <span className="badge badge-pending">Stem uitbrengen</span>
+                <span className="badge badge-pending">Ondersteuning uitbrengen</span>
               </a>
             ))}
           </div>

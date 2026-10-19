@@ -71,7 +71,7 @@ export function magicLinkEmail(name: string, link: string) {
   };
 }
 
-export function voteInviteEmail(opts: {
+export function supportInviteEmail(opts: {
   name: string;
   personName: string;
   functionTitle: string;
@@ -79,12 +79,12 @@ export function voteInviteEmail(opts: {
   isReinvite?: boolean;
 }) {
   const intro = opts.isReinvite
-    ? "Je wordt opnieuw gevraagd om je stem over het volgende voorstel kenbaar te maken:"
+    ? "Je wordt opnieuw gevraagd om je ondersteuning voor het volgende voorstel kenbaar te maken:"
     : "Er is een nieuw voorstel waarvoor jouw steun wordt gevraagd:";
   return {
     subject: opts.isReinvite
-      ? "Ringtools – opnieuw gevraagd om te stemmen"
-      : "Ringtools – nieuw voorstel ter ondersteuning",
+      ? "Ringtools – opnieuw ondersteuning gevraagd"
+      : "Ringtools – ondersteuning gevraagd voor een nieuw voorstel",
     text: [
       `Beste ${opts.name},`,
       "",
@@ -93,7 +93,7 @@ export function voteInviteEmail(opts: {
       `Naam: ${opts.personName}`,
       `Roeping: ${opts.functionTitle}`,
       "",
-      "Open de onderstaande persoonlijke link om je stem uit te brengen:",
+      "Open de onderstaande persoonlijke link om je ondersteuning uit te brengen:",
       opts.link,
       "",
       "Deze link is persoonlijk en 15 minuten geldig nadat je hem opent; je kunt altijd een nieuwe aanvragen via de inlogpagina.",
@@ -127,6 +127,25 @@ export function reminder30Email(opts: { name: string; personName: string; functi
       "",
       "Bekijk de roeping in Ringtools:",
       opts.link,
+    ].join("\n"),
+  };
+}
+
+export function supportReminderEmail(opts: { name: string; personName: string; functionTitle: string; link: string }) {
+  return {
+    subject: "Ringtools – herinnering: ondersteuning gevraagd",
+    text: [
+      `Beste ${opts.name},`,
+      "",
+      "Dit is een herinnering: er staat nog een ondersteuningsverzoek voor je open voor het volgende voorstel:",
+      "",
+      `Naam: ${opts.personName}`,
+      `Roeping: ${opts.functionTitle}`,
+      "",
+      "Open de onderstaande persoonlijke link om je ondersteuning uit te brengen:",
+      opts.link,
+      "",
+      "Deze link is persoonlijk en 15 minuten geldig nadat je hem opent; je kunt altijd een nieuwe aanvragen via de inlogpagina.",
     ].join("\n"),
   };
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireRole } from "@/lib/session";
+import { requireRingRole } from "@/lib/ringContext";
+import { STAFF_ROLES } from "@/lib/rbac";
 import { listCallings, type CallingFilter } from "@/lib/queries";
 import { phaseLabel } from "@/lib/status";
 import { formatDate } from "@/lib/format";
@@ -16,12 +17,12 @@ const FILTERS: { key: CallingFilter; label: string }[] = [
   { key: "verwerken", label: "Te verwerken" },
 ];
 
-export default async function RoepingenPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
-  await requireRole(["RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR"]);
-  const { filter: filterRaw } = await searchParams;
+export default async function RoepingenPage({ searchParams }: { searchParams: Promise<{ filter?: string; melding?: string }> }) {
+  const ctx = await requireRingRole(STAFF_ROLES);
+  const { filter: filterRaw, melding } = await searchParams;
   const filter = (FILTERS.some((f) => f.key === filterRaw) ? filterRaw : "alle") as CallingFilter;
 
-  const callings = await listCallings(filter);
+  const callings = await listCallings(ctx.ring.id, filter);
 
   return (
     <div className="space-y-4 py-4">
@@ -31,6 +32,12 @@ export default async function RoepingenPage({ searchParams }: { searchParams: Pr
           + Nieuwe roeping
         </Link>
       </div>
+
+      {melding === "verwijderd" && (
+        <p role="status" className="glass-panel text-sm">
+          Het voorstel is definitief verwijderd.
+        </p>
+      )}
 
       <div className="flex gap-2 overflow-x-auto pb-1">
         {FILTERS.map((f) => (

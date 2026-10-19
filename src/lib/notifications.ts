@@ -8,7 +8,7 @@ export type NotificationEvent = NotificationType;
 /**
  * Generieke, niet-vertrouwelijke tekst per workflow-gebeurtenis. Wordt
  * gebruikt voor zowel het interne notificatiecentrum als pushmeldingen.
- * Bevat bewust NOOIT namen, functies, stemresultaten of andere
+ * Bevat bewust NOOIT namen, functies, ondersteuningsresultaten of andere
  * persoonsgegevens: beide kunnen zichtbaar zijn op een vergrendeld scherm of
  * in een overzicht waar dat niet gewenst is. De e-mail (apart per aanroeper
  * opgebouwd via `buildEmail`) mag wél gedetailleerde inhoud bevatten, omdat
@@ -17,15 +17,15 @@ export type NotificationEvent = NotificationType;
 const TEMPLATES: Record<NotificationEvent, { title: string; message: string }> = {
   NEW_PROPOSAL: {
     title: "Nieuw voorstel",
-    message: "Er staat een nieuw voorstel klaar waarvoor jouw stem wordt gevraagd.",
+    message: "Er staat een nieuw voorstel klaar waarvoor jouw ondersteuning wordt gevraagd.",
   },
   ADVANCED_TO_HOGERAAD: {
     title: "Voorstel naar hoge raad",
-    message: "Er staat een voorstel klaar waarvoor jouw stem wordt gevraagd.",
+    message: "Er staat een voorstel klaar waarvoor jouw ondersteuning wordt gevraagd.",
   },
   REINVITE: {
-    title: "Opnieuw stemmen gevraagd",
-    message: "Je wordt opnieuw gevraagd om je stem kenbaar te maken.",
+    title: "Opnieuw ondersteuning gevraagd",
+    message: "Je wordt opnieuw gevraagd om je ondersteuning kenbaar te maken.",
   },
   PAUSED: {
     title: "Voorstel gepauzeerd",
@@ -38,6 +38,10 @@ const TEMPLATES: Record<NotificationEvent, { title: string; message: string }> =
   TASK_COMPLETED: {
     title: "Taak afgerond",
     message: "Een toegewezen taak is afgerond.",
+  },
+  SUPPORT_REMINDER: {
+    title: "Herinnering ondersteuningsverzoek",
+    message: "Er staat nog een ondersteuningsverzoek voor je open.",
   },
   REMINDER_30_DAYS: {
     title: "Nog te verwerken",
@@ -61,17 +65,22 @@ export type EmailBuilder = (user: User) => { subject: string; text: string } | P
  */
 export async function notify(params: {
   userIds: string[];
+  /** De ring waartoe deze melding behoort; ontvangers moeten er actief lid van zijn. */
+  ringId: string;
   event: NotificationEvent;
   url: string;
   callingId?: string;
   buildEmail?: EmailBuilder;
 }): Promise<void> {
-  const { userIds, event, url, callingId, buildEmail } = params;
+  const { userIds, ringId, event, url, callingId, buildEmail } = params;
   if (userIds.length === 0) return;
 
-  // Nooit naar gedeactiveerde gebruikers (ook niet intern): zij mogen geen
-  // meldingen meer ontvangen zodra hun account is gedeactiveerd.
-  const users = await prisma.user.findMany({ where: { id: { in: userIds }, active: true } });
+  // Nooit naar gedeactiveerde gebruikers (ook niet intern) en nooit naar
+  // personen die geen actief lid van deze ring (meer) zijn: meldingen van
+  // verschillende ringen mogen nooit door elkaar lopen.
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds }, active: true, memberships: { some: { ringId, active: true } } },
+  });
   if (users.length === 0) return;
 
   const template = TEMPLATES[event];
@@ -80,6 +89,7 @@ export async function notify(params: {
   await prisma.notification.createMany({
     data: users.map((u) => ({
       userId: u.id,
+      ringId,
       type: event,
       title: template.title,
       message: template.message,

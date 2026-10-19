@@ -45,6 +45,7 @@ enum NotificationType {
   TASK_ASSIGNED
   TASK_COMPLETED
   REMINDER_30_DAYS
+  SUPPORT_REMINDER
 }
 
 model User {
@@ -69,6 +70,7 @@ model User {
   webauthnChallenge   WebAuthnChallenge?
   recoveryCodes       RecoveryCode[]
   securityEvents      SecurityEvent[]
+  memberships         RingMembership[]
 
   createdCallings       Calling[]       @relation("CallingCreatedBy")
   eligibleVotes         EligibleVoter[]
@@ -215,6 +217,9 @@ model Calling {
   functionTitle String
   status        CallingStatus @default(PRESIDIUM_VOTING)
 
+  ringId String
+  ring   Ring   @relation(fields: [ringId], references: [id])
+
   createdById String
   createdBy   User     @relation("CallingCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
@@ -253,6 +258,7 @@ model Calling {
   votes          Vote[]
   notifications  Notification[]
 
+  @@index([ringId, status])
   @@index([status])
   @@index([processedAt])
   @@index([createdAt])
@@ -262,13 +268,16 @@ model Calling {
 // stemfase startte, zodat latere wijzigingen in gebruikersbeheer een
 // lopende stemming niet kunnen beinvloeden.
 model EligibleVoter {
-  id        String    @id @default(cuid())
-  callingId String
-  calling   Calling   @relation(fields: [callingId], references: [id], onDelete: Cascade)
-  stage     VoteStage
-  userId    String
-  user      User      @relation(fields: [userId], references: [id])
-  createdAt DateTime  @default(now())
+  id            String    @id @default(cuid())
+  callingId     String
+  calling       Calling   @relation(fields: [callingId], references: [id], onDelete: Cascade)
+  stage         VoteStage
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  createdAt     DateTime  @default(now())
+  // Laatste keer dat deze persoon een uitnodiging of herinnering voor deze
+  // ondersteuningsronde kreeg (basis voor de verzendbeperking).
+  lastInvitedAt DateTime?
 
   @@unique([callingId, stage, userId])
   @@index([callingId, stage])
@@ -326,6 +335,8 @@ model Notification {
   id        String           @id @default(cuid())
   userId    String
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ringId    String
+  ring      Ring             @relation(fields: [ringId], references: [id], onDelete: Cascade)
   type      NotificationType
   title     String
   message   String
@@ -337,7 +348,41 @@ model Notification {
   readAt    DateTime?
   createdAt DateTime         @default(now())
 
-  @@index([userId, readAt])
+  @@index([userId, ringId, readAt])
   @@index([userId, createdAt])
   @@index([callingId])
+}
+
+// Een ring is de tenant-grens: voorstellen, ondersteuningsrondes, taken en
+// meldingen horen altijd bij precies één ring.
+model Ring {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships   RingMembership[]
+  callings      Calling[]
+  notifications Notification[]
+}
+
+// Lidmaatschap van een gebruiker in een ring. `role` is de workflowrol binnen
+// Ringtools (nooit ADMIN); `churchFunction` is de kerkelijke functie (vrije
+// tekst) en heeft geen invloed op rechten; `isRingManager` geeft de
+// administratieve bevoegdheid voor gebruikersbeheer in deze ring.
+model RingMembership {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ringId         String
+  ring           Ring     @relation(fields: [ringId], references: [id], onDelete: Cascade)
+  role           Role
+  churchFunction String   @default("")
+  isRingManager  Boolean  @default(false)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, ringId])
+  @@index([ringId, active, role])
 }

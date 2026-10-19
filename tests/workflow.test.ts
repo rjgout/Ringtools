@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { resetDatabase, createTestUser } from "./setup";
+import { resetDatabase, createTestUser, createCalling } from "./setup";
 import {
-  createCalling,
   castVote,
   reinviteVoter,
   assignTask,
@@ -77,7 +76,7 @@ describe("Presidiumstemming", () => {
     let updated = await castVote({ callingId: calling.id, userId: presidium2.id, support: false });
     expect(updated.status).toBe("PRESIDIUM_PAUSED");
 
-    await expect(reinviteVoter({ callingId: calling.id, userId: presidium2.id })).resolves.not.toThrow();
+    await expect(reinviteVoter({ callingId: calling.id, userId: presidium2.id, actorId: presidium1.id })).resolves.not.toThrow();
 
     // De persoon past zijn eigen stem aan (niet automatisch).
     updated = await castVote({ callingId: calling.id, userId: presidium2.id, support: true });
@@ -91,7 +90,7 @@ describe("Presidiumstemming", () => {
     const presidium1 = await createTestUser("RINGPRESIDIUM", "President Een");
     const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium1.id });
 
-    await expect(reinviteVoter({ callingId: calling.id, userId: presidium1.id })).rejects.toThrow(WorkflowError);
+    await expect(reinviteVoter({ callingId: calling.id, userId: presidium1.id, actorId: presidium1.id })).rejects.toThrow(WorkflowError);
   });
 
   it("een niet-stemgerechtigde kan niet stemmen", async () => {

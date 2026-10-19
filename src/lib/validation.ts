@@ -10,18 +10,40 @@ export const createCallingSchema = z.object({
   aanstellenAssigneeId: z.string().optional().nullable(),
 });
 
-export const createUserSchema = z.object({
-  name: z.string().trim().min(2, "Vul een naam in.").max(200),
-  email: emailSchema,
-  role: z.enum(["RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR", "HOGERAAD"]),
+const membershipRoleSchema = z.enum(["RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR", "HOGERAAD"], {
+  message: "Kies een rol binnen Ringtools.",
+});
+const churchFunctionSchema = z.string().trim().min(2, "Vul de kerkelijke functie in.").max(200);
+
+export const ringNameSchema = z.string().trim().min(2, "Vul de naam van de ring in.").max(120);
+
+export const addMemberSchema = z.object({
+  ringId: z.string().min(1),
+  existingUserId: z.string().optional(),
+  name: z.string().trim().max(200).optional(),
+  email: z.string().trim().optional(),
+  churchFunction: churchFunctionSchema,
+  role: membershipRoleSchema,
+  isRingManager: z.boolean(),
 });
 
-export const updateUserSchema = z.object({
-  id: z.string(),
-  name: z.string().trim().min(2).max(200),
-  email: emailSchema,
-  role: z.enum(["RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR", "HOGERAAD"]),
+export const updateMemberSchema = z.object({
+  membershipId: z.string().min(1),
+  name: z.string().trim().min(2).max(200).optional(),
+  email: emailSchema.optional(),
+  churchFunction: churchFunctionSchema,
+  role: membershipRoleSchema,
+  isRingManager: z.boolean(),
   active: z.boolean(),
+});
+
+export const createRingSchema = z.object({
+  name: ringNameSchema,
+  existingUserId: z.string().optional(),
+  userName: z.string().trim().max(200).optional(),
+  userEmail: z.string().trim().optional(),
+  churchFunction: churchFunctionSchema,
+  role: membershipRoleSchema,
 });
 
 export const smtpSettingsSchema = z.object({

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as OTPAuth from "otpauth";
 import { prisma } from "@/lib/prisma";
-import { resetDatabase, createTestUser } from "./setup";
+import { resetDatabase, createTestUser, createCalling } from "./setup";
 
 const generateRegistrationOptions = vi.fn();
 const verifyRegistrationResponse = vi.fn();
@@ -39,7 +39,7 @@ const {
   destroySessionById,
   listSessionsForUser,
 } = await import("@/lib/auth");
-const { createCalling, castVote } = await import("@/lib/workflow");
+const { castVote } = await import("@/lib/workflow");
 
 function currentCodeFor(secretBase32: string): string {
   const totp = new OTPAuth.TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: OTPAuth.Secret.fromBase32(secretBase32) });

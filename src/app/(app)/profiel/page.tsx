@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/session";
+import { listActiveMemberships } from "@/lib/rings";
 import { prisma } from "@/lib/prisma";
 import { getPublicVapidKey } from "@/lib/push";
 import { ROLE_LABELS } from "@/lib/format";
@@ -9,6 +10,7 @@ import { DeviceList } from "./DeviceList";
 
 export default async function ProfielPage() {
   const user = await requireUser();
+  const memberships = user.role === "ADMIN" ? [] : await listActiveMemberships(user.id);
   const subscriptions = await prisma.pushSubscription.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
@@ -20,8 +22,20 @@ export default async function ProfielPage() {
       <div>
         <h1 className="text-xl font-semibold">Profiel</h1>
         <p className="text-sm text-[var(--text-muted)]">
-          {user.name} · {ROLE_LABELS[user.role]}
+          {user.name}
+          {user.role === "ADMIN" ? ` · ${ROLE_LABELS.ADMIN}` : ""}
         </p>
+        {memberships.length > 0 && (
+          <ul className="mt-1 space-y-0.5 text-sm text-[var(--text-muted)]">
+            {memberships.map((m) => (
+              <li key={m.id}>
+                {m.ring.name} · {ROLE_LABELS[m.role]}
+                {m.churchFunction ? ` (${m.churchFunction})` : ""}
+                {m.isRingManager ? " · ringbeheerder" : ""}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <a href="/profiel/beveiliging" className="glass-card flex items-center justify-between gap-3">

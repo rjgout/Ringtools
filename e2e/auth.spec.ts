@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { loginAsAdmin } from "./helpers/mfa";
+import { loginAsAdmin, loginWithMagicLink } from "./helpers/mfa";
+import { createMagicLinkToken } from "../src/lib/auth";
+import { createE2eUser } from "./helpers/data";
 
 test("niet-ingelogde gebruiker wordt naar de inlogpagina gestuurd", async ({ page }) => {
   await page.goto("/dashboard");
@@ -29,24 +31,15 @@ test("fout wachtwoord wordt geweigerd", async ({ page }) => {
   await expect(page).toHaveURL(/\/login/);
 });
 
-test("admin kan een nieuwe gebruiker aanmaken via gebruikersbeheer", async ({ page }) => {
-  await loginAsAdmin(page, "webmin", "e2e-test-wachtwoord-123");
-
-  const uniqueEmail = `test.presidiumlid.${Date.now()}@e2e.ringapeldoorn.nl`;
-
-  await page.goto("/gebruikers");
-  const createForm = page.locator('form[data-testid="create-user-form"]');
-  await createForm.locator('input[name="name"]').fill("Test Presidiumlid");
-  await createForm.locator('input[name="email"]').fill(uniqueEmail);
-  await createForm.locator('select[name="role"]').selectOption("RINGPRESIDIUM");
-  await createForm.locator('button[type="submit"]').click();
-
-  await expect(page.getByText("is aangemaakt.")).toBeVisible();
-  await expect(page.getByText(uniqueEmail)).toBeVisible();
-});
+// Gebruikers- en ringbeheer door de webmin wordt gedekt in e2e/rings.spec.ts
+// (ring aanmaken met eerste ringbeheerder), om de rate-limit op
+// admin-inlogpogingen niet onnodig te belasten.
 
 test("uitloggen werkt en blokkeert daarna weer toegang", async ({ page }) => {
-  await loginAsAdmin(page, "webmin", "e2e-test-wachtwoord-123");
+  const { user } = await createE2eUser("HOGERAAD", `Uitlogger ${Date.now()}`);
+  const { rawToken } = await createMagicLinkToken(user.id);
+  await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
+  await expect(page).toHaveURL(/\/dashboard/);
 
   await page.getByRole("button", { name: "Uitloggen" }).click();
   await expect(page).toHaveURL(/\/login/);

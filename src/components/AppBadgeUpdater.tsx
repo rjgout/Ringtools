@@ -29,7 +29,7 @@ export function AppBadgeUpdater() {
       cancelled = true;
     };
     // Opnieuw bijwerken bij iedere paginawisseling binnen de app, zodat het
-    // badge-aantal actueel blijft nadat een stem is uitgebracht of een taak
+    // badge-aantal actueel blijft nadat ondersteuning is uitgebracht of een taak
     // is afgerond.
   }, [pathname]);
 

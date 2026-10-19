@@ -2,20 +2,14 @@ import { test, expect } from "@playwright/test";
 import { prisma } from "../src/lib/prisma";
 import { createMagicLinkToken } from "../src/lib/auth";
 import { loginWithMagicLink } from "./helpers/mfa";
+import { createE2eUser } from "./helpers/data";
 
 async function loginAsFreshUser(page: import("@playwright/test").Page, name: string) {
-  const user = await prisma.user.create({
-    data: {
-      name,
-      email: `${name.toLowerCase().replace(/\s+/g, ".")}.${Date.now()}@test.ringapeldoorn.nl`,
-      role: "HOGERAAD",
-      active: true,
-    },
-  });
+  const { user, ringId } = await createE2eUser("HOGERAAD", name);
   const { rawToken } = await createMagicLinkToken(user.id);
   await loginWithMagicLink(page, `/auth/magic/${rawToken}?redirect=${encodeURIComponent("/dashboard")}`);
   await expect(page).toHaveURL(/\/dashboard/);
-  return user;
+  return { ...user, ringId };
 }
 
 test("de notificatiebel toont een lege status als er geen meldingen zijn", async ({ page }) => {
@@ -39,6 +33,7 @@ test("de bel toont het juiste aantal ongelezen meldingen en werkt bij het openen
     data: {
       personName: "Testpersoon",
       functionTitle: "Testfunctie",
+      ringId: user.ringId,
       createdById: user.id,
       status: "APPROVED",
       roepenAssigneeId: user.id,
@@ -48,6 +43,7 @@ test("de bel toont het juiste aantal ongelezen meldingen en werkt bij het openen
     data: [
       {
         userId: user.id,
+        ringId: user.ringId,
         type: "TASK_ASSIGNED",
         title: "Nieuwe taak toegewezen",
         message: "Er is een taak aan je toegewezen.",
@@ -56,6 +52,7 @@ test("de bel toont het juiste aantal ongelezen meldingen en werkt bij het openen
       },
       {
         userId: user.id,
+        ringId: user.ringId,
         type: "TASK_COMPLETED",
         title: "Taak afgerond",
         message: "Een toegewezen taak is afgerond.",
@@ -84,8 +81,8 @@ test("alle meldingen als gelezen markeren werkt", async ({ page }) => {
   const user = await loginAsFreshUser(page, `AllesGelezen${Date.now()}`);
   await prisma.notification.createMany({
     data: [
-      { userId: user.id, type: "TASK_ASSIGNED", title: "A", message: "a", targetUrl: "/dashboard" },
-      { userId: user.id, type: "TASK_COMPLETED", title: "B", message: "b", targetUrl: "/dashboard" },
+      { userId: user.id, ringId: user.ringId, type: "TASK_ASSIGNED", title: "A", message: "a", targetUrl: "/dashboard" },
+      { userId: user.id, ringId: user.ringId, type: "TASK_COMPLETED", title: "B", message: "b", targetUrl: "/dashboard" },
     ],
   });
 
@@ -108,7 +105,7 @@ test.describe("Mobiele interface", () => {
   test("het meldingenpaneel is op mobiel bruikbaar als bottom sheet", async ({ page }) => {
     const user = await loginAsFreshUser(page, `Mobiel${Date.now()}`);
     await prisma.notification.create({
-      data: { userId: user.id, type: "TASK_ASSIGNED", title: "Mobiele melding", message: "test", targetUrl: "/dashboard" },
+      data: { userId: user.id, ringId: user.ringId, type: "TASK_ASSIGNED", title: "Mobiele melding", message: "test", targetUrl: "/dashboard" },
     });
 
     await page.reload();

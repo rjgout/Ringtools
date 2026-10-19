@@ -1,4 +1,4 @@
-import type { OndersteuningContext, User } from "@prisma/client";
+import type { OndersteuningContext, Role, User } from "@prisma/client";
 import { assignTaskAction, completeTaskAction } from "@/lib/actions/calling.actions";
 import { formatDate, ROLE_LABELS } from "@/lib/format";
 import type { TaskKey } from "@/lib/status";
@@ -13,6 +13,7 @@ export function TaskRow({
   task,
   label,
   assignee,
+  assigneeRole,
   doneBy,
   doneAt,
   ondersteunenContext,
@@ -25,13 +26,15 @@ export function TaskRow({
   task: TaskKey;
   label: string;
   assignee: User | null;
+  /** Rol van de verantwoordelijke binnen de ring van dit voorstel. */
+  assigneeRole?: Role | null;
   doneBy: User | null;
   doneAt: Date | null;
   ondersteunenContext?: OndersteuningContext | null;
   canApproved: boolean;
   canAssign: boolean;
   canComplete: boolean;
-  users: { id: string; name: string; role: User["role"] }[];
+  users: { id: string; name: string; role: Role }[];
 }) {
   return (
     <div className="glass-panel space-y-3">
@@ -51,7 +54,9 @@ export function TaskRow({
         </p>
       ) : (
         <p className="text-sm text-[var(--text-muted)]">
-          {assignee ? `Toegewezen aan ${assignee.name} (${ROLE_LABELS[assignee.role]}).` : "Nog niet toegewezen."}
+          {assignee
+            ? `Toegewezen aan ${assignee.name}${assigneeRole ? ` (${ROLE_LABELS[assigneeRole]})` : ""}.`
+            : "Nog niet toegewezen."}
         </p>
       )}
 

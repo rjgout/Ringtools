@@ -2,15 +2,15 @@
 
 import { useState } from "react";
 
-// Bevat bewust GEEN naam, functie of persoonlijke stemlink: dit bericht is
+// Bevat bewust GEEN naam, functie of persoonlijke link: dit bericht is
 // bedoeld om handmatig in een bestaande WhatsApp-groep te plakken, waar het
 // voor iedereen zichtbaar is.
 const MESSAGE = [
-  "📢 Ringtools – Nieuwe stemming",
+  "📢 Ringtools – Nieuwe ondersteuningsronde",
   "",
-  "Er is een nieuw voorstel waarvoor jullie steun wordt gevraagd.",
+  "Er is een nieuw voorstel waarvoor jullie ondersteuning wordt gevraagd.",
   "Je ontvangt hierover een persoonlijke e-mail van: noreply@ringapeldoorn.nl",
-  "Open de link in je e-mail om je stem uit te brengen.",
+  "Open de link in je e-mail om je ondersteuning uit te brengen.",
   "",
   "📩 Controleer je mailbox!",
 ].join("\n");

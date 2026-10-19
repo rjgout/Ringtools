@@ -20,13 +20,13 @@ export function isReadyToProcess(calling: Calling): boolean {
 export function phaseLabel(calling: Calling): string {
   switch (calling.status) {
     case "PRESIDIUM_VOTING":
-      return "Wacht op stemming ringpresidium";
+      return "Ondersteuningsronde ringpresidium";
     case "PRESIDIUM_PAUSED":
-      return "Gepauzeerd – tegenstem ringpresidium";
+      return "Gepauzeerd – ringpresidium ondersteunt niet";
     case "HOGERAAD_VOTING":
-      return "Wacht op stemming hoge raad";
+      return "Ondersteuningsronde hoge raad";
     case "HOGERAAD_PAUSED":
-      return "Gepauzeerd – tegenstem hoge raad";
+      return "Gepauzeerd – hoge raad ondersteunt niet";
     case "APPROVED":
       if (calling.processedAt) return "Verwerkt";
       if (isReadyToProcess(calling)) return "Te verwerken";

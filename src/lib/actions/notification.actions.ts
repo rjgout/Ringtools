@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { getRingContext } from "@/lib/ringContext";
 
 /**
  * Markeert één melding als gelezen. Controleert expliciet dat de melding van
@@ -17,10 +18,13 @@ export async function markNotificationReadAction(id: string): Promise<void> {
   });
 }
 
+/** Markeert alle meldingen van de actieve ring als gelezen (de lijst die de bel toont). */
 export async function markAllNotificationsReadAction(): Promise<void> {
   const user = await requireUser();
+  const ctx = await getRingContext();
+  if (!ctx) return;
   await prisma.notification.updateMany({
-    where: { userId: user.id, readAt: null },
+    where: { userId: user.id, ringId: ctx.ring.id, readAt: null },
     data: { readAt: new Date() },
   });
 }

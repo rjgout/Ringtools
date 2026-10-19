@@ -1,77 +1,74 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/session";
-import { canAssignRole } from "@/lib/rbac";
-import { createUserSchema, updateUserSchema } from "@/lib/validation";
-import { destroyAllSessionsForUser } from "@/lib/auth";
-
-const MANAGER_ROLES = ["ADMIN", "RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR"] as const;
+import { requireUser } from "@/lib/session";
+import { addMemberSchema, updateMemberSchema } from "@/lib/validation";
+import { addMember, updateMember, RingError, AuthorizationError } from "@/lib/rings";
 
 export type ActionResult = { ok: boolean; message: string };
 
-export async function createUserAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  await requireRole([...MANAGER_ROLES]);
+function optional(value: FormDataEntryValue | null): string | undefined {
+  const v = typeof value === "string" ? value.trim() : "";
+  return v === "" ? undefined : v;
+}
 
-  const parsed = createUserSchema.safeParse({
-    name: formData.get("name"),
-    email: formData.get("email"),
+function failure(err: unknown): ActionResult {
+  if (err instanceof RingError) return { ok: false, message: err.message };
+  if (err instanceof AuthorizationError) return { ok: false, message: "Je hebt geen bevoegdheid voor deze actie." };
+  throw err;
+}
+
+/** Voegt een gebruiker toe aan een ring. De bevoegdheid wordt in de lib server-side gecontroleerd (webmin of ringbeheerder van die ring). */
+export async function addMemberAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const actor = await requireUser();
+
+  const parsed = addMemberSchema.safeParse({
+    ringId: formData.get("ringId"),
+    existingUserId: optional(formData.get("existingUserId")),
+    name: optional(formData.get("name")),
+    email: optional(formData.get("email")),
+    churchFunction: formData.get("churchFunction"),
     role: formData.get("role"),
+    isRingManager: formData.get("isRingManager") === "on",
   });
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message || "Controleer de ingevulde gegevens." };
   }
-  if (!canAssignRole("RINGPRESIDIUM", parsed.data.role)) {
-    return { ok: false, message: "Deze rol kan niet via dit scherm worden toegekend." };
-  }
 
-  const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-  if (existing) {
-    return { ok: false, message: "Er bestaat al een gebruiker met dit e-mailadres." };
+  try {
+    const { user, joinedRounds } = await addMember({ actorId: actor.id, ...parsed.data });
+    revalidatePath("/gebruikers");
+    revalidatePath(`/ringen/${parsed.data.ringId}`);
+    const extra = joinedRounds > 0 ? ` Deze persoon is toegevoegd aan ${joinedRounds} lopende ondersteuningsronde(s).` : "";
+    return { ok: true, message: `${user.name} is toegevoegd aan de ring.${extra}` };
+  } catch (err) {
+    return failure(err);
   }
-
-  await prisma.user.create({ data: { ...parsed.data, active: true } });
-  revalidatePath("/gebruikers");
-  return { ok: true, message: `Gebruiker ${parsed.data.name} is aangemaakt.` };
 }
 
-export async function updateUserAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  await requireRole([...MANAGER_ROLES]);
+export async function updateMemberAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const actor = await requireUser();
 
-  const parsed = updateUserSchema.safeParse({
-    id: formData.get("id"),
-    name: formData.get("name"),
-    email: formData.get("email"),
+  const parsed = updateMemberSchema.safeParse({
+    membershipId: formData.get("membershipId"),
+    name: optional(formData.get("name")),
+    email: optional(formData.get("email")),
+    churchFunction: formData.get("churchFunction"),
     role: formData.get("role"),
+    isRingManager: formData.get("isRingManager") === "on",
     active: formData.get("active") === "on",
   });
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message || "Controleer de ingevulde gegevens." };
   }
 
-  const target = await prisma.user.findUnique({ where: { id: parsed.data.id } });
-  if (!target || target.role === "ADMIN") {
-    return { ok: false, message: "Dit account kan niet via dit scherm worden beheerd." };
+  try {
+    const { joinedRounds } = await updateMember({ actorId: actor.id, ...parsed.data });
+    revalidatePath("/gebruikers");
+    revalidatePath("/ringen", "layout");
+    const extra = joinedRounds > 0 ? ` Toegevoegd aan ${joinedRounds} lopende ondersteuningsronde(s).` : "";
+    return { ok: true, message: `Opgeslagen.${extra}` };
+  } catch (err) {
+    return failure(err);
   }
-  if (!canAssignRole("RINGPRESIDIUM", parsed.data.role)) {
-    return { ok: false, message: "Deze rol kan niet via dit scherm worden toegekend." };
-  }
-
-  const existing = await prisma.user.findFirst({ where: { email: parsed.data.email, NOT: { id: parsed.data.id } } });
-  if (existing) {
-    return { ok: false, message: "Er bestaat al een andere gebruiker met dit e-mailadres." };
-  }
-
-  await prisma.user.update({
-    where: { id: parsed.data.id },
-    data: { name: parsed.data.name, email: parsed.data.email, role: parsed.data.role, active: parsed.data.active },
-  });
-
-  if (!parsed.data.active) {
-    await destroyAllSessionsForUser(parsed.data.id);
-  }
-
-  revalidatePath("/gebruikers");
-  return { ok: true, message: "Gebruiker bijgewerkt." };
 }

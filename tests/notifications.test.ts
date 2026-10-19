@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { resetDatabase, createTestUser } from "./setup";
+import { resetDatabase, createTestUser, createCalling, getTestRing } from "./setup";
 
 const sendNotification = vi.fn();
 
@@ -12,7 +12,7 @@ vi.mock("web-push", () => ({
 }));
 
 const { notify } = await import("@/lib/notifications");
-const { createCalling, castVote, assignTask, completeTask, markProcessed, deleteDueProcessedCallings } = await import(
+const { castVote, assignTask, completeTask, markProcessed, deleteDueProcessedCallings } = await import(
   "@/lib/workflow"
 );
 
@@ -25,7 +25,7 @@ beforeEach(async () => {
 describe("Interne meldingen (notificatiecentrum)", () => {
   it("een nieuwe melding wordt opgeslagen voor de juiste gebruiker", async () => {
     const user = await createTestUser("HOGERAAD", "Hogeraadslid Een");
-    await notify({ userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" });
+    await notify({ ringId: (await getTestRing()).id, userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" });
 
     const rows = await prisma.notification.findMany({ where: { userId: user.id } });
     expect(rows).toHaveLength(1);
@@ -37,7 +37,7 @@ describe("Interne meldingen (notificatiecentrum)", () => {
   it("alleen de aangewezen gebruiker ontvangt de melding, niemand anders", async () => {
     const target = await createTestUser("HOGERAAD", "Doelgebruiker");
     const other = await createTestUser("HOGERAAD", "Andere Gebruiker");
-    await notify({ userIds: [target.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" });
+    await notify({ ringId: (await getTestRing()).id, userIds: [target.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" });
 
     expect(await prisma.notification.count({ where: { userId: target.id } })).toBe(1);
     expect(await prisma.notification.count({ where: { userId: other.id } })).toBe(0);
@@ -50,7 +50,7 @@ describe("Interne meldingen (notificatiecentrum)", () => {
     delete process.env.VAPID_SUBJECT;
 
     const user = await createTestUser("HOGERAAD", "Hogeraadslid Een");
-    await expect(notify({ userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" })).resolves.not.toThrow();
+    await expect(notify({ ringId: (await getTestRing()).id, userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" })).resolves.not.toThrow();
     expect(await prisma.notification.count({ where: { userId: user.id } })).toBe(1);
     expect(sendNotification).not.toHaveBeenCalled();
 
@@ -62,7 +62,7 @@ describe("Interne meldingen (notificatiecentrum)", () => {
     await prisma.user.update({ where: { id: user.id }, data: { emailNotificationsEnabled: false } });
 
     const buildEmail = vi.fn(() => ({ subject: "x", text: "y" }));
-    await notify({ userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/abc", buildEmail });
+    await notify({ ringId: (await getTestRing()).id, userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/abc", buildEmail });
 
     expect(await prisma.notification.count({ where: { userId: user.id } })).toBe(1);
     expect(buildEmail).not.toHaveBeenCalled();
@@ -71,7 +71,7 @@ describe("Interne meldingen (notificatiecentrum)", () => {
   it("nooit naar een gedeactiveerde gebruiker, ook niet intern", async () => {
     const user = await createTestUser("HOGERAAD", "Hogeraadslid Een");
     await prisma.user.update({ where: { id: user.id }, data: { active: false } });
-    await notify({ userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" });
+    await notify({ ringId: (await getTestRing()).id, userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" });
     expect(await prisma.notification.count({ where: { userId: user.id } })).toBe(0);
   });
 });
@@ -79,7 +79,7 @@ describe("Interne meldingen (notificatiecentrum)", () => {
 describe("Gelezen status", () => {
   it("een melding markeren als gelezen slaat de status op", async () => {
     const user = await createTestUser("HOGERAAD", "Hogeraadslid Een");
-    await notify({ userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" });
+    await notify({ ringId: (await getTestRing()).id, userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" });
     const row = await prisma.notification.findFirstOrThrow({ where: { userId: user.id } });
     expect(row.readAt).toBeNull();
 
@@ -90,8 +90,8 @@ describe("Gelezen status", () => {
 
   it("alle meldingen als gelezen markeren werkt voor de hele lijst", async () => {
     const user = await createTestUser("HOGERAAD", "Hogeraadslid Een");
-    await notify({ userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/a" });
-    await notify({ userIds: [user.id], event: "TASK_COMPLETED", url: "/roepingen/b" });
+    await notify({ ringId: (await getTestRing()).id, userIds: [user.id], event: "TASK_ASSIGNED", url: "/roepingen/a" });
+    await notify({ ringId: (await getTestRing()).id, userIds: [user.id], event: "TASK_COMPLETED", url: "/roepingen/b" });
     expect(await prisma.notification.count({ where: { userId: user.id, readAt: null } })).toBe(2);
 
     await prisma.notification.updateMany({ where: { userId: user.id, readAt: null }, data: { readAt: new Date() } });
@@ -101,7 +101,7 @@ describe("Gelezen status", () => {
   it("server-side autorisatie: een gebruiker kan nooit de melding van iemand anders als gelezen markeren", async () => {
     const owner = await createTestUser("HOGERAAD", "Eigenaar");
     const attacker = await createTestUser("HOGERAAD", "Aanvaller");
-    await notify({ userIds: [owner.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" });
+    await notify({ ringId: (await getTestRing()).id, userIds: [owner.id], event: "TASK_ASSIGNED", url: "/roepingen/abc" });
     const row = await prisma.notification.findFirstOrThrow({ where: { userId: owner.id } });
 
     // Simuleert exact de where-clause uit markNotificationReadAction: alleen

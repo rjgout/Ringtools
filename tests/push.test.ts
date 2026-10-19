@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { resetDatabase, createTestUser } from "./setup";
+import { resetDatabase, createTestUser, createCalling, getTestRing } from "./setup";
 
 const sendNotification = vi.fn();
 const setVapidDetails = vi.fn();
@@ -109,7 +109,7 @@ describe("Geen vertrouwelijke gegevens in pushmeldingen", () => {
       "REMINDER_30_DAYS",
     ] as const) {
       sendNotification.mockClear();
-      await notify({ userIds: [user.id], event, url: "/roepingen/abc123" });
+      await notify({ ringId: (await getTestRing()).id, userIds: [user.id], event, url: "/roepingen/abc123" });
       const body = JSON.parse(sendNotification.mock.calls[0][1] as string) as { title: string; body: string };
       for (const term of vertrouwelijkeTermen) {
         expect(body.title).not.toContain(term);
@@ -121,7 +121,6 @@ describe("Geen vertrouwelijke gegevens in pushmeldingen", () => {
 
 describe("Pushmeldingen in de workflow", () => {
   it("een nieuw voorstel stuurt een pushmelding naar het ringpresidium", async () => {
-    const { createCalling } = await import("@/lib/workflow");
     const presidium = await createTestUser("RINGPRESIDIUM", "President Een");
     await prisma.pushSubscription.create({
       data: { userId: presidium.id, endpoint: "https://push.example/p1", p256dh: "a", auth: "b" },
@@ -133,7 +132,7 @@ describe("Pushmeldingen in de workflow", () => {
   });
 
   it("een taaktoewijzing stuurt een pushmelding naar de toegewezene", async () => {
-    const { createCalling, assignTask } = await import("@/lib/workflow");
+    const { assignTask } = await import("@/lib/workflow");
     const presidium = await createTestUser("RINGPRESIDIUM", "President Een");
     const assignee = await createTestUser("RINGSECRETARIS", "Secretaris Een");
     await prisma.pushSubscription.create({
@@ -148,7 +147,7 @@ describe("Pushmeldingen in de workflow", () => {
   });
 
   it("een tegenstem stuurt eenmalig een pushmelding naar het ringpresidium (niet opnieuw bij elke volgende stem)", async () => {
-    const { createCalling, castVote } = await import("@/lib/workflow");
+    const { castVote } = await import("@/lib/workflow");
     const presidium1 = await createTestUser("RINGPRESIDIUM", "President Een");
     const presidium2 = await createTestUser("RINGPRESIDIUM", "President Twee");
     await prisma.pushSubscription.create({
