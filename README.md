@@ -13,6 +13,7 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 - [Installeren op de Synology NAS via Portainer](#installeren-op-de-synology-nas-via-portainer)
 - [PWA en Web Push](#pwa-en-web-push)
 - [Notificatiecentrum](#notificatiecentrum)
+- [Multifactorauthenticatie (MFA)](#multifactorauthenticatie-mfa)
 - [Bijwerken naar een nieuwe versie](#bijwerken-naar-een-nieuwe-versie)
 - [Back-up](#back-up)
 - [Tests](#tests)
@@ -25,6 +26,11 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 - **Inloggen**: reguliere gebruikers loggen in met een magic link per e-mail
   (geen wachtwoord, geen openbare registratiepagina). De systeembeheerder
   logt in met gebruikersnaam/wachtwoord.
+- **Multifactorauthenticatie (verplicht)**: een magic link of wachtwoord
+  geeft alleen de identiteit aan, nooit volledige toegang. Reguliere
+  gebruikers bevestigen daarna met een passkey (Face ID/Touch ID/Windows
+  Hello/schermpincode), de systeembeheerder met een TOTP-authenticator-app.
+  Zie [Multifactorauthenticatie (MFA)](#multifactorauthenticatie-mfa).
 - **Roepingen**: aanmaken (naam + functie), met optioneel direct of later toe
   te wijzen verantwoordelijken voor roepen/ondersteunen/aanstellen.
 - **Stemming ringpresidium → hoge raad**: automatische e-mailuitnodigingen,
@@ -66,7 +72,13 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 - Achtergrondtaken (herinneringen/opruiming) draaien in-process via
   `node-cron`, lezen hun werk telkens uit de database en overleven dus een
   herstart van de container zonder dubbele e-mails.
-- SMTP-wachtwoord versleuteld (AES-256-GCM) opgeslagen in de database.
+- SMTP-wachtwoord en TOTP-secrets versleuteld (AES-256-GCM, dezelfde sleutel)
+  opgeslagen in de database; herstelcodes en WebAuthn-publieke sleutels
+  volgens hun eigen aard (respectievelijk alleen gehasht, resp. nooit
+  geheim — zie [Multifactorauthenticatie (MFA)](#multifactorauthenticatie-mfa)).
+- WebAuthn/FIDO2 via `@simplewebauthn/server`/`@simplewebauthn/browser` voor
+  passkeys, TOTP via `otpauth` + `qrcode` — beide self-hosted, geen externe
+  identiteits- of MFA-dienst.
 - Web App Manifest (`src/app/manifest.ts`) + handgeschreven service worker
   (`public/sw.js`) voor PWA-installatie, auto-update en een offline-fallback.
 - Web Push via de `web-push`-library (VAPID), subscriptions in PostgreSQL
@@ -80,7 +92,7 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 | `APP_BASE_URL` | Ja | Basis-URL waarmee e-maillinks worden opgebouwd (bv. `https://ringapeldoorn.nl`). |
 | `BOOTSTRAP_ADMIN_USERNAME` | Nee (standaard `webmin`) | Gebruikersnaam van het admin-account, alleen gebruikt bij de allereerste start. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Ja (bij eerste start) | Wachtwoord van het admin-account bij aanmaak. Een later gewijzigd wachtwoord wordt bij herstart **nooit** overschreven. |
-| `SETTINGS_ENCRYPTION_KEY` | Ja | Lange, willekeurige sleutel voor het versleutelen van het SMTP-wachtwoord (bv. `openssl rand -hex 32`). Bewaar deze goed. |
+| `SETTINGS_ENCRYPTION_KEY` | Ja | Lange, willekeurige sleutel voor het versleutelen van het SMTP-wachtwoord én de TOTP-secrets van het adminaccount (bv. `openssl rand -hex 32`). Bewaar deze goed: zonder deze sleutel kunnen noch het SMTP-wachtwoord, noch TOTP opnieuw ontsleuteld worden. |
 | `COOKIE_SECURE` | Nee (standaard `true`) | Zet op `false` als je zonder HTTPS test. |
 | `PORT` | Nee (standaard `2809`) | Poort waarop de applicatie luistert. |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Nee | Nodig voor Web Push. Leeg laten schakelt pushnotificaties uit; de rest van de app blijft normaal werken. Genereren en bewaren: zie [PWA en Web Push](#pwa-en-web-push). |
@@ -308,6 +320,114 @@ indexen, nieuwe foreign key) en verwijdert of wijzigt geen bestaande kolommen
 of data — veilig toe te passen op een bestaande database zonder dataverlies.
 Er zijn geen nieuwe environment variables nodig voor deze functionaliteit.
 
+## Multifactorauthenticatie (MFA)
+
+Multifactorauthenticatie is **verplicht** voor elke gebruiker. Een magic
+link of het adminwachtwoord bevestigt alleen de identiteit; dat geeft op
+zichzelf **geen toegang** tot de applicatie. Pas na een geslaagde tweede
+factor krijgt de sessie toegang — dit geldt bij elke nieuwe login, ook voor
+bestaande gebruikers en ongeacht hoe de sessie wordt aangesproken (pagina,
+server action of API-route).
+
+### Hoe het werkt per rol
+
+- **Systeembeheerder (`webmin`)**: gebruikersnaam + wachtwoord, daarna
+  verplicht een 6-cijferige TOTP-code (30 seconden geldig) uit een
+  standaard authenticator-app (Google Authenticator, Microsoft
+  Authenticator, 1Password, enz.). Bij de eerste keer moet een QR-code
+  gescand worden; daarna krijgt de beheerder 8 eenmalige herstelcodes te
+  zien (precies één keer, bewaar ze veilig) voor als de authenticator-app
+  niet beschikbaar is.
+- **Reguliere gebruikers**: na het openen van de magic link volgt verplicht
+  een **passkey** (WebAuthn/FIDO2) — Face ID, Touch ID, Windows Hello of de
+  schermvergrendeling/pincode van het apparaat. De eerste keer wordt een
+  passkey geregistreerd; daarna wordt bij elke volgende login met dezelfde
+  passkey geverifieerd. Gebruikersverificatie (`userVerification: "required"`)
+  is verplicht: een passkey zonder biometrie/pincode-bevestiging door het
+  apparaat zelf wordt niet geaccepteerd. Reguliere gebruikers krijgen geen
+  wachtwoord.
+
+### Sessiemodel: geen toegang zonder afgeronde MFA
+
+Een `Session`-rij krijgt pas een `mfaAt`-tijdstip zodra de tweede factor
+geslaagd is; `getSessionUser()` in `src/lib/auth.ts` — de enige plek die
+voor de rest van de applicatie (elke pagina, server action en API-route via
+`requireUser`/`requireRole`/`getCurrentUser`) bepaalt of iemand toegang
+heeft — geeft zonder dat tijdstip altijd `null` terug. Een sessie die enkel
+de identiteit bevestigt (vlak na de magic link of het wachtwoord) is dus
+sowieso te allen tijde ontoereikend, hoe dan ook benaderd. Die "wacht op
+MFA"-sessie is bovendien maar 10 minuten geldig (in plaats van de normale 30
+dagen). Bij een geslaagde MFA-verificatie wordt het sessietoken altijd
+geroteerd (nieuwe databaserij, nieuw cookie) — zowel bij het inloggen als
+bij het later opnieuw verifiëren voor een gevoelige actie.
+
+### Beveiliging → gevoelige acties vereisen een recente verificatie
+
+**Profiel → Beveiliging** toont MFA-status, en laat toe:
+
+- (Systeembeheerder) TOTP opnieuw instellen en nieuwe herstelcodes genereren.
+- (Overige rollen) passkeys beheren — toevoegen en verwijderen. De
+  **laatste** passkey kan niet verwijderd worden (dat zou inloggen
+  onmogelijk maken); eerst een nieuwe registreren.
+- Actieve sessies bekijken en losse sessies beëindigen (de huidige sessie
+  uitgezonderd — gebruik daarvoor "Uitloggen").
+
+Elke wijziging hier vereist een **recente** (≤ 15 minuten) geslaagde
+MFA-verificatie op de huidige sessie; is die verlopen, dan wordt eerst om
+een nieuwe TOTP-code/passkeybevestiging gevraagd
+(`/profiel/beveiliging/herverifieer`) voordat de wijziging wordt uitgevoerd.
+
+### Admin-reset van de MFA van een gebruiker
+
+Een systeembeheerder kan via **Gebruikers** de MFA van een reguliere
+gebruiker resetten (vereist zelf een recente verificatie). Dit verwijdert
+direct alle passkeys en actieve sessies van die gebruiker en registreert
+wie de reset uitvoerde en wanneer (`SecurityEvent`, type
+`MFA_RESET_BY_ADMIN`). Bij de volgende magic link moet de gebruiker opnieuw
+een passkey registreren — er is geen enkele weg die na een reset toegang
+geeft zonder nieuwe MFA. **Controleer de identiteit van de gebruiker altijd
+buiten de applicatie** (telefonisch, persoonlijk) voordat je een reset
+uitvoert: dit scherm doet dat niet voor je.
+
+### Noodprocedure: de systeembeheerder is alle factoren kwijt
+
+Als zowel de TOTP-authenticator-app áls alle 8 herstelcodes verloren zijn,
+is er bewust **geen** knop in de applicatie en **geen** environment
+variable om dit te omzeilen. Herstel vereist directe, beveiligde toegang
+tot de server/database:
+
+```bash
+# Verbind met de Postgres-container en verwijder de TOTP-inschrijving van
+# het adminaccount. De beheerder kan dan weer met gebruikersnaam/wachtwoord
+# inloggen en wordt automatisch opnieuw door de TOTP-inschrijving geleid.
+psql "$DATABASE_URL" -c "
+  DELETE FROM \"TotpCredential\" WHERE \"userId\" = (SELECT id FROM \"User\" WHERE role = 'ADMIN');
+  DELETE FROM \"RecoveryCode\"   WHERE \"userId\" = (SELECT id FROM \"User\" WHERE role = 'ADMIN');
+"
+```
+
+Dit vereist toegang tot de Portainer-stack/NAS zelf — exact de bedoeling:
+een MFA-reset van de beheerder zelf mag nooit via de webapplicatie kunnen.
+
+### Beveiligingsmaatregelen (samengevat)
+
+- Alle controles zijn server-side (sessie, rol, eigenaarschap); de
+  frontend wordt nergens vertrouwd.
+- TOTP-codes zijn na gebruik niet opnieuw inzetbaar (replay-preventie op
+  basis van het laatst geaccepteerde tijdvak) en worden na 5 mislukte
+  pogingen 15 minuten vergrendeld (persistent, overleeft een herstart).
+- WebAuthn-challenges zijn eenmalig en kortlevend; registratie/login
+  controleren server-side de challenge, de origin en de RP ID — in
+  productie dus uitsluitend `APP_BASE_URL` (`https://ringapeldoorn.nl`).
+- Bij deactivering van een gebruiker (**Gebruikers**) worden alle sessies
+  direct ingetrokken, zoals al het geval was vóór deze uitbreiding.
+- Geen vertrouwelijke MFA-gegevens (secrets, codes) worden gelogd, en de
+  service worker cachet nooit `/mfa/*`- of `/api/webauthn/*`-responses
+  (dezelfde terughoudende allowlist als voor de rest van de app).
+- Pushnotificaties linken altijd naar een pagina die zelf opnieuw
+  autorisatie/MFA afdwingt; een pushmelding opent dus nooit meer toegang
+  dan een gewone navigatie.
+
 ## Bijwerken naar een nieuwe versie
 
 Push naar `main` → GitHub Actions bouwt en publiceert automatisch een nieuwe
@@ -353,12 +473,53 @@ PAUSED/TASK_COMPLETED, werken zonder Web Push, werken zonder
 e-mailmeldingen, de bestaande push/e-mailfunctionaliteit die intact blijft,
 de app-badge die onafhankelijk van de bel blijft werken, en het niet
 achterblijven van persoonsgegevens na het verwijderen van een verwerkte
-roeping. Laatste volledige validatieronde in deze ontwikkelomgeving: 54/54
-Vitest-tests, 14/14 Playwright-tests, `npx eslint .`, `npx tsc --noEmit`,
+roeping.
+
+Voor **multifactorauthenticatie** zijn alle 14 gevraagde testscenario's
+geautomatiseerd gedekt:
+
+- `tests/mfa.test.ts` (Vitest, tegen een echte PostgreSQL-database): geldige/
+  ongeldige/hergebruikte TOTP-codes, lockout na 5 pogingen, herstelcodes
+  (eenmalig, nieuwe set maakt oude ongeldig), passkeyregistratie/-login met
+  `userVerification: "required"` (de grens met `@simplewebauthn/server`
+  gemockt — net als `web-push` elders in de testsuite — zodat de eigen
+  opslag/foutafhandeling écht getest wordt, niet de cryptografie van de
+  library zelf), een onbekende of bij een andere gebruiker horende passkey
+  die altijd wordt afgewezen, een gesimuleerde tellerterugval (mogelijk
+  gekloond apparaat), de verplichte MFA-gate op sessieniveau (een sessie
+  direct na de magic link/het wachtwoord geeft nog geen toegang), sessie-
+  rotatie na promotie, en dat bestaande stem-/workflowlogica ongewijzigd
+  blijft werken.
+- `e2e/mfa.spec.ts` (Playwright, een echte browser): een ongeldige TOTP-code
+  wordt afgewezen, een magic link zonder passkey-stap geeft geen toegang,
+  passkeyregistratie én een latere passkeylogin (via een virtuele WebAuthn-
+  authenticator op het CDP-protocol, met echte user-verification-simulatie),
+  weigering wanneer de authenticator geen user verification kan garanderen,
+  herstelcode-login (eenmalig, een tweede poging wordt geweigerd), een
+  API-route die zonder afgeronde MFA 401 teruggeeft, een admin-reset van de
+  MFA van een gebruiker (met verplichte nieuwe passkeyregistratie daarna),
+  dat een niet-adminrol de resetknop niet eens ziet, en een mobiel viewport
+  voor het passkeyscherm. De bestaande `e2e/auth.spec.ts`, `voting.spec.ts`
+  en `notifications.spec.ts` zijn bijgewerkt zodat hun logins de nieuwe,
+  verplichte MFA-stap doorlopen (TOTP resp. passkey via dezelfde
+  CDP-authenticator).
+
+Laatste volledige validatieronde in deze ontwikkelomgeving: 74/74
+Vitest-tests, 23/23 Playwright-tests, `npx eslint .`, `npx tsc --noEmit`,
 `npx prisma validate` en een production build (`npm run build`) allemaal
 zonder fouten. Een daadwerkelijke Docker-build/-run op een fysieke Synology
-NAS kon in deze ontwikkelomgeving (geen Docker-daemon beschikbaar) niet
-worden uitgevoerd — zie het eindrapport voor de precieze afbakening.
+NAS, en een daadwerkelijke passkey-ceremonie op een fysiek iPhone/Android-
+toestel (Face ID/Touch ID/Windows Hello) konden in deze ontwikkelomgeving
+niet worden uitgevoerd — zie het eindrapport voor de precieze afbakening.
+
+> **Let op bij lokaal herhaald draaien van de Playwright-suite:** het
+> adminwachtwoord-login is (bewust, als beveiligingsmaatregel) beperkt tot
+> 10 pogingen per 15 minuten per gebruikersnaam (in-memory, per
+> containerinstantie). De suite zelf blijft daar ruim onder, maar meerdere
+> volledige testruns kort na elkaar tegen **dezelfde draaiende
+> containerinstantie** kunnen deze limiet gezamenlijk overschrijden — start
+> de applicatie dan opnieuw op (reset het in-memory geheugen) voordat je de
+> suite nogmaals draait.
 
 ## Bekende beperkingen
 
@@ -385,3 +546,14 @@ worden uitgevoerd — zie het eindrapport voor de precieze afbakening.
   bestanden (iconen, build-assets, de offline-pagina). Dat betekent ook dat
   de app zonder internetverbinding geen eerder bekeken roepingen/gegevens
   toont — alleen een duidelijke offline-melding.
+- Passkeys vereisen een apparaat/browser met WebAuthn-ondersteuning en een
+  platformauthenticator (Face ID, Touch ID, Windows Hello, een
+  schermpincode) of een externe security key. Oudere browsers/apparaten
+  zonder WebAuthn kunnen geen passkey registreren; de installatiehulp op de
+  passkeyschermen wijst hier expliciet op, maar er is geen alternatieve
+  (minder veilige) inlogmethode voor reguliere gebruikers.
+- Verliest de systeembeheerder zowel de TOTP-authenticator-app als alle 8
+  herstelcodes, dan is herstel uitsluitend mogelijk via directe toegang tot
+  de server/database (zie de noodprocedure in
+  [Multifactorauthenticatie (MFA)](#multifactorauthenticatie-mfa)) —
+  bewust geen in-app-noodtoegang.

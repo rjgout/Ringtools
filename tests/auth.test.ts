@@ -9,6 +9,8 @@ import {
   hashPassword,
   createSession,
   getSessionUser,
+  getSessionAwaitingMfa,
+  promoteSessionToMfaVerified,
   destroySession,
 } from "@/lib/auth";
 import { ensureAdminAccount } from "@/lib/bootstrap";
@@ -57,9 +59,15 @@ describe("Magic-link authenticatie", () => {
 });
 
 describe("Sessies", () => {
+  // createSession() maakt sinds de verplichte MFA-uitbreiding alleen een
+  // "wacht op MFA"-sessie aan (zie tests/mfa.test.ts voor die gate zelf);
+  // hier wordt eerst gepromoveerd naar een volledig ingelogde sessie, zoals
+  // na een geslaagde TOTP/passkey-verificatie.
   it("een sessie is geldig totdat deze wordt opgeruimd of de gebruiker gedeactiveerd wordt", async () => {
     const user = await createTestUser("RINGPRESIDIUM", "President Een");
-    const { rawToken } = await createSession(user.id);
+    const { rawToken: awaitingToken } = await createSession(user.id);
+    const awaiting = await getSessionAwaitingMfa(awaitingToken);
+    const { rawToken } = await promoteSessionToMfaVerified(awaiting!.sessionId, user.id);
 
     expect((await getSessionUser(rawToken))?.id).toBe(user.id);
 

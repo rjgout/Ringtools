@@ -3,6 +3,11 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30000,
+  // WebAuthn-ceremonies (passkeyregistratie/-login via de virtuele CDP-
+  // authenticator) en TOTP-verificatie doorlopen meerdere netwerk-
+  // rondjes; de standaard 5s bleek in deze (gedeelde, soms trage)
+  // ontwikkelomgeving af en toe net te kort, zonder dat er iets mis was.
+  expect: { timeout: 15000 },
   retries: 0,
   workers: 1,
   reporter: "list",

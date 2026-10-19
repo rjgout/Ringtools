@@ -48,78 +48,182 @@ enum NotificationType {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  role         Role
-  active       Boolean  @default(true)
-  passwordHash String? // alleen gevuld voor de systeemadministrator (webmin)
+  id                        String   @id @default(cuid())
+  name                      String
+  email                     String   @unique
+  role                      Role
+  active                    Boolean  @default(true)
+  passwordHash              String? // alleen gevuld voor de systeemadministrator (webmin)
   // E-mailmeldingen voor de workflow (stemuitnodigingen, taken, herinneringen)
   // zijn uit te zetten; de inlog-/magic-link-mail zelf blijft altijd werken.
-  emailNotificationsEnabled Boolean @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  emailNotificationsEnabled Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 
-  magicLinkTokens MagicLinkToken[]
-  sessions        Session[]
-  pushSubscriptions PushSubscription[]
-  notifications     Notification[]
+  magicLinkTokens     MagicLinkToken[]
+  sessions            Session[]
+  pushSubscriptions   PushSubscription[]
+  notifications       Notification[]
+  totpCredential      TotpCredential?
+  webauthnCredentials WebAuthnCredential[]
+  webauthnChallenge   WebAuthnChallenge?
+  recoveryCodes       RecoveryCode[]
+  securityEvents      SecurityEvent[]
 
-  createdCallings   Calling[]       @relation("CallingCreatedBy")
-  eligibleVotes     EligibleVoter[]
-  votes             Vote[]
-  roepenAssigned    Calling[]       @relation("RoepenAssignee")
-  roepenDone        Calling[]       @relation("RoepenDoneBy")
-  ondersteunenAssigned Calling[]    @relation("OndersteunenAssignee")
-  ondersteunenDone  Calling[]       @relation("OndersteunenDoneBy")
-  aanstellenAssigned Calling[]      @relation("AanstellenAssignee")
-  aanstellenDone    Calling[]       @relation("AanstellenDoneBy")
-  processedCallings Calling[]       @relation("ProcessedBy")
+  createdCallings       Calling[]       @relation("CallingCreatedBy")
+  eligibleVotes         EligibleVoter[]
+  votes                 Vote[]
+  roepenAssigned        Calling[]       @relation("RoepenAssignee")
+  roepenDone            Calling[]       @relation("RoepenDoneBy")
+  ondersteunenAssigned  Calling[]       @relation("OndersteunenAssignee")
+  ondersteunenDone      Calling[]       @relation("OndersteunenDoneBy")
+  aanstellenAssigned    Calling[]       @relation("AanstellenAssignee")
+  aanstellenDone        Calling[]       @relation("AanstellenDoneBy")
+  processedCallings     Calling[]       @relation("ProcessedBy")
   smtpSettingsUpdatedBy SmtpSettings[]
 
   @@index([role, active])
 }
 
 model MagicLinkToken {
-  id         String    @id @default(cuid())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  usedAt     DateTime?
-  createdAt  DateTime  @default(now())
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
   @@index([userId])
   @@index([expiresAt])
 }
 
+// Een sessie is pas volledig ingelogd zodra mfaAt gezet is. Direct na
+// identiteitscontrole (magic link/adminwachtwoord) wordt een sessie met
+// mfaAt=null aangemaakt ("wacht op MFA") met een korte levensduur; pas na
+// geslaagde TOTP/passkey-verificatie wordt het token geroteerd (nieuwe rij)
+// en krijgt de nieuwe sessie de volle levensduur + mfaAt=nu. getSessionUser()
+// in src/lib/auth.ts geeft uitsluitend een gebruiker terug als mfaAt gezet
+// is — dat is de enige plek die hele-applicatietoegang bepaalt, dus een
+// gedeeltelijk ingelogde gebruiker kan nergens in de app komen.
 model Session {
-  id         String   @id @default(cuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash  String   @unique
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  userAgent String?
+  mfaAt     DateTime?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+// TOTP-configuratie voor het adminaccount (webmin). Eén rij per gebruiker;
+// het secret wordt AES-256-GCM-versleuteld opgeslagen (zelfde sleutel als
+// het SMTP-wachtwoord, src/lib/crypto.ts). confirmedAt is null tijdens een
+// nog niet afgeronde inschrijving.
+model TotpCredential {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secretEncrypted String
+  confirmedAt     DateTime?
+  lastUsedCounter Int?
+  failedAttempts  Int       @default(0)
+  lockedUntil     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// Eén rij per geregistreerde passkey (WebAuthn/FIDO2). Een gebruiker kan
+// meerdere apparaten registreren (telefoon, laptop, enz.).
+model WebAuthnCredential {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      BigInt    @default(0)
+  deviceLabel  String?
+  transports   String?
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([userId])
+}
+
+// Transiënte WebAuthn-challenge tussen het opvragen van opties en de
+// verificatie van het antwoord. Eén actieve challenge per gebruiker; wordt
+// na gebruik (of verlopen) verwijderd.
+model WebAuthnChallenge {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+// Eenmalige herstelcodes, uitsluitend voor het adminaccount (TOTP). Alleen
+// de hash wordt opgeslagen; de ruwe codes worden één keer getoond bij het
+// (opnieuw) instellen van TOTP en daarna nergens bewaard.
+model RecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+enum SecurityEventType {
+  TOTP_ENROLLED
+  TOTP_RESET
+  TOTP_FAILED_ATTEMPT
+  TOTP_LOCKED
+  PASSKEY_REGISTERED
+  PASSKEY_REMOVED
+  PASSKEY_LOGIN_FAILED
+  RECOVERY_CODE_USED
+  RECOVERY_CODES_REGENERATED
+  MFA_RESET_BY_ADMIN
+  SESSION_REVOKED
+  MFA_VERIFIED
+}
+
+// Beveiligingslogboek: nooit geheimen (codes, secrets, herstelcodes) in
+// `detail`, uitsluitend korte, niet-vertrouwelijke omschrijvingen.
+model SecurityEvent {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actorUserId String?
+  type        SecurityEventType
+  detail      String?
+  createdAt   DateTime          @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model Calling {
-  id           String        @id @default(cuid())
-  personName   String
+  id            String        @id @default(cuid())
+  personName    String
   functionTitle String
-  status       CallingStatus @default(PRESIDIUM_VOTING)
+  status        CallingStatus @default(PRESIDIUM_VOTING)
 
-  createdById  String
-  createdBy    User          @relation("CallingCreatedBy", fields: [createdById], references: [id])
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  createdById String
+  createdBy   User     @relation("CallingCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  approvedAt   DateTime?
-  processedAt  DateTime?
+  approvedAt    DateTime?
+  processedAt   DateTime?
   processedById String?
-  processedBy  User?         @relation("ProcessedBy", fields: [processedById], references: [id])
+  processedBy   User?     @relation("ProcessedBy", fields: [processedById], references: [id])
 
   reminder30SentAt DateTime? // eenmalige herinnering 30 dagen na aanmaken
 
@@ -132,9 +236,9 @@ model Calling {
 
   // Taak: Ondersteunen
   ondersteunenAssigneeId String?
-  ondersteunenAssignee   User?     @relation("OndersteunenAssignee", fields: [ondersteunenAssigneeId], references: [id])
+  ondersteunenAssignee   User?                 @relation("OndersteunenAssignee", fields: [ondersteunenAssigneeId], references: [id])
   ondersteunenDoneById   String?
-  ondersteunenDoneBy     User?     @relation("OndersteunenDoneBy", fields: [ondersteunenDoneById], references: [id])
+  ondersteunenDoneBy     User?                 @relation("OndersteunenDoneBy", fields: [ondersteunenDoneById], references: [id])
   ondersteunenDoneAt     DateTime?
   ondersteunenContext    OndersteuningContext?
 
@@ -186,17 +290,17 @@ model Vote {
 }
 
 model SmtpSettings {
-  id                  Int      @id @default(1)
-  host                String?
-  port                Int      @default(587)
-  security            String   @default("STARTTLS") // NONE | TLS | STARTTLS
-  username            String?
-  encryptedPassword   String? // AES-256-GCM, versleuteld met SETTINGS_ENCRYPTION_KEY
-  fromAddress          String   @default("noreply@ringapeldoorn.nl")
-  fromName             String   @default("Ringtools")
-  updatedAt            DateTime @updatedAt
-  updatedById          String?
-  updatedBy            User?    @relation(fields: [updatedById], references: [id])
+  id                Int      @id @default(1)
+  host              String?
+  port              Int      @default(587)
+  security          String   @default("STARTTLS") // NONE | TLS | STARTTLS
+  username          String?
+  encryptedPassword String? // AES-256-GCM, versleuteld met SETTINGS_ENCRYPTION_KEY
+  fromAddress       String   @default("noreply@ringapeldoorn.nl")
+  fromName          String   @default("Ringtools")
+  updatedAt         DateTime @updatedAt
+  updatedById       String?
+  updatedBy         User?    @relation(fields: [updatedById], references: [id])
 }
 
 // Eén rij per geabonneerd apparaat/browser (Web Push). Eén gebruiker kan

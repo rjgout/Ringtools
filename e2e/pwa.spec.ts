@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { loginAsAdmin } from "./helpers/mfa";
 
 test("het Web App Manifest bevat de vereiste velden", async ({ page, request }) => {
   const response = await request.get("/manifest.webmanifest");
@@ -51,12 +52,7 @@ test("werkt zonder Push-ondersteuning in de browser", async ({ page }) => {
     delete window.PushManager;
   });
 
-  await page.goto("/login");
-  await page.getByRole("button", { name: "Beheerder" }).click();
-  await page.getByLabel("Gebruikersnaam").fill("webmin");
-  await page.getByLabel("Wachtwoord").fill("e2e-test-wachtwoord-123");
-  await page.getByRole("button", { name: "Inloggen", exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await loginAsAdmin(page, "webmin", "e2e-test-wachtwoord-123");
 
   await page.goto("/profiel");
   await expect(page.getByRole("heading", { name: "Pushnotificaties" })).toBeVisible();

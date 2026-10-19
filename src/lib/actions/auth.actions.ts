@@ -11,7 +11,7 @@ import {
   previewMagicLinkToken,
   consumeMagicLinkToken,
 } from "@/lib/auth";
-import { setSessionCookie, clearSessionCookie, getSessionCookieValue, safeInternalPath } from "@/lib/session";
+import { setSessionCookie, clearSessionCookie, getSessionCookieValue, safeInternalPath, getRequestUserAgent } from "@/lib/session";
 import { rateLimit } from "@/lib/rateLimit";
 import { emailSchema } from "@/lib/validation";
 import { sendMail, magicLinkEmail } from "@/lib/mailer";
@@ -75,9 +75,12 @@ export async function confirmMagicLinkAction(formData: FormData): Promise<void> 
     redirect("/login?error=link-ongeldig");
   }
 
-  const { rawToken } = await createSession(user.id);
-  await setSessionCookie(rawToken);
-  redirect(redirectTo);
+  // Een magic link bevestigt alleen de identiteit; dit geeft nog GEEN
+  // volledige toegang. De sessie staat tot aan een geslaagde
+  // passkeyverificatie op "wacht op MFA" (zie src/lib/auth.ts).
+  const { rawToken } = await createSession(user.id, await getRequestUserAgent());
+  await setSessionCookie(rawToken, true);
+  redirect(`/mfa/passkey?redirect=${encodeURIComponent(redirectTo)}`);
 }
 
 export async function adminLoginAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
@@ -98,9 +101,10 @@ export async function adminLoginAction(_prev: ActionResult | null, formData: For
     return { ok: false, message: "Onjuiste gebruikersnaam of wachtwoord." };
   }
 
-  const { rawToken } = await createSession(user.id);
-  await setSessionCookie(rawToken);
-  redirect("/dashboard");
+  // Wachtwoord is pas de eerste factor; TOTP is verplicht voor volledige toegang.
+  const { rawToken } = await createSession(user.id, await getRequestUserAgent());
+  await setSessionCookie(rawToken, true);
+  redirect("/mfa/totp");
 }
 
 export async function logoutAction(): Promise<void> {

@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { prisma } from "../src/lib/prisma";
 import { createMagicLinkToken } from "../src/lib/auth";
+import { loginWithMagicLink } from "./helpers/mfa";
 
 async function loginAsFreshUser(page: import("@playwright/test").Page, name: string) {
   const user = await prisma.user.create({
@@ -12,8 +13,7 @@ async function loginAsFreshUser(page: import("@playwright/test").Page, name: str
     },
   });
   const { rawToken } = await createMagicLinkToken(user.id);
-  await page.goto(`/auth/magic/${rawToken}?redirect=${encodeURIComponent("/dashboard")}`);
-  await page.getByRole("button", { name: "Inloggen" }).click();
+  await loginWithMagicLink(page, `/auth/magic/${rawToken}?redirect=${encodeURIComponent("/dashboard")}`);
   await expect(page).toHaveURL(/\/dashboard/);
   return user;
 }
@@ -94,7 +94,12 @@ test("alle meldingen als gelezen markeren werkt", async ({ page }) => {
   await page.getByRole("button", { name: "Alles als gelezen markeren" }).click();
 
   await expect(page.getByRole("button", { name: "Meldingen" })).toBeVisible();
-  expect(await prisma.notification.count({ where: { userId: user.id, readAt: null } })).toBe(0);
+  // De knop verdwijnt al bij de optimistische UI-update, vóórdat de
+  // server action is afgerond; poll daarom op de daadwerkelijke
+  // database-status in plaats van één keer meteen te checken.
+  await expect
+    .poll(async () => prisma.notification.count({ where: { userId: user.id, readAt: null } }))
+    .toBe(0);
 });
 
 test.describe("Mobiele interface", () => {

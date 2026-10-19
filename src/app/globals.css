@@ -213,6 +213,17 @@ body {
     @apply flex-1 overflow-y-auto;
   }
 
+  /* MFA: herstelcodes (eenmalig getoond) en het 6-cijferige TOTP-invoerveld. */
+  .recovery-codes {
+    @apply grid grid-cols-2 gap-2 rounded-2xl bg-black/5 p-4 font-mono text-sm dark:bg-white/5;
+  }
+
+  /* Samen met .input toe te passen (niet als vervanging): @apply input is
+     hier niet mogelijk omdat .input zelf geen @utility is in Tailwind v4. */
+  .otp-input {
+    @apply text-center text-2xl font-semibold tracking-[0.3em];
+  }
+
   .notif-item {
     @apply relative flex w-full items-start gap-3 border-b border-black/5 px-4 py-3 text-left transition
       hover:bg-black/[0.03] active:scale-[0.99] dark:border-white/5 dark:hover:bg-white/[0.04];

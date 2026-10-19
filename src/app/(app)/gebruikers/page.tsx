@@ -2,9 +2,10 @@ import { requireRole } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { ROLE_LABELS } from "@/lib/format";
 import { CreateUserForm, EditUserForm } from "./UserForm";
+import { ResetMfaButton } from "@/components/mfa/ResetMfaButton";
 
 export default async function GebruikersPage() {
-  await requireRole(["ADMIN", "RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR"]);
+  const currentUser = await requireRole(["ADMIN", "RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR"]);
 
   const users = await prisma.user.findMany({
     where: { role: { not: "ADMIN" } },
@@ -33,6 +34,7 @@ export default async function GebruikersPage() {
               <span className={`badge ${u.active ? "badge-success" : "badge-danger"}`}>{u.active ? "Actief" : "Gedeactiveerd"}</span>
             </summary>
             <EditUserForm user={u} />
+            {currentUser.role === "ADMIN" && <ResetMfaButton userId={u.id} userName={u.name} />}
           </details>
         ))}
         {users.length === 0 && <p className="text-sm text-[var(--text-muted)]">Nog geen gebruikers aangemaakt.</p>}

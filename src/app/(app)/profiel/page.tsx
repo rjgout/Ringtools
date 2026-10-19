@@ -24,6 +24,16 @@ export default async function ProfielPage() {
         </p>
       </div>
 
+      <a href="/profiel/beveiliging" className="glass-card flex items-center justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Beveiliging</h2>
+          <p className="text-sm text-[var(--text-muted)]">
+            {user.role === "ADMIN" ? "TOTP, herstelcodes en actieve sessies" : "Passkeys en actieve sessies"}
+          </p>
+        </div>
+        <span aria-hidden>→</span>
+      </a>
+
       <InstallPwaCard />
       <PushNotificationCard publicKey={getPublicVapidKey()} />
 

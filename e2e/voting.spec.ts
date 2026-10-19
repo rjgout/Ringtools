@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { prisma } from "../src/lib/prisma";
 import { createMagicLinkToken } from "../src/lib/auth";
 import { createCalling } from "../src/lib/workflow";
+import { loginWithMagicLink } from "./helpers/mfa";
 
 // Regression test: een ringpresidiumlid is zowel "staff" (ziet de volledige
 // uitslag) als stemgerechtigd. Eerder liet de detailpagina een staff-lid
@@ -34,8 +35,7 @@ test("een ringpresidiumlid kan via de detailpagina zelf zijn presidiumstem uitbr
 
   const { rawToken } = await createMagicLinkToken(president.id);
 
-  await page.goto(`/auth/magic/${rawToken}?redirect=${encodeURIComponent(`/roepingen/${calling.id}`)}`);
-  await page.getByRole("button", { name: "Inloggen" }).click();
+  await loginWithMagicLink(page, `/auth/magic/${rawToken}?redirect=${encodeURIComponent(`/roepingen/${calling.id}`)}`);
   await expect(page).toHaveURL(new RegExp(`/roepingen/${calling.id}`));
 
   // De volledige uitslag (staff-weergave) EN de eigen stemknoppen moeten

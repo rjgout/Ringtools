@@ -34,6 +34,17 @@ export const smtpSettingsSchema = z.object({
   fromName: z.string().trim().min(1).max(200),
 });
 
+export const totpCodeSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{6}$/, "Vul de 6-cijferige code uit je authenticator-app in.");
+
+export const recoveryCodeSchema = z
+  .string()
+  .trim()
+  .min(8, "Vul een geldige herstelcode in.")
+  .max(24, "Vul een geldige herstelcode in.");
+
 export const adminPasswordChangeSchema = z
   .object({
     currentPassword: z.string().min(1, "Vul je huidige wachtwoord in."),

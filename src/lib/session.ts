@@ -1,8 +1,18 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Role, User } from "@prisma/client";
-import { SESSION_COOKIE_NAME, SESSION_TTL_MS, getSessionUser } from "./auth";
+import {
+  SESSION_COOKIE_NAME,
+  SESSION_TTL_MS,
+  AWAITING_MFA_TTL_MS,
+  getSessionUser,
+  getSessionAwaitingMfa,
+  getActiveSession,
+  isRecentlyMfaVerified,
+  type AwaitingMfaSession,
+  type ActiveSession,
+} from "./auth";
 import { env } from "./env";
 
 export async function getCurrentUser(): Promise<User | null> {
@@ -11,14 +21,44 @@ export async function getCurrentUser(): Promise<User | null> {
   return getSessionUser(raw);
 }
 
-export async function setSessionCookie(rawToken: string): Promise<void> {
+/** Voor de /mfa/*-pagina's: wie is deze (nog niet volledig ingelogde) sessie? */
+export async function getAwaitingMfaUser(): Promise<AwaitingMfaSession | null> {
+  const store = await cookies();
+  const raw = store.get(SESSION_COOKIE_NAME)?.value;
+  return getSessionAwaitingMfa(raw);
+}
+
+/** Huidige volledig ingelogde sessie, inclusief sessie-id en `mfaAt`. */
+export async function getCurrentSession(): Promise<ActiveSession | null> {
+  const store = await cookies();
+  const raw = store.get(SESSION_COOKIE_NAME)?.value;
+  return getActiveSession(raw);
+}
+
+/** Vereist een recente (≤15 min) geslaagde MFA-verificatie op de huidige sessie. */
+export async function requireRecentMfa(reverifyPath: string): Promise<ActiveSession> {
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  if (!isRecentlyMfaVerified(session.mfaAt)) {
+    redirect(reverifyPath);
+  }
+  return session;
+}
+
+export async function getRequestUserAgent(): Promise<string | null> {
+  const store = await headers();
+  return store.get("user-agent");
+}
+
+/** `awaitingMfa` gebruikt de korte TTL, zodat de cookie niet langer leeft dan de sessie-rij in de database. */
+export async function setSessionCookie(rawToken: string, awaitingMfa = false): Promise<void> {
   const store = await cookies();
   store.set(SESSION_COOKIE_NAME, rawToken, {
     httpOnly: true,
     secure: env.cookieSecure,
     sameSite: "lax",
     path: "/",
-    maxAge: Math.floor(SESSION_TTL_MS / 1000),
+    maxAge: Math.floor((awaitingMfa ? AWAITING_MFA_TTL_MS : SESSION_TTL_MS) / 1000),
   });
 }
 
