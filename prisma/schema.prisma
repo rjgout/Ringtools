@@ -34,6 +34,19 @@ enum OndersteuningContext {
   RINGCONFERENTIE
 }
 
+// De 7 workflow-gebeurtenissen die zowel het notificatiecentrum, push als
+// e-mail (via dezelfde centrale notify()-functie in src/lib/notifications.ts)
+// voeden.
+enum NotificationType {
+  NEW_PROPOSAL
+  ADVANCED_TO_HOGERAAD
+  REINVITE
+  PAUSED
+  TASK_ASSIGNED
+  TASK_COMPLETED
+  REMINDER_30_DAYS
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -50,6 +63,7 @@ model User {
   magicLinkTokens MagicLinkToken[]
   sessions        Session[]
   pushSubscriptions PushSubscription[]
+  notifications     Notification[]
 
   createdCallings   Calling[]       @relation("CallingCreatedBy")
   eligibleVotes     EligibleVoter[]
@@ -133,6 +147,7 @@ model Calling {
 
   eligibleVoters EligibleVoter[]
   votes          Vote[]
+  notifications  Notification[]
 
   @@index([status])
   @@index([processedAt])
@@ -198,4 +213,27 @@ model PushSubscription {
   lastSeenAt DateTime @default(now())
 
   @@index([userId])
+}
+
+// Interne meldingen voor het notificatiecentrum (de bel rechtsboven). Wordt
+// altijd aangemaakt voor een relevante workflow-gebeurtenis, ongeacht of de
+// ontvanger push/e-mail heeft uitgeschakeld voor die gebeurtenis.
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  message   String
+  targetUrl String
+  // Bij verwijdering van de roeping (bv. 30 dagen na verwerking) worden de
+  // gekoppelde meldingen automatisch mee verwijderd.
+  callingId String?
+  calling   Calling?         @relation(fields: [callingId], references: [id], onDelete: Cascade)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@index([callingId])
 }

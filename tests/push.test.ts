@@ -18,7 +18,7 @@ process.env.VAPID_PRIVATE_KEY = "test-private-key";
 process.env.VAPID_SUBJECT = "mailto:test@ringapeldoorn.nl";
 
 const { sendPushToUser, sendPushToUsers, isPushConfigured } = await import("@/lib/push");
-const { pushNotify } = await import("@/lib/notifications");
+const { notify } = await import("@/lib/notifications");
 
 beforeEach(async () => {
   await resetDatabase();
@@ -109,7 +109,7 @@ describe("Geen vertrouwelijke gegevens in pushmeldingen", () => {
       "REMINDER_30_DAYS",
     ] as const) {
       sendNotification.mockClear();
-      await pushNotify([user.id], event, "/roepingen/abc123");
+      await notify({ userIds: [user.id], event, url: "/roepingen/abc123" });
       const body = JSON.parse(sendNotification.mock.calls[0][1] as string) as { title: string; body: string };
       for (const term of vertrouwelijkeTermen) {
         expect(body.title).not.toContain(term);

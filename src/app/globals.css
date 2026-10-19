@@ -180,4 +180,74 @@ body {
       padding-bottom: 1.5rem;
     }
   }
+
+  /* Notificatiecentrum: bottom sheet op mobiel, popover onder de bel op desktop. */
+  .notif-backdrop {
+    @apply fixed inset-0 z-40 bg-black/30 sm:bg-transparent;
+  }
+
+  .notif-panel {
+    @apply fixed inset-x-0 bottom-0 z-50 flex max-h-[80dvh] flex-col overflow-hidden rounded-t-3xl
+      sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-0 sm:top-[calc(100%+0.5rem)] sm:max-h-[70dvh] sm:w-[380px] sm:rounded-2xl;
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: notif-panel-in 160ms ease-out;
+  }
+  @media (min-width: 640px) {
+    .notif-panel {
+      padding-bottom: 0;
+    }
+  }
+
+  @keyframes notif-panel-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .notif-list {
+    @apply flex-1 overflow-y-auto;
+  }
+
+  .notif-item {
+    @apply relative flex w-full items-start gap-3 border-b border-black/5 px-4 py-3 text-left transition
+      hover:bg-black/[0.03] active:scale-[0.99] dark:border-white/5 dark:hover:bg-white/[0.04];
+  }
+
+  .notif-item--unread {
+    background: rgb(var(--surface) / 0.35);
+  }
+
+  .notif-item__icon {
+    @apply mt-0.5 text-lg leading-none;
+  }
+
+  .notif-item__body {
+    @apply flex min-w-0 flex-1 flex-col gap-0.5;
+  }
+
+  .notif-item__title {
+    @apply text-sm font-semibold;
+  }
+
+  .notif-item--unread .notif-item__title {
+    color: var(--primary);
+  }
+
+  .notif-item__message {
+    @apply text-sm text-[var(--text-muted)];
+  }
+
+  .notif-item__date {
+    @apply text-xs text-[var(--text-muted)];
+  }
+
+  .notif-item__dot {
+    @apply mt-1.5 h-2 w-2 flex-shrink-0 rounded-full;
+    background: var(--primary);
+  }
 }

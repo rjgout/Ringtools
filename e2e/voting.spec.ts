@@ -12,9 +12,10 @@ import { createCalling } from "../src/lib/workflow";
 test("een ringpresidiumlid kan via de detailpagina zelf zijn presidiumstem uitbrengen", async ({ page }) => {
   // Zorg dat deze test onafhankelijk is van wat andere (e2e-)runs al in de
   // database hebben achtergelaten: de stemgerechtigden-snapshot bevat anders
-  // ook oudere testgebruikers, waardoor de roeping nooit op "iedereen heeft
-  // gestemd" uitkomt.
+  // ook oudere testgebruikers (zowel ringpresidium als hoge raad), waardoor
+  // de roeping nooit op "iedereen heeft gestemd" uitkomt.
   await prisma.user.updateMany({ where: { role: "RINGPRESIDIUM" }, data: { active: false } });
+  await prisma.user.updateMany({ where: { role: "HOGERAAD" }, data: { active: false } });
 
   const president = await prisma.user.create({
     data: {

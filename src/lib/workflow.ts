@@ -1,88 +1,95 @@
-import type { Calling, OndersteuningContext, Prisma } from "@prisma/client";
+import type { Calling, OndersteuningContext, Prisma, User } from "@prisma/client";
 import { prisma } from "./prisma";
 import { env } from "./env";
 import { createMagicLinkToken } from "./auth";
-import { sendMail, voteInviteEmail, taskAssignedEmail, reminder30Email } from "./mailer";
+import { voteInviteEmail, taskAssignedEmail, reminder30Email } from "./mailer";
 import { allTasksDone, isReadyToProcess, phaseLabel, type TaskKey } from "./status";
-import { pushNotify, type PushEvent } from "./notifications";
+import { notify } from "./notifications";
 
 export class WorkflowError extends Error {}
 
+function callingPath(callingId: string): string {
+  return `/roepingen/${callingId}`;
+}
+
 function callingUrl(callingId: string): string {
-  return `${env.appBaseUrl}/callings/${callingId}`;
+  return `${env.appBaseUrl}${callingPath(callingId)}`;
 }
 
 async function buildMagicVoteLink(userId: string, callingId: string): Promise<string> {
   const { rawToken } = await createMagicLinkToken(userId);
-  const redirect = encodeURIComponent(`/callings/${callingId}`);
+  const redirect = encodeURIComponent(callingPath(callingId));
   return `${env.appBaseUrl}/auth/magic/${rawToken}?redirect=${redirect}`;
 }
 
 /**
  * Stuurt stemuitnodigingen naar (een deel van) de stemgerechtigden van een
- * fase: een gedetailleerde e-mail (met naam/functie, tenzij de gebruiker
- * e-mailmeldingen heeft uitgezet) en een generieke pushmelding. Fouten bij
- * verzending worden gelogd, niet gegooid: een mislukte melding mag nooit een
- * voorstel/stem laten verdwijnen.
+ * fase via het centrale notificatieproces: een interne melding, een
+ * generieke pushmelding, en (als de ontvanger dat aan heeft staan) een
+ * gedetailleerde e-mail met een persoonlijke magic-link.
  */
 async function notifyVoters(
   calling: Calling,
-  stage: "PRESIDIUM" | "HOGERAAD",
   userIds: string[],
-  opts: { isReinvite: boolean; pushEvent: PushEvent }
+  opts: { isReinvite: boolean; event: "NEW_PROPOSAL" | "ADVANCED_TO_HOGERAAD" | "REINVITE" }
 ) {
-  const users = await prisma.user.findMany({ where: { id: { in: userIds } } });
-  for (const user of users) {
-    if (!user.emailNotificationsEnabled) continue;
-    try {
+  await notify({
+    userIds,
+    event: opts.event,
+    url: callingPath(calling.id),
+    callingId: calling.id,
+    buildEmail: async (user: User) => {
       const link = await buildMagicVoteLink(user.id, calling.id);
-      const { subject, text } = voteInviteEmail({
+      return voteInviteEmail({
         name: user.name,
         personName: calling.personName,
         functionTitle: calling.functionTitle,
         link,
         isReinvite: opts.isReinvite,
       });
-      await sendMail({ to: user.email, subject, text });
-    } catch (err) {
-      console.error(`[workflow] Versturen stemuitnodiging naar ${user.email} mislukt:`, err);
-    }
-  }
-  await pushNotify(userIds, opts.pushEvent, `/roepingen/${calling.id}`);
+    },
+  });
 }
 
 export async function notifyTaskAssignee(callingId: string, task: TaskKey, assigneeId: string) {
-  const [calling, user] = await Promise.all([
-    prisma.calling.findUniqueOrThrow({ where: { id: callingId } }),
-    prisma.user.findUniqueOrThrow({ where: { id: assigneeId } }),
-  ]);
+  const calling = await prisma.calling.findUniqueOrThrow({ where: { id: callingId } });
   const label = TASK_LABELS[task];
-  if (user.emailNotificationsEnabled) {
-    try {
-      const { subject, text } = taskAssignedEmail({
+
+  await notify({
+    userIds: [assigneeId],
+    event: "TASK_ASSIGNED",
+    url: callingPath(calling.id),
+    callingId: calling.id,
+    buildEmail: (user) =>
+      taskAssignedEmail({
         name: user.name,
         taskLabel: label,
         personName: calling.personName,
         functionTitle: calling.functionTitle,
         link: callingUrl(calling.id),
-      });
-      await sendMail({ to: user.email, subject, text });
-    } catch (err) {
-      console.error(`[workflow] Versturen taakmelding naar ${user.email} mislukt:`, err);
-    }
-  }
-  await pushNotify([assigneeId], "TASK_ASSIGNED", `/roepingen/${calling.id}`);
+      }),
+  });
 }
 
-/** Informeert het ringpresidium (alleen via push, geen vertrouwelijke inhoud) dat een voorstel is gepauzeerd. */
+/** Informeert het ringpresidium (generieke tekst, geen vertrouwelijke inhoud) dat een voorstel is gepauzeerd. */
 async function notifyPaused(calling: Calling): Promise<void> {
   const presidiumUsers = await prisma.user.findMany({ where: { role: "RINGPRESIDIUM", active: true }, select: { id: true } });
-  await pushNotify(presidiumUsers.map((u) => u.id), "PAUSED", `/roepingen/${calling.id}`);
+  await notify({
+    userIds: presidiumUsers.map((u) => u.id),
+    event: "PAUSED",
+    url: callingPath(calling.id),
+    callingId: calling.id,
+  });
 }
 
-/** Informeert de aanmaker van de roeping (via push) dat een toegewezen taak is afgerond. */
+/** Informeert de aanmaker van de roeping dat een toegewezen taak is afgerond. */
 async function notifyTaskCompleted(calling: Calling): Promise<void> {
-  await pushNotify([calling.createdById], "TASK_COMPLETED", `/roepingen/${calling.id}`);
+  await notify({
+    userIds: [calling.createdById],
+    event: "TASK_COMPLETED",
+    url: callingPath(calling.id),
+    callingId: calling.id,
+  });
 }
 
 export const TASK_LABELS: Record<TaskKey, string> = {
@@ -127,9 +134,9 @@ export async function createCalling(input: {
     },
   });
 
-  await notifyVoters(calling, "PRESIDIUM", presidiumVoters.map((u) => u.id), {
+  await notifyVoters(calling, presidiumVoters.map((u) => u.id), {
     isReinvite: false,
-    pushEvent: "NEW_PROPOSAL",
+    event: "NEW_PROPOSAL",
   });
 
   for (const [task, assigneeId] of [
@@ -236,9 +243,9 @@ async function recomputeCallingState(callingId: string): Promise<Calling> {
     await notifyPaused(calling);
   }
   if (hogeraadVoterIds) {
-    await notifyVoters(calling, "HOGERAAD", hogeraadVoterIds, {
+    await notifyVoters(calling, hogeraadVoterIds, {
       isReinvite: false,
-      pushEvent: "ADVANCED_TO_HOGERAAD",
+      event: "ADVANCED_TO_HOGERAAD",
     });
   }
 
@@ -257,7 +264,7 @@ export async function reinviteVoter(input: { callingId: string; userId: string }
   if (!eligible) {
     throw new WorkflowError("Deze persoon is niet stemgerechtigd voor deze fase.");
   }
-  await notifyVoters(calling, stage, [input.userId], { isReinvite: true, pushEvent: "REINVITE" });
+  await notifyVoters(calling, [input.userId], { isReinvite: true, event: "REINVITE" });
 }
 
 export async function assignTask(input: { callingId: string; task: TaskKey; assigneeId: string | null }): Promise<Calling> {
@@ -338,24 +345,23 @@ export async function sendDue30DayReminders(): Promise<number> {
   if (due.length === 0) return 0;
 
   const presidiumUsers = await prisma.user.findMany({ where: { role: "RINGPRESIDIUM", active: true } });
+  const presidiumIds = presidiumUsers.map((u) => u.id);
 
   for (const calling of due) {
-    for (const user of presidiumUsers) {
-      if (!user.emailNotificationsEnabled) continue;
-      try {
-        const { subject, text } = reminder30Email({
+    await notify({
+      userIds: presidiumIds,
+      event: "REMINDER_30_DAYS",
+      url: callingPath(calling.id),
+      callingId: calling.id,
+      buildEmail: (user) =>
+        reminder30Email({
           name: user.name,
           personName: calling.personName,
           functionTitle: calling.functionTitle,
           phaseLabel: phaseLabel(calling),
           link: callingUrl(calling.id),
-        });
-        await sendMail({ to: user.email, subject, text });
-      } catch (err) {
-        console.error(`[cron] Herinnering naar ${user.email} mislukt voor roeping ${calling.id}:`, err);
-      }
-    }
-    await pushNotify(presidiumUsers.map((u) => u.id), "REMINDER_30_DAYS", `/roepingen/${calling.id}`);
+        }),
+    });
     // Pas na het (proberen te) versturen markeren, zodat een gedeeltelijke
     // storing bij de volgende cron-run opnieuw wordt opgepakt. Bij
     // succesvolle verzending voorkomt dit duplicaten bij elke volgende run.
