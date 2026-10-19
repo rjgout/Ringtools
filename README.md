@@ -166,7 +166,8 @@ applicatie zelf heeft geen bestandsopslag nodig.
 6. Open `http://<NAS-IP>:2809` (of je domein) en log in met het admin-account.
    Stel daarna via **Instellingen → E-mail** de SMTP-gegevens in (nodig voor
    magic-link-logins en alle automatische e-mails) en maak via
-   **Gebruikers** de eerste accounts aan.
+   **Ringen** de eerste ring met een ringbeheerder aan (die daarna zelf de
+   overige gebruikers toevoegt).
 
 ## PWA en Web Push
 
