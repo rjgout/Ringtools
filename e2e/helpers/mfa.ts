@@ -128,7 +128,11 @@ export async function loginWithMagicLink(page: Page, magicLinkPath: string, auth
   // tweede klik zou een al-gebruikt token opnieuw indienen en de login
   // juist laten mislukken. Gewoon genoeg geduld hebben is hier correct.
   await page.getByRole("button", { name: "Inloggen" }).click();
-  await page.waitForURL(/\/mfa\/passkey/, { timeout: 20000 });
+  // Passkey-verificatie is optioneel: zonder ingeschakelde verificatie volgt
+  // direct de app, anders de verplichte passkeystap.
+  await page.waitForURL((url) => !url.pathname.startsWith("/auth/magic"), { timeout: 20000 });
 
-  await completePasskeyStep(page);
+  if (new URL(page.url()).pathname.startsWith("/mfa/passkey")) {
+    await completePasskeyStep(page);
+  }
 }

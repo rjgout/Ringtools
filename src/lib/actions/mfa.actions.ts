@@ -173,7 +173,8 @@ export async function removePasskeyAction(_prev: ActionResult | null, formData: 
   const credentialId = String(formData.get("credentialId") || "");
 
   const count = await prisma.webAuthnCredential.count({ where: { userId: session.user.id } });
-  if (count <= 1) {
+  // Alleen wie passkey-verificatie heeft ingeschakeld heeft de laatste passkey nodig om in te loggen.
+  if (count <= 1 && session.user.mfaEnabled) {
     return { ok: false, message: "Je kunt je laatste passkey niet verwijderen: zonder passkey kun je niet meer inloggen. Registreer eerst een nieuwe passkey." };
   }
 
@@ -227,3 +228,27 @@ export async function resetUserMfaAction(_prev: ActionResult | null, formData: F
   return { ok: true, message: `MFA van ${target.name} is gereset. Deze gebruiker moet bij de volgende magic link opnieuw een passkey registreren.` };
 }
 
+
+// ---- Optionele passkey-verificatie voor reguliere gebruikers ----
+
+export async function enableUserMfaAction(): Promise<ActionResult> {
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  if (session.user.role === "ADMIN") return { ok: false, message: "Voor het beheerdersaccount is verificatie altijd verplicht." };
+
+  if (!(await hasPasskeys(session.user.id))) {
+    return { ok: false, message: "Registreer eerst een passkey voordat je verificatie inschakelt." };
+  }
+  await prisma.user.update({ where: { id: session.user.id }, data: { mfaEnabled: true } });
+  revalidatePath("/profiel/beveiliging");
+  return { ok: true, message: "Passkey-verificatie is ingeschakeld. Bij de volgende inlog bevestig je met je passkey." };
+}
+
+export async function disableUserMfaAction(): Promise<ActionResult> {
+  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  if (session.user.role === "ADMIN") return { ok: false, message: "Voor het beheerdersaccount is verificatie altijd verplicht." };
+
+  await prisma.user.update({ where: { id: session.user.id }, data: { mfaEnabled: false } });
+  revalidatePath("/profiel/beveiliging");
+  return { ok: true, message: "Passkey-verificatie is uitgeschakeld. Inloggen kan voortaan met alleen de inloglink." };
+}

@@ -274,3 +274,22 @@ describe("Bestaande workflows blijven werken na de MFA-uitbreiding", () => {
   });
 });
 
+
+describe("Optionele passkey-verificatie voor gebruikers", () => {
+  it("staat standaard uit voor nieuwe gebruikers; het adminaccount blijft altijd verplicht", async () => {
+    const user = await createTestUser("HOGERAAD", "Optioneel");
+    const admin = await createTestUser("ADMIN", "Beheerder");
+    expect(user.mfaEnabled).toBe(false);
+    const { mfaRequired } = await import("@/lib/auth");
+    expect(mfaRequired(user)).toBe(false);
+    expect(mfaRequired(admin)).toBe(true);
+    expect(mfaRequired({ ...user, mfaEnabled: true })).toBe(true);
+  });
+
+  it("een direct geverifieerde sessie geeft volledige toegang zonder passkeystap", async () => {
+    const { createVerifiedSession, getSessionUser } = await import("@/lib/auth");
+    const user = await createTestUser("HOGERAAD", "Zonder MFA");
+    const { rawToken } = await createVerifiedSession(user.id);
+    expect((await getSessionUser(rawToken))?.id).toBe(user.id);
+  });
+});

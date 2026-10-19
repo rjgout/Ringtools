@@ -6,6 +6,8 @@ import { env } from "@/lib/env";
 import {
   createMagicLinkToken,
   createSession,
+  createVerifiedSession,
+  mfaRequired,
   destroySession,
   verifyAdminPassword,
   previewMagicLinkToken,
@@ -78,6 +80,13 @@ export async function confirmMagicLinkAction(formData: FormData): Promise<void> 
   // Een magic link bevestigt alleen de identiteit; dit geeft nog GEEN
   // volledige toegang. De sessie staat tot aan een geslaagde
   // passkeyverificatie op "wacht op MFA" (zie src/lib/auth.ts).
+  if (!mfaRequired(user)) {
+    // Passkey-verificatie is optioneel en staat voor deze gebruiker uit:
+    // de magic link geeft meteen volledige toegang.
+    const full = await createVerifiedSession(user.id, await getRequestUserAgent());
+    await setSessionCookie(full.rawToken);
+    redirect(redirectTo);
+  }
   const { rawToken } = await createSession(user.id, await getRequestUserAgent());
   await setSessionCookie(rawToken, true);
   redirect(`/mfa/passkey?redirect=${encodeURIComponent(redirectTo)}`);

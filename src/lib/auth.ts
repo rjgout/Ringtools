@@ -33,6 +33,20 @@ export async function createSession(userId: string, userAgent?: string | null): 
 }
 
 /**
+ * Maakt direct een volledig ingelogde sessie, voor reguliere gebruikers die
+ * (optionele) passkey-verificatie niet hebben ingeschakeld. Nooit voor het
+ * adminaccount: dat doorloopt altijd TOTP (zie `mfaRequired`).
+ */
+export async function createVerifiedSession(userId: string, userAgent?: string | null): Promise<{ rawToken: string; expiresAt: Date }> {
+  const rawToken = generateRawToken();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  await prisma.session.create({
+    data: { userId, tokenHash: hashToken(rawToken), expiresAt, mfaAt: new Date(), userAgent: userAgent || null },
+  });
+  return { rawToken, expiresAt };
+}
+
+/**
  * Geeft de gebruiker terug voor een VOLLEDIG ingelogde sessie, dus
  * uitsluitend als MFA succesvol is afgerond (`mfaAt` gezet). Dit is de ene
  * plek die voor de rest van de applicatie (elke pagina, server action en
@@ -120,6 +134,15 @@ export async function promoteSessionToMfaVerified(sessionId: string, userId: str
     });
   });
   return { rawToken, expiresAt };
+}
+
+/**
+ * Moet deze gebruiker een tweede factor doorlopen? De systeemadministrator
+ * altijd (TOTP); reguliere gebruikers alleen als zij passkey-verificatie
+ * zelf hebben ingeschakeld (standaard uit).
+ */
+export function mfaRequired(user: { role: string; mfaEnabled: boolean }): boolean {
+  return user.role === "ADMIN" || user.mfaEnabled;
 }
 
 export function isRecentlyMfaVerified(mfaAt: Date | null, windowMs: number = RECENT_MFA_WINDOW_MS): boolean {

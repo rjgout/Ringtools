@@ -32,10 +32,10 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 - **Inloggen**: reguliere gebruikers loggen in met een magic link per e-mail
   (geen wachtwoord, geen openbare registratiepagina). De systeembeheerder
   logt in met gebruikersnaam/wachtwoord.
-- **Multifactorauthenticatie (verplicht)**: een magic link of wachtwoord
-  geeft alleen de identiteit aan, nooit volledige toegang. Reguliere
-  gebruikers bevestigen daarna met een passkey (Face ID/Touch ID/Windows
-  Hello/schermpincode), de systeembeheerder met een TOTP-authenticator-app.
+- **Multifactorauthenticatie**: verplicht (TOTP) voor de systeembeheerder,
+  optioneel en standaard uit voor gebruikers. Wie passkey-verificatie
+  inschakelt, bevestigt na de magic link met een passkey (Face ID/Touch ID/Windows Hello/schermpincode);
+  de systeembeheerder gebruikt een TOTP-authenticator-app.
   Zie [Multifactorauthenticatie (MFA)](#multifactorauthenticatie-mfa).
 - **Roepingen**: aanmaken (naam + functie), met optioneel direct of later toe
   te wijzen verantwoordelijken voor roepen/ondersteunen/aanstellen.
@@ -330,12 +330,24 @@ Er zijn geen nieuwe environment variables nodig voor deze functionaliteit.
 
 ## Multifactorauthenticatie (MFA)
 
-Multifactorauthenticatie is **verplicht** voor elke gebruiker. Een magic
-link of het adminwachtwoord bevestigt alleen de identiteit; dat geeft op
-zichzelf **geen toegang** tot de applicatie. Pas na een geslaagde tweede
-factor krijgt de sessie toegang — dit geldt bij elke nieuwe login, ook voor
-bestaande gebruikers en ongeacht hoe de sessie wordt aangesproken (pagina,
-server action of API-route).
+Multifactorauthenticatie is **verplicht voor de systeembeheerder** (TOTP) en
+**optioneel voor reguliere gebruikers** (passkey, standaard **uit**).
+
+- **Standaard uit voor gebruikers**: de magic link geeft meteen toegang. Een
+  gebruiker kan passkey-verificatie zelf inschakelen onder **Profiel →
+  Beveiliging** (eerst een passkey registreren, dan *Verificatie
+  inschakelen*) en daar ook weer uitschakelen (vereist dan een recente
+  passkeybevestiging). Nieuwe en bestaande gebruikers staan na de migratie
+  `20261019140000_optional_user_mfa` op *uit*; al geregistreerde passkeys
+  blijven bewaard.
+- **Zodra verificatie aan staat** bevestigt een magic link alleen de
+  identiteit; dat geeft op zichzelf **geen toegang**. Pas na een geslaagde
+  passkey krijgt de sessie toegang — bij elke nieuwe login en ongeacht hoe de
+  sessie wordt aangesproken (pagina, server action of API-route).
+- **Systeembeheerder**: altijd wachtwoord + TOTP, niet uit te schakelen.
+- Een admin-reset van de MFA van een gebruiker (verwijdert de passkeys)
+  laat de instelling aan staan: de gebruiker moet bij de volgende login
+  opnieuw een passkey registreren.
 
 ### Hoe het werkt per rol
 
@@ -346,8 +358,8 @@ server action of API-route).
   gescand worden; daarna krijgt de beheerder 8 eenmalige herstelcodes te
   zien (precies één keer, bewaar ze veilig) voor als de authenticator-app
   niet beschikbaar is.
-- **Reguliere gebruikers**: na het openen van de magic link volgt verplicht
-  een **passkey** (WebAuthn/FIDO2) — Face ID, Touch ID, Windows Hello of de
+- **Reguliere gebruikers met verificatie ingeschakeld**: na het openen van de
+  magic link volgt een **passkey** (WebAuthn/FIDO2) — Face ID, Touch ID, Windows Hello of de
   schermvergrendeling/pincode van het apparaat. De eerste keer wordt een
   passkey geregistreerd; daarna wordt bij elke volgende login met dezelfde
   passkey geverifieerd. Gebruikersverificatie (`userVerification: "required"`)

@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   const actor = await resolveMfaActor();
   if (!actor) return Response.json({ error: "Niet ingelogd." }, { status: 401 });
 
-  if (actor.mode === "full" && !isRecentlyMfaVerified(actor.mfaAt)) {
+  if (actor.mode === "full" && actor.mfaRequired && !isRecentlyMfaVerified(actor.mfaAt)) {
     return Response.json({ error: "Herverifieer eerst om deze actie uit te voeren." }, { status: 403 });
   }
 

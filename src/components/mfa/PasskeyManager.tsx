@@ -36,9 +36,10 @@ function PasskeyRow({ credential, canRemove }: { credential: Credential; canRemo
   );
 }
 
-export function PasskeyManager({ credentials }: { credentials: Credential[] }) {
+export function PasskeyManager({ credentials, mfaEnabled = true }: { credentials: Credential[]; mfaEnabled?: boolean }) {
   const [adding, setAdding] = useState(false);
-  const canRemove = credentials.length > 1;
+  // Bij ingeschakelde verificatie is de laatste passkey nodig om in te loggen.
+  const canRemove = credentials.length > 1 || !mfaEnabled;
 
   return (
     <div className="space-y-3">
@@ -51,7 +52,7 @@ export function PasskeyManager({ credentials }: { credentials: Credential[] }) {
           ))}
         </ul>
       )}
-      {!canRemove && credentials.length === 1 && (
+      {!canRemove && credentials.length === 1 && mfaEnabled && (
         <p className="text-xs text-[var(--text-muted)]">
           Dit is je enige passkey; registreer eerst een nieuwe voordat je deze kunt verwijderen.
         </p>

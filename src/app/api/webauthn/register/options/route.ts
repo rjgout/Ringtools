@@ -8,7 +8,7 @@ export async function POST() {
 
   // Al volledig ingelogd: een nieuwe passkey toevoegen is een gevoelige
   // actie en vereist een recente MFA-verificatie, ook via deze API-route.
-  if (actor.mode === "full" && !isRecentlyMfaVerified(actor.mfaAt)) {
+  if (actor.mode === "full" && actor.mfaRequired && !isRecentlyMfaVerified(actor.mfaAt)) {
     return Response.json({ error: "Herverifieer eerst om deze actie uit te voeren." }, { status: 403 });
   }
 

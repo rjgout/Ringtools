@@ -21,7 +21,7 @@ test("een ongeldige TOTP-code wordt afgewezen bij het inloggen", async ({ page }
 });
 
 test("een magic link alleen geeft geen toegang: de passkey-stap is verplicht", async ({ page }) => {
-  const { user } = await createE2eUser("HOGERAAD", `Alleen link ${Date.now()}`);
+  const { user } = await createE2eUser("HOGERAAD", `Alleen link ${Date.now()}`, { mfaEnabled: true });
   const { rawToken } = await createMagicLinkToken(user.id);
 
   await page.goto(`/auth/magic/${rawToken}`);
@@ -33,7 +33,7 @@ test("een magic link alleen geeft geen toegang: de passkey-stap is verplicht", a
 });
 
 test("passkeyregistratie en een latere passkeylogin werken met user verification", async ({ page }) => {
-  const { user } = await createE2eUser("HOGERAAD", `Passkey ${Date.now()}`);
+  const { user } = await createE2eUser("HOGERAAD", `Passkey ${Date.now()}`, { mfaEnabled: true });
 
   const { rawToken: firstToken } = await createMagicLinkToken(user.id);
   await loginWithMagicLink(page, `/auth/magic/${firstToken}`);
@@ -54,7 +54,7 @@ test("passkeyregistratie en een latere passkeylogin werken met user verification
 });
 
 test("zonder user verification door de authenticator wordt de passkey geweigerd", async ({ page }) => {
-  const { user } = await createE2eUser("HOGERAAD", `GeenUV ${Date.now()}`);
+  const { user } = await createE2eUser("HOGERAAD", `GeenUV ${Date.now()}`, { mfaEnabled: true });
   const { rawToken } = await createMagicLinkToken(user.id);
 
   await page.goto(`/auth/magic/${rawToken}`);
@@ -118,7 +118,7 @@ test("een API-route geeft geen toegang zonder volledig afgeronde MFA", async ({ 
 });
 
 test("een admin kan de MFA van een gebruiker resetten; de gebruiker moet daarna opnieuw registreren", async ({ page }) => {
-  const { user, ringId } = await createE2eUser("HOGERAAD", `Reset Mij ${Date.now()}`);
+  const { user, ringId } = await createE2eUser("HOGERAAD", `Reset Mij ${Date.now()}`, { mfaEnabled: true });
   const { rawToken: enrollToken } = await createMagicLinkToken(user.id);
   await loginWithMagicLink(page, `/auth/magic/${enrollToken}`);
   await expect(page).toHaveURL(/\/dashboard/);
@@ -157,7 +157,7 @@ test.describe("Mobiele interface", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test("de passkey-inschrijving is op mobiel bruikbaar", async ({ page }) => {
-    const { user } = await createE2eUser("HOGERAAD", `Mobiel MFA ${Date.now()}`);
+    const { user } = await createE2eUser("HOGERAAD", `Mobiel MFA ${Date.now()}`, { mfaEnabled: true });
     const { rawToken } = await createMagicLinkToken(user.id);
 
     await page.goto(`/auth/magic/${rawToken}`);
@@ -167,4 +167,37 @@ test.describe("Mobiele interface", () => {
     await expect(page.getByRole("heading", { name: "Registreer een passkey" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Passkey registreren" })).toBeVisible();
   });
+});
+
+test("passkey-verificatie staat standaard uit: een magic link geeft meteen toegang", async ({ page }) => {
+  const { user } = await createE2eUser("HOGERAAD", `Standaard uit ${Date.now()}`);
+  expect(user.mfaEnabled).toBe(false);
+  const { rawToken } = await createMagicLinkToken(user.id);
+
+  await page.goto(`/auth/magic/${rawToken}`);
+  await page.getByRole("button", { name: "Inloggen" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+  expect(await prisma.webAuthnCredential.count({ where: { userId: user.id } })).toBe(0);
+});
+
+test("een gebruiker kan passkey-verificatie zelf inschakelen; daarna is de passkeystap verplicht", async ({ page }) => {
+  const { user } = await createE2eUser("HOGERAAD", `Optie ${Date.now()}`);
+  const { rawToken } = await createMagicLinkToken(user.id);
+  await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
+  await expect(page).toHaveURL(/\/dashboard/);
+
+  await page.goto("/profiel/beveiliging");
+  await expect(page.getByRole("button", { name: "Verificatie inschakelen" })).toBeDisabled();
+  await page.getByRole("button", { name: "Passkey toevoegen" }).click();
+  await page.getByRole("button", { name: "Passkey registreren" }).click();
+  await expect(page.getByRole("button", { name: "Verificatie inschakelen" })).toBeEnabled();
+  await page.getByRole("button", { name: "Verificatie inschakelen" }).click();
+  await expect.poll(async () => (await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).mfaEnabled).toBe(true);
+
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Uitloggen" }).click();
+  const { rawToken: second } = await createMagicLinkToken(user.id);
+  await page.goto(`/auth/magic/${second}`);
+  await page.getByRole("button", { name: "Inloggen" }).click();
+  await expect(page).toHaveURL(/\/mfa\/passkey/);
 });

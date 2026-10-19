@@ -10,6 +10,7 @@ import {
   getSessionAwaitingMfa,
   getActiveSession,
   isRecentlyMfaVerified,
+  mfaRequired,
   type AwaitingMfaSession,
   type ActiveSession,
 } from "./auth";
@@ -39,7 +40,8 @@ export async function getCurrentSession(): Promise<ActiveSession | null> {
 export async function requireRecentMfa(reverifyPath: string): Promise<ActiveSession> {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
-  if (!isRecentlyMfaVerified(session.mfaAt)) {
+  // Zonder ingeschakelde tweede factor is er niets om opnieuw te verifiëren.
+  if (mfaRequired(session.user) && !isRecentlyMfaVerified(session.mfaAt)) {
     redirect(reverifyPath);
   }
   return session;
