@@ -5,6 +5,7 @@ import { ROLE_LABELS } from "@/lib/format";
 import { TopBar } from "@/components/TopBar";
 import { BottomNav } from "@/components/BottomNav";
 import { AppBadgeUpdater } from "@/components/AppBadgeUpdater";
+import { SessionKeepAlive } from "@/components/SessionKeepAlive";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
@@ -38,6 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className="mx-auto max-w-5xl px-4 pt-4 sm:px-6">{children}</main>
       <BottomNav nav={nav} />
       <AppBadgeUpdater />
+      <SessionKeepAlive />
     </div>
   );
 }

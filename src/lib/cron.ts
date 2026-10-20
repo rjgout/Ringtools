@@ -1,6 +1,8 @@
 import cron from "node-cron";
 import { env } from "./env";
 import { sendDue30DayReminders, deleteDueProcessedCallings } from "./workflow";
+import { deleteExpiredAuthData } from "./auth";
+import { deleteExpiredOpenLinks } from "./openLinks";
 
 let started = false;
 
@@ -36,6 +38,12 @@ export function startBackgroundJobs(): void {
 async function runOnce(): Promise<void> {
   const reminders = await sendDue30DayReminders();
   if (reminders > 0) console.log(`[cron] ${reminders} herinnering(en) verstuurd.`);
+
+  const expired = await deleteExpiredAuthData();
+  const links = await deleteExpiredOpenLinks();
+  if (expired.sessions + expired.magicLinks + links > 0) {
+    console.log(`[cron] Opgeruimd: ${expired.sessions} sessie(s), ${expired.magicLinks} inloglink(s), ${links} koppeling(en).`);
+  }
 
   const deleted = await deleteDueProcessedCallings();
   if (deleted > 0) console.log(`[cron] ${deleted} verwerkte roeping(en) na 30 dagen verwijderd.`);

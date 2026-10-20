@@ -76,3 +76,13 @@ export async function switchRingAction(formData: FormData): Promise<void> {
   revalidatePath("/", "layout");
   redirect("/dashboard");
 }
+
+/**
+ * Zet de actieve ring op de ring van het voorstel dat de gebruiker opent (bijv. via een
+ * e-mail of melding), zodat menu en dashboard bij het voorstel passen. Het lidmaatschap
+ * wordt server-side gecontroleerd; zonder lidmaatschap verandert er niets.
+ */
+export async function activateRingAction(ringId: string): Promise<boolean> {
+  const user = await requireUser();
+  return setActiveRing(user.id, ringId);
+}

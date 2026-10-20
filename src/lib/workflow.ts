@@ -1,7 +1,6 @@
 import type { Calling, CallingStatus, OndersteuningContext, Prisma, Role, User } from "@prisma/client";
 import { prisma } from "./prisma";
-import { env } from "./env";
-import { createMagicLinkToken } from "./auth";
+import { createOpenLink } from "./openLinks";
 import { supportInviteEmail, supportReminderEmail, taskAssignedEmail, reminder30Email } from "./mailer";
 import { allTasksDone, isReadyToProcess, phaseLabel, type TaskKey } from "./status";
 import { notify } from "./notifications";
@@ -29,16 +28,6 @@ const STAGE_STATUSES: Record<Stage, CallingStatus[]> = {
 
 function callingPath(callingId: string): string {
   return `/roepingen/${callingId}`;
-}
-
-function callingUrl(callingId: string): string {
-  return `${env.appBaseUrl}${callingPath(callingId)}`;
-}
-
-async function buildMagicSupportLink(userId: string, callingId: string): Promise<string> {
-  const { rawToken } = await createMagicLinkToken(userId);
-  const redirect = encodeURIComponent(callingPath(callingId));
-  return `${env.appBaseUrl}/auth/magic/${rawToken}?redirect=${redirect}`;
 }
 
 /** Actieve leden van een ring met een bepaalde workflowrol (account én lidmaatschap actief). */
@@ -81,7 +70,7 @@ async function lockCalling(tx: Db, callingId: string): Promise<void> {
  * Stuurt ondersteuningsverzoeken naar (een deel van) de deelnemers van een
  * ronde via het centrale notificatieproces: een interne melding, een
  * generieke pushmelding, en (als de ontvanger dat aan heeft staan) een
- * gedetailleerde e-mail met een persoonlijke magic-link.
+ * gedetailleerde e-mail met een persoonlijke koppeling naar het voorstel (/open/<token>).
  */
 async function notifyParticipants(
   calling: Calling,
@@ -95,7 +84,7 @@ async function notifyParticipants(
     url: callingPath(calling.id),
     callingId: calling.id,
     buildEmail: async (user: User) => {
-      const link = await buildMagicSupportLink(user.id, calling.id);
+      const link = await createOpenLink(user.id, calling.id);
       if (opts.event === "SUPPORT_REMINDER") {
         return supportReminderEmail({ name: user.name, personName: calling.personName, functionTitle: calling.functionTitle, link });
       }
@@ -120,13 +109,13 @@ export async function notifyTaskAssignee(callingId: string, task: TaskKey, assig
     event: "TASK_ASSIGNED",
     url: callingPath(calling.id),
     callingId: calling.id,
-    buildEmail: (user) =>
+    buildEmail: async (user) =>
       taskAssignedEmail({
         name: user.name,
         taskLabel: label,
         personName: calling.personName,
         functionTitle: calling.functionTitle,
-        link: callingUrl(calling.id),
+        link: await createOpenLink(user.id, calling.id),
       }),
   });
 }
@@ -628,13 +617,13 @@ export async function sendDue30DayReminders(): Promise<number> {
       event: "REMINDER_30_DAYS",
       url: callingPath(calling.id),
       callingId: calling.id,
-      buildEmail: (user) =>
+      buildEmail: async (user) =>
         reminder30Email({
           name: user.name,
           personName: calling.personName,
           functionTitle: calling.functionTitle,
           phaseLabel: phaseLabel(calling),
-          link: callingUrl(calling.id),
+          link: await createOpenLink(user.id, calling.id),
         }),
     });
     // Pas na het (proberen te) versturen markeren, zodat een gedeeltelijke

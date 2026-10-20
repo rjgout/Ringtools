@@ -55,7 +55,7 @@ export async function sendTestMail(to: string) {
 
 // ---- E-mailsjablonen (Nederlands) ----
 
-export function magicLinkEmail(name: string, link: string) {
+export function magicLinkEmail(name: string, link: string, code?: string) {
   return {
     subject: "Ringtools – je inloglink",
     text: [
@@ -65,7 +65,14 @@ export function magicLinkEmail(name: string, link: string) {
       "",
       link,
       "",
-      "Deze link is 15 minuten geldig en kan maar één keer gebruikt worden.",
+      ...(code
+        ? [
+            "Gebruik je de Ringtools-app op je beginscherm? Een link opent op een iPhone of iPad in de browser, niet in de app.",
+            `Voer in dat geval op het inlogscherm van de app deze code in: ${code}`,
+            "",
+          ]
+        : []),
+      "De link en de code zijn 15 minuten geldig vanaf het moment dat deze e-mail is verstuurd (niet vanaf het openen) en kunnen samen maar één keer gebruikt worden.",
       "Heb je geen inlogverzoek gedaan? Dan kun je deze e-mail negeren.",
     ].join("\n"),
   };
@@ -96,7 +103,7 @@ export function supportInviteEmail(opts: {
       "Open de onderstaande persoonlijke link om je ondersteuning uit te brengen:",
       opts.link,
       "",
-      "Deze link is persoonlijk en 15 minuten geldig nadat je hem opent; je kunt altijd een nieuwe aanvragen via de inlogpagina.",
+      "Deze link is persoonlijk en 72 uur geldig. Hij logt je niet automatisch in: je kiest op de pagina hoe je verdergaat (inloggen in de browser, of een melding naar je Ringtools-app laten sturen).",
     ].join("\n"),
   };
 }
@@ -110,7 +117,7 @@ export function taskAssignedEmail(opts: { name: string; taskLabel: string; perso
       `Aan jou is de volgende taak toegewezen: ${opts.taskLabel}.`,
       `Het betreft de roeping van: ${opts.personName} (${opts.functionTitle}).`,
       "",
-      "Open Ringtools om de details te bekijken:",
+      "Open Ringtools om de details te bekijken (persoonlijke link, 72 uur geldig):",
       opts.link,
     ].join("\n"),
   };
@@ -125,7 +132,7 @@ export function reminder30Email(opts: { name: string; personName: string; functi
       `De roeping van ${opts.personName} (${opts.functionTitle}) staat al 30 dagen open en is nog niet verwerkt.`,
       `Huidige fase: ${opts.phaseLabel}.`,
       "",
-      "Bekijk de roeping in Ringtools:",
+      "Bekijk de roeping in Ringtools (persoonlijke link, 72 uur geldig):",
       opts.link,
     ].join("\n"),
   };
@@ -145,7 +152,7 @@ export function supportReminderEmail(opts: { name: string; personName: string; f
       "Open de onderstaande persoonlijke link om je ondersteuning uit te brengen:",
       opts.link,
       "",
-      "Deze link is persoonlijk en 15 minuten geldig nadat je hem opent; je kunt altijd een nieuwe aanvragen via de inlogpagina.",
+      "Deze link is persoonlijk en 72 uur geldig. Hij logt je niet automatisch in: je kiest op de pagina hoe je verdergaat (inloggen in de browser, of een melding naar je Ringtools-app laten sturen).",
     ].join("\n"),
   };
 }

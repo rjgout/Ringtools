@@ -1,6 +1,7 @@
 import webpush from "web-push";
 import { prisma } from "./prisma";
 import { env } from "./env";
+import { safeInternalPath } from "./safePath";
 
 export class PushNotConfiguredError extends Error {
   constructor() {
@@ -39,15 +40,17 @@ export type PushPayload = {
  * worden automatisch opgeruimd. Een mislukte verzending gooit nooit een
  * fout naar de aanroeper: push mag de rest van de workflow nooit blokkeren.
  */
-export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
-  if (!isPushConfigured()) return;
+export async function sendPushToUser(userId: string, payload: PushPayload): Promise<number> {
+  if (!isPushConfigured()) return 0;
 
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { pushSubscriptions: true } });
-  if (!user || !user.active || user.pushSubscriptions.length === 0) return;
+  if (!user || !user.active || user.pushSubscriptions.length === 0) return 0;
 
   ensureConfigured();
 
-  const body = JSON.stringify(payload);
+  // Alleen interne doelpaden: een push kan nooit naar een externe site verwijzen.
+  const body = JSON.stringify({ ...payload, url: safeInternalPath(payload.url) ?? "/dashboard" });
+  let delivered = 0;
 
   await Promise.all(
     user.pushSubscriptions.map(async (sub) => {
@@ -56,6 +59,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           body
         );
+        delivered += 1;
       } catch (err) {
         const statusCode = (err as { statusCode?: number }).statusCode;
         if (statusCode === 404 || statusCode === 410) {
@@ -66,6 +70,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
       }
     })
   );
+  return delivered;
 }
 
 export async function sendPushToUsers(userIds: string[], payload: PushPayload): Promise<void> {

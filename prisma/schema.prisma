@@ -74,6 +74,7 @@ model User {
   recoveryCodes       RecoveryCode[]
   securityEvents      SecurityEvent[]
   memberships         RingMembership[]
+  openLinkTokens      OpenLinkToken[]
 
   createdCallings       Calling[]       @relation("CallingCreatedBy")
   eligibleVotes         EligibleVoter[]
@@ -91,15 +92,42 @@ model User {
 }
 
 model MagicLinkToken {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String    @unique
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+  // Eenmalige inlogcode (alleen de hash) om in een geïnstalleerde PWA in te
+  // loggen, omdat een e-maillink op iOS in Safari opent met een apart
+  // cookie-opslag. Wordt na te veel foute pogingen ongeldig.
+  codeHash     String?
+  codeAttempts Int       @default(0)
 
   @@index([userId])
+  @@index([expiresAt])
+}
+
+// Persoonlijke, kortlevende koppeling uit een e-mail naar één voorstel. Het
+// token geeft GEEN toegang en logt niet in: het laat alleen kiezen hoe je
+// verder gaat (browser, inloglink of melding naar de app) en bevat geen
+// vertrouwelijke gegevens. Alleen de hash wordt opgeslagen.
+model OpenLinkToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  callingId  String
+  calling    Calling   @relation(fields: [callingId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  pushCount  Int       @default(0)
+  lastPushAt DateTime?
+  lastMailAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([callingId])
   @@index([expiresAt])
 }
 
@@ -112,17 +140,24 @@ model MagicLinkToken {
 // is — dat is de enige plek die hele-applicatietoegang bepaalt, dus een
 // gedeeltelijk ingelogde gebruiker kan nergens in de app komen.
 model Session {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String    @unique
-  userAgent String?
-  mfaAt     DateTime?
-  expiresAt DateTime
-  createdAt DateTime  @default(now())
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash     String    @unique
+  userAgent     String?
+  mfaAt         DateTime?
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
+  // Doorlopende (sliding) sessies: laatste activiteit, tijdstip van de laatste
+  // tokenrotatie en de hash van het vorige token (kort geldig na rotatie,
+  // zodat gelijktijdige verzoeken niet uitloggen). Zie src/lib/auth.ts.
+  lastSeenAt    DateTime  @default(now())
+  rotatedAt     DateTime?
+  prevTokenHash String?
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([prevTokenHash])
 }
 
 // TOTP-configuratie voor het adminaccount (webmin). Eén rij per gebruiker;
@@ -260,6 +295,7 @@ model Calling {
   eligibleVoters EligibleVoter[]
   votes          Vote[]
   notifications  Notification[]
+  openLinkTokens OpenLinkToken[]
 
   @@index([ringId, status])
   @@index([status])

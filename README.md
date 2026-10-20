@@ -14,6 +14,7 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 - [PWA en Web Push](#pwa-en-web-push)
 - [Notificatiecentrum](#notificatiecentrum)
 - [Multifactorauthenticatie (MFA)](#multifactorauthenticatie-mfa)
+- [Sessies, ingelogd blijven en e-maillinks](#sessies-ingelogd-blijven-en-e-maillinks)
 - [Meerdere ringen en ondersteuningsrondes](#meerdere-ringen-en-ondersteuningsrondes)
 - [Bijwerken naar een nieuwe versie](#bijwerken-naar-een-nieuwe-versie)
 - [Back-up](#back-up)
@@ -376,8 +377,8 @@ voor de rest van de applicatie (elke pagina, server action en API-route via
 heeft — geeft zonder dat tijdstip altijd `null` terug. Een sessie die enkel
 de identiteit bevestigt (vlak na de magic link of het wachtwoord) is dus
 sowieso te allen tijde ontoereikend, hoe dan ook benaderd. Die "wacht op
-MFA"-sessie is bovendien maar 10 minuten geldig (in plaats van de normale 30
-dagen). Bij een geslaagde MFA-verificatie wordt het sessietoken altijd
+MFA"-sessie is bovendien maar 10 minuten geldig (in plaats van de normale
+sessietermijnen, zie [Sessies](#sessies-ingelogd-blijven-en-e-maillinks)). Bij een geslaagde MFA-verificatie wordt het sessietoken altijd
 geroteerd (nieuwe databaserij, nieuw cookie) — zowel bij het inloggen als
 bij het later opnieuw verifiëren voor een gevoelige actie.
 
@@ -447,6 +448,83 @@ een MFA-reset van de beheerder zelf mag nooit via de webapplicatie kunnen.
 - Pushnotificaties linken altijd naar een pagina die zelf opnieuw
   autorisatie/MFA afdwingt; een pushmelding opent dus nooit meer toegang
   dan een gewone navigatie.
+
+## Sessies, ingelogd blijven en e-maillinks
+
+### Sessietermijnen (ingelogd blijven in de app)
+
+Een geïnstalleerde app (PWA) hoeft niet bij elke start opnieuw in te loggen.
+Sessies staan server-side in de database; het browsercookie (`ringtools_session`)
+is `HttpOnly`, `Secure` (zie `COOKIE_SECURE`) en `SameSite=Lax` en bevat alleen een
+willekeurig token (de database bewaart er uitsluitend de hash van).
+
+| Termijn | Waarde | Betekenis |
+|---|---|---|
+| Inactiviteit | **60 dagen** | Elk geauthenticeerd gebruik schuift de verloopdatum op (hooguit eens per 15 minuten wordt dit weggeschreven). 60 dagen niet gebruikt = opnieuw inloggen. |
+| Absolute levensduur | **180 dagen** | Na 180 dagen is opnieuw inloggen altijd nodig, ook bij dagelijks gebruik. Opnieuw verifiëren voor een gevoelige actie telt als nieuwe login. |
+| Tokenrotatie | **24 uur** | De app (`SessionKeepAlive`) roept bij openen en terugkeren `POST /api/session/refresh` aan; is het token ouder dan 24 uur, dan krijgt de sessie een nieuw token (nieuw cookie). Het vorige token blijft 5 minuten geldig zodat gelijktijdige verzoeken of een verloren antwoord niet uitloggen. |
+| Wacht-op-MFA-sessie | 10 minuten | Alleen tussen de identiteitscontrole en de tweede factor; geeft geen toegang en wordt nooit verlengd. |
+| Recente MFA | 15 minuten | Nodig voor gevoelige acties (beveiligingsinstellingen, admin-reset). Voor gebruikers zonder ingeschakelde passkey-verificatie is er geen tweede factor om te herhalen. |
+
+- **Meerdere apparaten**: elk apparaat heeft een eigen sessie. Onder *Profiel →
+  Beveiliging* zijn ze te zien en los te beëindigen. Een nieuwe login in een andere
+  browser laat bestaande sessies (bijv. de app) ongemoeid.
+- **Intrekken**: uitloggen, een beveiligingsreset, het deactiveren van een gebruiker
+  (of van het laatste actieve lidmaatschap) trekken sessies direct in; ook het
+  vorige token van een geroteerde sessie vervalt dan.
+- **Opruimen**: een nachtelijke taak verwijdert verlopen sessies, gebruikte of
+  verlopen inloglinks en verlopen koppelingen.
+- **iOS: app en Safari hebben aparte cookies.** Een login in Safari geldt dus niet
+  in de app op het beginscherm, en andersom; cookies worden bewust niet tussen
+  beide overgezet. Inloggen in de app zelf kan met de **inlogcode** uit de inlogmail
+  (zie hieronder). Sessies in Safari en in de app lopen verder volledig onafhankelijk.
+
+### Inloglinks en inlogcode
+
+- De inloglink is **15 minuten geldig vanaf het versturen** van de e-mail (niet
+  vanaf het openen) en kan **één keer** worden gebruikt; het verbruiken is atomair.
+- Het openen van de link verbruikt hem niet: pas een klik op *Inloggen* doet dat,
+  zodat e-mailscanners de link niet kunnen "opgebruiken".
+- Dezelfde mail bevat een **8-cijferige code** voor de geïnstalleerde app (de link
+  opent op iOS in Safari). De code hoort bij dezelfde eenmalige token (gebruik van
+  de één maakt de ander ongeldig), is na 5 foute pogingen onbruikbaar en heeft een
+  aparte beperking op het aantal pogingen per e-mailadres.
+- Een link of code voert altijd dezelfde stappen uit als voorheen: is passkey-
+  verificatie ingeschakeld, dan volgt die nog steeds; ringrechten worden bij elke
+  pagina server-side gecontroleerd.
+
+### E-maillinks naar een voorstel
+
+E-mails over een voorstel bevatten een **persoonlijke koppeling** `/open/<token>`
+(72 uur geldig, alleen de hash wordt bewaard). Die koppeling logt **niet** in en toont
+**geen gegevens** over het voorstel. De pagina biedt:
+
+1. **Inloggen en openen in de browser** (`/login?next=…`): de bestemming blijft behouden;
+   zonder eigen app kan alles gewoon in de browser worden afgehandeld. Is er al een sessie
+   in deze browser, dan opent het voorstel direct.
+2. **Stuur mij een inloglink per e-mail**: stuurt een gewone inloglink (met dit voorstel
+   als bestemming) naar het adres van de ontvanger.
+3. **Stuur een melding naar mijn Ringtools-app**: na een expliciete klik gaat een
+   generieke pushmelding (zonder naam, functie of token; alleen een intern pad) naar de
+   geregistreerde apparaten van de eigenaar. Tikken op de melding opent de app bij het
+   voorstel. Beperking: één melding per 2 minuten, maximaal 5 per koppeling.
+
+Een browser kan een op iOS geïnstalleerde app **niet rechtstreeks en gegarandeerd
+openen**; er worden daarom bewust geen deep-link-hacks of app-URL-schema's gebruikt.
+Fallbacks staan op de pagina: geen apparaten met meldingen, push niet geconfigureerd,
+apparaat offline (de melding komt dan later binnen) of een browser zonder push →
+gewoon via de browser inloggen.
+
+Een gebruiker met meerdere ringen komt bij het openen van een voorstel automatisch in
+de juiste ring (de actieve ring schakelt mee); de toegang wordt per voorstel op de
+server gecontroleerd en zonder lidmaatschap is het voorstel niet te zien.
+
+### Klik op een pushmelding
+
+`public/sw.js` focust een al geopende Ringtools-window en navigeert daar naar het
+voorstel; is de app gesloten, dan wordt ze geopend op die pagina. Alleen paden op
+dezelfde herkomst worden gevolgd (externe, protocol-relatieve en onleesbare URL's
+vallen terug op het dashboard); de server voegt dezelfde controle toe bij het versturen.
 
 ## Meerdere ringen en ondersteuningsrondes
 
@@ -602,10 +680,10 @@ geautomatiseerd gedekt:
   verplichte MFA-stap doorlopen (TOTP resp. passkey via dezelfde
   CDP-authenticator).
 
-Laatste volledige validatieronde in deze ontwikkelomgeving: 108/108
-Vitest-tests (waarvan 34 nieuw voor multi-ring, herinneringen, nieuwe
-deelnemers en verwijderen: `tests/rings.test.ts`, `tests/support.test.ts`),
-26/26 Playwright-tests (incl. `e2e/rings.spec.ts`), `npx eslint .`, `npx tsc --noEmit`,
+Laatste volledige validatieronde in deze ontwikkelomgeving: 146/146
+Vitest-tests (o.a. `tests/sessions.test.ts` voor sliding/roterende sessies,
+inloglinks en -codes en `tests/openlinks.test.ts` voor de e-mailkoppelingen en de
+service-worker-klik), 34/34 Playwright-tests (o.a. `e2e/sessions.spec.ts`), `npx eslint .`, `npx tsc --noEmit`,
 `npx prisma validate` en een production build (`npm run build`) allemaal
 zonder fouten. Een daadwerkelijke Docker-build/-run op een fysieke Synology
 NAS, en een daadwerkelijke passkey-ceremonie op een fysiek iPhone/Android-

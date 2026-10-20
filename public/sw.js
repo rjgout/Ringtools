@@ -100,19 +100,49 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
+// Bepaalt veilig waar een melding naartoe leidt: uitsluitend een pad op deze site.
+// Alles wat naar een andere herkomst wijst (of niet te lezen is) valt terug op het dashboard.
+function resolveNotificationTarget(raw) {
+  try {
+    if (typeof raw !== "string" || !raw.startsWith("/")) return "/dashboard";
+    const url = new URL(raw, self.location.origin);
+    if (url.origin !== self.location.origin) return "/dashboard";
+    if (url.pathname.includes("\\")) return "/dashboard";
+    return url.pathname + url.search + url.hash;
+  } catch {
+    return "/dashboard";
+  }
+}
+
+// Klik op een melding: focus een al geopende Ringtools-window (de geïnstalleerde app of
+// een browsertab) en navigeer daar naar het voorstel; is er geen window (app gesloten),
+// open er dan een. De bestemming is alleen een intern pad: toegang en ringrechten worden
+// bij het openen van de pagina op de server gecontroleerd, niet hier.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || "/dashboard";
+  const target = resolveNotificationTarget(event.notification.data && event.notification.data.url);
+  const absolute = new URL(target, self.location.origin).href;
 
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if ("focus" in client) {
-          client.navigate(targetUrl);
-          return client.focus();
+    (async () => {
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const candidate =
+        windows.find((c) => c.focused) || windows.find((c) => c.visibilityState === "visible") || windows[0];
+
+      if (candidate) {
+        try {
+          const focused = (await candidate.focus()) || candidate;
+          if (typeof focused.navigate === "function") {
+            await focused.navigate(absolute);
+            return;
+          }
+        } catch {
+          // navigeren/focussen niet ondersteund of mislukt: val terug op een nieuw window
         }
       }
-      return self.clients.openWindow(targetUrl);
-    })
+      if (self.clients.openWindow) {
+        await self.clients.openWindow(absolute);
+      }
+    })()
   );
 });

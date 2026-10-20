@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
-import { getActiveMembership } from "@/lib/ringContext";
+import { getActiveMembership, getRingContext } from "@/lib/ringContext";
 import { isStaff, canVotePresidium, canVoteHogeraad } from "@/lib/rbac";
 import { getCallingDetail, listActiveUsers, getRoleByUserId, getStillInvolvedUserIds } from "@/lib/queries";
 import { isReadyToProcess, phaseLabel } from "@/lib/status";
@@ -9,6 +9,7 @@ import { Timeline } from "@/components/Timeline";
 import { SupportSection, type SupportParticipant } from "@/components/SupportSection";
 import { TaskRow } from "@/components/TaskRow";
 import { WhatsAppShareButton } from "@/components/WhatsAppShareButton";
+import { RingSync } from "@/components/RingSync";
 import { DeleteCallingButton } from "@/components/DeleteCallingButton";
 import { markProcessedAction } from "@/lib/actions/calling.actions";
 
@@ -48,6 +49,7 @@ export default async function CallingDetailPage({
   const membership = await getActiveMembership(user.id, calling.ringId);
   if (!membership) notFound();
 
+  const activeRing = await getRingContext();
   const staff = isStaff(membership.role);
 
   const presidiumEligible = calling.eligibleVoters.filter((e) => e.stage === "PRESIDIUM");
@@ -97,6 +99,7 @@ export default async function CallingDetailPage({
 
   return (
     <div className="space-y-5 py-4">
+      <RingSync ringId={calling.ringId} activeRingId={activeRing?.ring.id ?? null} />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">{calling.personName}</h1>
