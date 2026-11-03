@@ -52,13 +52,14 @@ export type OpenLinkPushResult = "sent" | "no-devices" | "push-unavailable" | "t
 export async function sendOpenLinkPush(rawToken: string): Promise<OpenLinkPushResult> {
   const info = await resolveOpenLink(rawToken);
   if (!info.valid) return "invalid";
-  if (!isPushConfigured()) return "push-unavailable";
-
   const tokenHash = hashToken(rawToken);
   const token = await prisma.openLinkToken.findUniqueOrThrow({ where: { tokenHash } });
 
-  const subscriptions = await prisma.pushSubscription.count({ where: { userId: token.userId } });
-  if (subscriptions === 0) return "no-devices";
+  const [webDevices, appDevices] = await Promise.all([
+    isPushConfigured() ? prisma.pushSubscription.count({ where: { userId: token.userId } }) : Promise.resolve(0),
+    prisma.devicePushToken.count({ where: { userId: token.userId } }),
+  ]);
+  if (webDevices + appDevices === 0) return isPushConfigured() ? "no-devices" : "push-unavailable";
 
   // Atomisch "claimen": herhaald of gelijktijdig klikken geeft maximaal één melding per termijn.
   const claimed = await prisma.openLinkToken.updateMany({

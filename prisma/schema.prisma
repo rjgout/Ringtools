@@ -75,6 +75,7 @@ model User {
   securityEvents      SecurityEvent[]
   memberships         RingMembership[]
   openLinkTokens      OpenLinkToken[]
+  devicePushTokens    DevicePushToken[]
 
   createdCallings       Calling[]       @relation("CallingCreatedBy")
   eligibleVotes         EligibleVoter[]
@@ -361,6 +362,20 @@ model PushSubscription {
   p256dh     String
   auth       String
   userAgent  String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Pushtoken van de native iOS/Android-app (Expo Push). Eén token per installatie;
+// bij uitloggen of een ongeldig token (DeviceNotRegistered) wordt de rij verwijderd.
+model DevicePushToken {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  platform   String // "ios" | "android"
   createdAt  DateTime @default(now())
   lastSeenAt DateTime @default(now())
 

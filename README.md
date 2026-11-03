@@ -15,6 +15,7 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 - [Notificatiecentrum](#notificatiecentrum)
 - [Multifactorauthenticatie (MFA)](#multifactorauthenticatie-mfa)
 - [Sessies, ingelogd blijven en e-maillinks](#sessies-ingelogd-blijven-en-e-maillinks)
+- [Native iOS- en Android-app](#native-ios--en-android-app)
 - [Meerdere ringen en ondersteuningsrondes](#meerdere-ringen-en-ondersteuningsrondes)
 - [Bijwerken naar een nieuwe versie](#bijwerken-naar-een-nieuwe-versie)
 - [Back-up](#back-up)
@@ -526,6 +527,27 @@ voorstel; is de app gesloten, dan wordt ze geopend op die pagina. Alleen paden o
 dezelfde herkomst worden gevolgd (externe, protocol-relatieve en onleesbare URL's
 vallen terug op het dashboard); de server voegt dezelfde controle toe bij het versturen.
 
+## Native iOS- en Android-app
+
+Naast de webapp/PWA is er een echte app voor iPhone/iPad en Android (React Native/Expo, map `mobile/`). Ze gebruikt
+dezelfde server en dezelfde regels via een JSON-API onder `/api/v1`. Zie [`mobile/README.md`](mobile/README.md) voor
+functies, eenmalige instellingen (Expo/EAS, Apple, Google) en bouwen/indienen.
+
+Aan de serverkant:
+
+- **API** (`src/lib/api/`, route `src/app/api/v1/[...path]`): inloggen met e-mail + 8-cijferige code, `Bearer`-sessies die
+  dezelfde tabel, verlenging, rotatie en intrekking gebruiken als de webapp; alle acties gaan door `workflow.ts` en
+  de bestaande autorisatiecontroles. De beheerder (webmin) en gebruikers met ingeschakelde passkey-verificatie
+  worden in de app (nog) geweigerd met een duidelijke melding.
+- **Push naar de app**: tabel `DevicePushToken`; `sendPushToUser` stuurt naast Web Push ook via de Expo Push-dienst
+  (alleen generieke tekst + intern pad). Optioneel `EXPO_ACCESS_TOKEN`.
+- **Universele links**: `/.well-known/apple-app-site-association` (met `APPLE_APP_ID`) en `/.well-known/assetlinks.json`
+  (met `ANDROID_SHA256_FINGERPRINTS`, `ANDROID_PACKAGE`). Daarmee openen e-maillinks (`/open/<token>`, `/roepingen/<id>`)
+  op een toestel met de app direct de app; zonder app of zonder deze variabelen blijft alles in de browser werken.
+- Migratie `20261103090000_native_app_push_tokens` is additief (nieuwe tabel).
+- CI: `.github/workflows/mobile-ci.yml` (typecheck, tests, bundel Android/iOS) en het handmatige
+  `.github/workflows/mobile-build.yml` (EAS-build en optioneel indienen). De Docker-image bevat de app niet.
+
 ## Meerdere ringen en ondersteuningsrondes
 
 ### Ringen en rollen
@@ -680,8 +702,8 @@ geautomatiseerd gedekt:
   verplichte MFA-stap doorlopen (TOTP resp. passkey via dezelfde
   CDP-authenticator).
 
-Laatste volledige validatieronde in deze ontwikkelomgeving: 146/146
-Vitest-tests (o.a. `tests/sessions.test.ts` voor sliding/roterende sessies,
+Laatste volledige validatieronde in deze ontwikkelomgeving: 161/161
+Vitest-tests (incl. `tests/api.test.ts` voor de app-API) (o.a. `tests/sessions.test.ts` voor sliding/roterende sessies,
 inloglinks en -codes en `tests/openlinks.test.ts` voor de e-mailkoppelingen en de
 service-worker-klik), 34/34 Playwright-tests (o.a. `e2e/sessions.spec.ts`), `npx eslint .`, `npx tsc --noEmit`,
 `npx prisma validate` en een production build (`npm run build`) allemaal

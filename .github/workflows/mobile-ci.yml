@@ -1,0 +1,35 @@
+name: Mobiele app (controle)
+
+on:
+  push:
+    paths: ["mobile/**", ".github/workflows/mobile-ci.yml"]
+  pull_request:
+    paths: ["mobile/**"]
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_PUBLIC_API_URL: https://ringtools.example.nl
+      CI: "1"
+    steps:
+      - name: Code uitchecken
+        uses: actions/checkout@v4
+      - name: Node.js opzetten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Dependencies installeren
+        run: npm ci
+      - name: Typecontrole
+        run: npx tsc --noEmit
+      - name: Tests
+        run: npx vitest run
+      - name: Bundel bouwen (Android en iOS, zonder native build)
+        run: npx expo export --platform android --platform ios --output-dir dist

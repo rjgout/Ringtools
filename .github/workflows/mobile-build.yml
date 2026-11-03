@@ -1,0 +1,58 @@
+name: Mobiele app (build en indienen)
+
+# Handmatig starten. Bouwt via Expo EAS de iOS- en/of Android-app en dient ze optioneel in bij
+# TestFlight/App Store en Google Play. Vereist de repository-secret EXPO_TOKEN en de variabelen
+# EXPO_PUBLIC_API_URL en EAS_PROJECT_ID (zie mobile/README.md). Apple- en Google-sleutels beheert EAS.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform
+        type: choice
+        options: [all, ios, android]
+        default: all
+      profile:
+        description: EAS-buildprofiel (preview = intern testen, production = store)
+        type: choice
+        options: [preview, production]
+        default: preview
+      submit:
+        description: Na de build indienen bij TestFlight/Google Play (alleen bij profiel production)
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+    steps:
+      - name: Controleren of de benodigde instellingen aanwezig zijn
+        run: |
+          [ -n "$EXPO_PUBLIC_API_URL" ] || { echo "::error::Zet de repository-variabele EXPO_PUBLIC_API_URL (de https-URL van je Ringtools-server)."; exit 1; }
+          [ -n "$EAS_PROJECT_ID" ] || { echo "::error::Zet de repository-variabele EAS_PROJECT_ID (zie mobile/README.md)."; exit 1; }
+          [ -n "${{ secrets.EXPO_TOKEN }}" ] || { echo "::error::Zet het repository-secret EXPO_TOKEN."; exit 1; }
+      - name: Code uitchecken
+        uses: actions/checkout@v4
+      - name: Node.js opzetten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Expo en EAS opzetten
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Dependencies installeren
+        run: npm ci
+      - name: Bouwen
+        run: eas build --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive ${{ inputs.submit && '--wait' || '--no-wait' }}
+      - name: Indienen
+        if: ${{ inputs.submit && inputs.profile == 'production' }}
+        run: eas submit --platform ${{ inputs.platform }} --profile production --latest --non-interactive
