@@ -3,6 +3,7 @@
 #   Debug / Release     → productie-entitlements (aps-environment + applinks), buildprofiel "standard"
 #   Debug-PersonalTeam  → GEEN entitlements (geen push, geen Associated Domains), buildprofiel "personal-team"
 # Bouwt elk voor de simulator en inspecteert de effectieve entitlements (.xcent) en het buildprofiel in de app-bundel.
+# Let op: gebruik hier geen `echo "$x" | grep -q` (SIGPIPE + pipefail geeft willekeurige valse fouten); gebruik here-strings.
 set -euo pipefail
 cd "$(dirname "$0")/../ios"
 PROJECT=App/App.xcodeproj
@@ -13,15 +14,15 @@ settings() { xcodebuild -project "$PROJECT" -scheme "$1" -configuration "$2" -sd
 echo "== Build settings =="
 for cfg in Debug Release; do
   s="$(settings App "$cfg")"
-  echo "$s" | grep -qE '^\s*CODE_SIGN_ENTITLEMENTS = App/App.entitlements$' || fail "$cfg: productie-entitlements ontbreken"
-  echo "$s" | grep -qE '^\s*PRODUCT_BUNDLE_IDENTIFIER = nl\.ringapeldoorn\.ringtools$' || fail "$cfg: onverwachte bundle-ID"
+  grep -qE '^\s*CODE_SIGN_ENTITLEMENTS = App/App.entitlements$' <<<"$s" || fail "$cfg: productie-entitlements ontbreken"
+  grep -qE '^\s*PRODUCT_BUNDLE_IDENTIFIER = nl\.ringapeldoorn\.ringtools$' <<<"$s" || fail "$cfg: onverwachte bundle-ID"
   echo "ok  $cfg"
 done
 s="$(settings App-PersonalTeam Debug-PersonalTeam)"
 value="$(echo "$s" | sed -n 's/^ *CODE_SIGN_ENTITLEMENTS = *//p' | tr -d '[:space:]')"
-if [ -n "$value" ]; then echo "$s" | grep -E 'CODE_SIGN_ENTITLEMENTS|RINGTOOLS_BUILD_PROFILE|PRODUCT_BUNDLE_IDENTIFIER' >&2 || true; fail "Debug-PersonalTeam: CODE_SIGN_ENTITLEMENTS moet leeg zijn (nu: '$value')"; fi
-echo "$s" | grep -qE '^\s*RINGTOOLS_BUILD_PROFILE = personal-team$' || { echo "$s" | grep -E 'RINGTOOLS|CODE_SIGN' >&2 || true; fail "Debug-PersonalTeam: buildprofiel ontbreekt"; }
-echo "$s" | grep -qE '^\s*PRODUCT_BUNDLE_IDENTIFIER = nl\.ringapeldoorn\.ringtools\.dev$' || fail "Debug-PersonalTeam: onverwachte bundle-ID"
+if [ -n "$value" ]; then grep -E 'CODE_SIGN_ENTITLEMENTS|RINGTOOLS_BUILD_PROFILE|PRODUCT_BUNDLE_IDENTIFIER' <<<"$s" >&2 || true; fail "Debug-PersonalTeam: CODE_SIGN_ENTITLEMENTS moet leeg zijn (nu: '$value')"; fi
+grep -qE '^\s*RINGTOOLS_BUILD_PROFILE = personal-team$' <<<"$s" || { grep -E 'RINGTOOLS|CODE_SIGN' <<<"$s" >&2 || true; fail "Debug-PersonalTeam: buildprofiel ontbreekt"; }
+grep -qE '^\s*PRODUCT_BUNDLE_IDENTIFIER = nl\.ringapeldoorn\.ringtools\.dev$' <<<"$s" || fail "Debug-PersonalTeam: onverwachte bundle-ID"
 echo "ok  Debug-PersonalTeam"
 
 build_and_inspect() { # scheme config expect(standard|personal-team)
@@ -43,14 +44,14 @@ build_and_inspect() { # scheme config expect(standard|personal-team)
 $xcent
 $(strings -a "$app/App" 2>/dev/null | grep -E 'aps-environment|associated-domains|applinks:' || true)"
   if [ "$expect" = standard ]; then
-    echo "$ent" | grep -q 'aps-environment' || fail "$cfg: aps-environment ontbreekt in de effectieve entitlements"
-    echo "$ent" | grep -q 'com.apple.developer.associated-domains' || fail "$cfg: associated-domains ontbreekt in de effectieve entitlements"
-    echo "$ent" | grep -q 'applinks:ringapeldoorn.nl' || fail "$cfg: applinks-domein ontbreekt in de effectieve entitlements"
+    grep -q 'aps-environment' <<<"$ent" || fail "$cfg: aps-environment ontbreekt in de effectieve entitlements"
+    grep -q 'com.apple.developer.associated-domains' <<<"$ent" || fail "$cfg: associated-domains ontbreekt in de effectieve entitlements"
+    grep -q 'applinks:ringapeldoorn.nl' <<<"$ent" || fail "$cfg: applinks-domein ontbreekt in de effectieve entitlements"
   else
-    ! echo "$ent" | grep -q 'aps-environment' || fail "$cfg: aps-environment staat in de effectieve entitlements"
-    ! echo "$ent" | grep -q 'associated-domains' || fail "$cfg: associated-domains staat in de effectieve entitlements"
+    ! grep -q 'aps-environment' <<<"$ent" || fail "$cfg: aps-environment staat in de effectieve entitlements"
+    ! grep -q 'associated-domains' <<<"$ent" || fail "$cfg: associated-domains staat in de effectieve entitlements"
   fi
-  echo "ok  $cfg gebouwd en gecontroleerd (profiel $expect; effectieve entitlements: $(echo "$ent" | grep -c '<key>') sleutel(s))"
+  echo "ok  $cfg gebouwd en gecontroleerd (profiel $expect; effectieve entitlements: $(grep -c '<key>' <<<"$ent") sleutel(s))"
 }
 echo "== Simulatorbuilds =="
 build_and_inspect App Debug standard
