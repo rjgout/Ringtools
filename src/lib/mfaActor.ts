@@ -1,5 +1,8 @@
 import "server-only";
 import { mfaRequired } from "./auth";
+import { prisma } from "./prisma";
+import { hasPasskeys } from "./webauthn";
+import { isTotpConfirmed } from "./mfa";
 import { getAwaitingMfaUser, getCurrentSession } from "./session";
 
 /**
@@ -19,6 +22,20 @@ export type MfaActor = {
   /** Moet deze gebruiker (nog) een tweede factor doorlopen? */
   mfaRequired: boolean;
 };
+
+/**
+ * Mag een wachtende sessie (alleen eerste factor) zélf een passkey
+ * inschrijven en daarmee de login afronden? Alleen voor een eerste
+ * inschrijving: niet voor het adminaccount (TOTP), en niet als de gebruiker al
+ * een passkey of bevestigde TOTP heeft — anders zou het bezit van alleen de
+ * eerste factor (wachtwoord/mailbox) de tweede factor kunnen vervangen.
+ */
+export async function mayEnrollFirstFactorWhilePending(actor: MfaActor): Promise<boolean> {
+  if (actor.mode !== "pending") return true;
+  const user = await prisma.user.findUnique({ where: { id: actor.userId }, select: { role: true } });
+  if (!user || user.role === "ADMIN") return false;
+  return !(await hasPasskeys(actor.userId)) && !(await isTotpConfirmed(actor.userId));
+}
 
 export async function resolveMfaActor(): Promise<MfaActor | null> {
   const awaiting = await getAwaitingMfaUser();

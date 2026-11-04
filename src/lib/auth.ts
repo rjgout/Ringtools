@@ -134,7 +134,7 @@ export async function getActiveSession(rawToken: string | undefined | null): Pro
   return { sessionId: session.id, mfaAt: session.mfaAt, user: session.user };
 }
 
-export type AwaitingMfaSession = { sessionId: string; userId: string; user: User };
+export type AwaitingMfaSession = { sessionId: string; userId: string; user: User; factorProvedAt: Date | null };
 
 /**
  * Geeft de gebruiker terug voor een sessie waarvan de identiteit al
@@ -146,7 +146,23 @@ export type AwaitingMfaSession = { sessionId: string; userId: string; user: User
 export async function getSessionAwaitingMfa(rawToken: string | undefined | null): Promise<AwaitingMfaSession | null> {
   const session = await findLiveSession(rawToken);
   if (!session || session.mfaAt || !session.user.active) return null;
-  return { sessionId: session.id, userId: session.userId, user: session.user };
+  return { sessionId: session.id, userId: session.userId, user: session.user, factorProvedAt: session.factorProvedAt };
+}
+
+/** Hoe lang een in de wachtende sessie bewezen/ingeschreven factor de afronding mag autoriseren. */
+export const FACTOR_PROOF_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * Legt vast dat in deze wachtende sessie een tweede factor is bewezen (code
+ * geverifieerd) of voor het eerst is ingeschreven. Zonder dit bewijs kan de
+ * sessie niet worden afgerond.
+ */
+export async function markSessionFactorProved(sessionId: string): Promise<void> {
+  await prisma.session.updateMany({ where: { id: sessionId, mfaAt: null }, data: { factorProvedAt: new Date() } });
+}
+
+export function hasFreshFactorProof(session: { factorProvedAt: Date | null }): boolean {
+  return !!session.factorProvedAt && Date.now() - session.factorProvedAt.getTime() <= FACTOR_PROOF_TTL_MS;
 }
 
 export type SessionRotation =

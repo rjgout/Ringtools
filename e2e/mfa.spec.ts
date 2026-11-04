@@ -32,6 +32,26 @@ test("een magic link alleen geeft geen toegang: de passkey-stap is verplicht", a
   await expect(page).toHaveURL(/\/login/);
 });
 
+test("met alleen de eerste factor kun je geen extra passkey inschrijven en de login niet afronden", async ({ page }) => {
+  const { user } = await createE2eUser("HOGERAAD", `Bypass ${Date.now()}`, { mfaEnabled: true });
+  await prisma.webAuthnCredential.create({ data: { userId: user.id, credentialId: `bypass-${Date.now()}`, publicKey: Buffer.from([1, 2, 3]) } });
+  const { rawToken } = await createMagicLinkToken(user.id);
+
+  await page.goto(`/auth/magic/${rawToken}`);
+  await page.getByRole("button", { name: "Inloggen" }).click();
+  await expect(page).toHaveURL(/\/mfa\/passkey/);
+
+  // De wachtende sessie mag geen tweede factor "erbij" registreren...
+  const options = await page.request.post("/api/webauthn/register/options");
+  expect(options.status()).toBe(403);
+  const verify = await page.request.post("/api/webauthn/register/verify", { data: { response: {} } });
+  expect(verify.status()).toBe(403);
+
+  // ...en blijft buiten de beveiligde pagina's.
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/login/);
+});
+
 test("passkeyregistratie en een latere passkeylogin werken met user verification", async ({ page }) => {
   const { user } = await createE2eUser("HOGERAAD", `Passkey ${Date.now()}`, { mfaEnabled: true });
 

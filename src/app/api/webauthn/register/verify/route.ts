@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { resolveMfaActor } from "@/lib/mfaActor";
+import { resolveMfaActor, mayEnrollFirstFactorWhilePending } from "@/lib/mfaActor";
 import { verifyPasskeyRegistration } from "@/lib/webauthn";
 import { isRecentlyMfaVerified, promoteSessionToMfaVerified } from "@/lib/auth";
 import { setSessionCookie, safeInternalPath, getRequestUserAgent } from "@/lib/session";
@@ -8,6 +8,11 @@ import { logSecurityEvent } from "@/lib/securityEvents";
 export async function POST(request: NextRequest) {
   const actor = await resolveMfaActor();
   if (!actor) return Response.json({ error: "Niet ingelogd." }, { status: 401 });
+
+  // Wachtende sessie: alleen een eerste inschrijving, nooit een tweede factor "erbij".
+  if (!(await mayEnrollFirstFactorWhilePending(actor))) {
+    return Response.json({ error: "Deze actie is nu niet toegestaan. Log in met je bestaande tweede factor." }, { status: 403 });
+  }
 
   if (actor.mode === "full" && actor.mfaRequired && !isRecentlyMfaVerified(actor.mfaAt)) {
     return Response.json({ error: "Herverifieer eerst om deze actie uit te voeren." }, { status: 403 });

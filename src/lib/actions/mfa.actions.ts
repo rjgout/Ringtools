@@ -13,7 +13,7 @@ import {
   requireRole,
   requireRecentMfa,
 } from "@/lib/session";
-import { promoteSessionToMfaVerified, destroySessionById } from "@/lib/auth";
+import { promoteSessionToMfaVerified, destroySessionById, markSessionFactorProved, hasFreshFactorProof } from "@/lib/auth";
 import { startTotpEnrollment, verifyTotpCode, confirmTotpEnrollment, consumeRecoveryCode, regenerateRecoveryCodes, isTotpConfirmed } from "@/lib/mfa";
 import { hasPasskeys } from "@/lib/webauthn";
 import { logSecurityEvent } from "@/lib/securityEvents";
@@ -45,6 +45,8 @@ export async function confirmTotpEnrollmentLoginAction(_prev: TotpEnrollResult |
   if (!result.ok) {
     return { ok: false, message: result.outcome === "LOCKED" ? "Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw." : "Ongeldige code. Controleer de tijd op je apparaat en probeer het opnieuw." };
   }
+  // Bewijs in DEZE sessie dat de factor net is ingeschreven/bevestigd; alleen dit staat afronden toe.
+  await markSessionFactorProved(awaiting.sessionId);
   return { ok: true, message: "", recoveryCodes: result.recoveryCodes };
 }
 
@@ -53,6 +55,9 @@ export async function finalizeAwaitingMfaEnrollmentAction(formData: FormData): P
   const awaiting = await getAwaitingMfaUser();
   if (!awaiting) redirect("/login");
 
+  // Afronden mag alleen met bewijs uit déze sessie (zojuist ingeschreven/bevestigde
+  // factor); dat er elders een factor bestaat is geen bewijs.
+  if (!hasFreshFactorProof(awaiting)) redirect("/login");
   const configured = (await isTotpConfirmed(awaiting.userId)) || (await hasPasskeys(awaiting.userId));
   if (!configured) redirect("/login");
 

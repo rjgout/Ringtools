@@ -147,6 +147,10 @@ model Session {
   tokenHash     String    @unique
   userAgent     String?
   mfaAt         DateTime?
+  // Tijdstip waarop in DEZE (nog wachtende) sessie een tweede factor is
+  // bewezen of voor het eerst ingeschreven. Alleen daarmee mag een wachtende
+  // sessie worden afgerond; "er bestaat een factor" is niet genoeg.
+  factorProvedAt DateTime?
   expiresAt     DateTime
   createdAt     DateTime  @default(now())
   // Doorlopende (sliding) sessies: laatste activiteit, tijdstip van de laatste
