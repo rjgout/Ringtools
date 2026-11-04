@@ -5,25 +5,57 @@ Lees dit bestand volledig vóór je iets wijzigt. Bij tegenstrijdigheid met een 
 tenzij de eigenaar uitdrukkelijk anders heeft opgedragen. (Bij de invoering van dit bestand bestonden er geen andere
 `AGENTS.md`/`CLAUDE.md`; voeg bij een nieuw instructiebestand de inhoud hier samen i.p.v. een tweede bron te maken.)
 
-## Hoofdregel (altijd van toepassing)
+## Koers: app-first (permanent, door de eigenaar vastgesteld)
 
-> Voordat je bestaande functionaliteit wijzigt of nieuwe functionaliteit toevoegt, controleer je de gevolgen voor Web/PWA, iOS/Capacitor en Android/Capacitor. Behoud de bestaande gedeelde bedrijfslogica, tenantisolatie en beveiligingsarchitectuur. Een wijziging is pas afgerond wanneer de relevante platformtests zijn uitgevoerd of expliciet is vastgelegd waarom een test niet mogelijk was.
+- **Ringtools is app-first.** De native apps voor **iOS en Android (Capacitor)** zijn het hoofdproduct en de primaire gebruikersplatforms.
+- **De publieke website (`ringapeldoorn.nl`) is uitsluitend informatief** (uithangbord): uitleg, privacy, contact, accountverwijdering,
+  later links naar de stores. Geen vertrouwelijke gegevens, geen ingelogde gebruikersinterface.
+- **Nieuwe gebruikersfunctionaliteit wordt voor de native app gebouwd, niet voor de publieke website.** Webvarianten zijn alleen
+  toegestaan voor technisch beheer door `webmin`, en alleen met een vastgelegde reden.
+- **De backend blijft centraal** (Next.js + PostgreSQL op de bestaande Synology NAS, Docker, poort 2809). Next.js blijft beschikbaar voor
+  de mobiele API en eventueel een streng beveiligd technisch beheer (alleen `webmin`, verplichte TOTP). Dit is geen alternatief gebruikersportaal.
+- **Beveiliging, tenantisolatie en MFA worden nooit verzwakt** – ook niet om iets sneller af te krijgen of voor platformcompatibiliteit.
+- **Functionele volledigheid gaat vóór visuele verfijning.** Vormgeving komt later.
+- **De bestaande webapp wordt uitsluitend via een gecontroleerde, gefaseerde migratie uitgeschakeld** (zie `docs/MIGRATIE-APP-ONLY.md`).
+  De definitieve omschakeling gebeurt **nooit** zonder aparte, expliciete opdracht van de eigenaar. Tot die tijd blijft de webapp bereikbaar.
+- **Elke wijziging houdt rekening met iOS én Android.** Een wijziging is pas afgerond wanneer de relevante platformtests zijn uitgevoerd
+  of expliciet is vastgelegd waarom een test niet mogelijk was.
+- **De `App-PersonalTeam`-configuratie voor iPhone-tests (gratis Personal Team) blijft behouden** en werkend (zie "Permanente lessen").
+- Wijzigingen aan authenticatie, notificaties, navigatie, e-maillinks, opslag of API-contracten worden altijd expliciet op native
+  compatibiliteit beoordeeld.
+- Gebruik de productieconfiguratie van Capacitor niet als eenvoudige externe-websitewrapper. De apps gebruiken gebundelde assets en veilige
+  toegang tot de bestaande Ringtools-backend.
 
-> Wijzigingen aan authenticatie, notificaties, navigatie, e-maillinks, opslag of API-contracten moeten altijd expliciet worden beoordeeld op native compatibiliteit.
+## Platformen en functieoverzicht
 
-> Gebruik de productieconfiguratie van Capacitor niet als eenvoudige externe-websitewrapper. De mobiele apps gebruiken gebundelde assets en veilige toegang tot de bestaande Ringtools-backend.
+Primair: **iOS** (`mobile/ios`) en **Android** (`mobile/android`), beide met dezelfde gebundelde React-client (`mobile/src`).
+Daarnaast bestaan: de **publieke website** (informatief) en de **technische beheeromgeving** (webmin-only noodtoegang).
+De huidige Next.js-webapp (`src/app`) is een **overgangsvoorziening** voor bestaande gebruikers tot de gecontroleerde omschakeling.
 
-## Ondersteunde platforms
+Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet · ⚠ overgang (webapp, wordt uitgefaseerd)
 
-Ringtools ondersteunt drie platforms:
+| Functie | iOS | Android | Publieke website | Technisch beheer (webmin, web) |
+|---|---|---|---|---|
+| Informatie over Ringtools, privacy, contact, accountverwijdering | ✅ (links) | ✅ (links) | 🔧 E | — |
+| Inloggen met e-mailcode | ✅ | ✅ | — (na omschakeling) | — |
+| Native passkeys / volledige MFA voor gebruikers | 🔧 C | 🔧 C | — | — |
+| Webmin-login: wachtwoord + verplichte TOTP | 🔧 B | 🔧 B | — | ✅ |
+| Roepingen bekijken, ondersteunen (stemmen) | ✅ | ✅ | ⚠ | — |
+| Nieuw voorstel, verantwoordelijken, herinneren, opnieuw vragen, rondes beheren | 🔧 A | 🔧 A | ⚠ | — |
+| Taken toewijzen/afronden, verwerken, definitief verwijderen | 🔧 A | 🔧 A | ⚠ | — |
+| Gebruikersbeheer binnen eigen ring (ringbeheerder) | 🔧 B | 🔧 B | ⚠ | — |
+| Ringbeheer: ringen aanmaken/wijzigen/(de)activeren (alleen webmin) | 🔧 B | 🔧 B | — | ✅ |
+| Eerste ringbeheerder van een nieuwe ring aanwijzen (webmin) | 🔧 B | 🔧 B | — | ✅ |
+| Uitnodigen en activeren van nieuwe gebruikers | 🔧 C | 🔧 C | — | — |
+| Ontheffingen (aparte module) | 🔧 D | 🔧 D | — | — |
+| Meldingen in de app (bel) | ✅ | ✅ | ⚠ | — |
+| Native push (APNs/FCM) | ✅ (niet in PersonalTeam) | ✅ | — | — |
+| Universal Links / App Links | ✅ (niet in PersonalTeam) | ✅ | `.well-known`-bestanden | — |
+| Sessies en apparaten beheren, sessie-intrekking op afstand | ✅ | ✅ | ⚠ | ✅ |
+| SMTP/instellingen, MFA-reset, noodprocedures | — | — | — | ✅ |
 
-1. **Web/PWA** – de Next.js-app (`src/`), self-hosted via Docker op poort 2809.
-2. **iOS** – via Capacitor (`mobile/ios`).
-3. **Android** – via Capacitor (`mobile/android`).
-
-Iedere toekomstige wijziging wordt op alle drie beoordeeld. Nieuwe functionaliteit wordt niet uitsluitend voor het web
-ontwikkeld zonder uitdrukkelijke, vastgelegde reden (bijvoorbeeld: beheerfuncties die bewust webapp-only zijn – zie
-"Bewust alleen web" hieronder).
+Houd deze tabel actueel bij iedere functionele wijziging. Verplaatsen van webfunctionaliteit naar de app: API-route + gedeelde types + tests +
+bijwerken van deze tabel en van `docs/MOBILE.md`.
 
 ## Architectuur
 
@@ -96,16 +128,15 @@ Mobile-first; Liquid Glass-stijl behouden (tokens in `src/app/globals.css` en `m
 Android; veilige schermranden (`env(safe-area-inset-*)`); dark mode; correct toetsenbord- en navigatiegedrag (Android-
 terugknop); toegankelijk (contrast, focus, labels, ≥48 px aanraakdoelen); verschillende schermformaten.
 
-## Bewust alleen web (nu)
+## Bewust (voorlopig) niet in de app
 
-Ringbeheer, gebruikersbeheer, beheerdersaccount, SMTP/instellingen, MFA/passkeys en beveiligingsinstellingen, staf-acties
-(herinneren, taken beheren, verwerken, verwijderen, nieuw voorstel). Zie `docs/MOBILE.md` ("Nog niet geïmplementeerd").
-Verplaatsen naar mobiel vereist: API-route + gedeelde types + tests + bijwerken van deze lijst.
+Zie het functieoverzicht: SMTP/instellingen, MFA-reset en noodprocedures blijven bij technisch beheer (`webmin`, web). Alles wat reguliere
+gebruikers, ringbeheerders en `webmin` voor hun werk nodig hebben, moet in de app komen (Fasen A–D in `docs/MIGRATIE-APP-ONLY.md`).
 
 ## Checklist vóór en na iedere wijziging
 
 **Vooraf**
-- [ ] Welke platformen raakt dit (Web/PWA, iOS, Android)? Zo niet alle drie: waarom niet (vastleggen).
+- [ ] Raakt dit iOS én Android (primaire platformen)? Zo niet beide: waarom niet (vastleggen). Raakt het de overgangswebapp of technisch beheer?
 - [ ] Raakt het authenticatie/sessies, notificaties, navigatie, e-maillinks, opslag of het API-contract? → expliciet op
       native compatibiliteit beoordelen.
 - [ ] Hergebruikt het bestaande bedrijfslogica en autorisatie (geen duplicatie)? Blijft ringisolatie gewaarborgd?
@@ -115,7 +146,7 @@ Verplaatsen naar mobiel vereist: API-route + gedeelde types + tests + bijwerken 
 **Achteraf (voer uit en rapporteer wat is gedraaid)**
 - [ ] `npx tsc --noEmit` en `npx eslint .` (root).
 - [ ] `npx vitest run` (root: server, API-contract, push, ringisolatie) en `cd mobile && npm test`.
-- [ ] `npx next build` (Next.js-build) en indien relevant Playwright-e2e (`npx playwright test`, zie README) voor Web/PWA.
+- [ ] `npx next build` (Next.js-build) en indien relevant Playwright-e2e (`npx playwright test`, zie README) voor de overgangswebapp en het technisch beheer.
 - [ ] `cd mobile && npm run build` (client) en `npm run check:native-config` (Capacitor-/native configuratie, deep links).
 - [ ] Android: `cd mobile && npm run build:android:debug` (vereist JDK 21 + Android SDK) – of expliciet "niet getest".
 - [ ] iOS: `npm run build:ios:simulator` op macOS met Xcode – of expliciet "niet getest".
