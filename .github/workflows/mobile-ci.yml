@@ -53,7 +53,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
+      # De runner heeft de Android SDK al (ANDROID_HOME); Gradle haalt ontbrekende onderdelen zelf op.
       - run: npm ci
       - run: npx cap sync android
       - name: Debug-APK bouwen
