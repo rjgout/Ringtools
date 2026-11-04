@@ -27,27 +27,26 @@ echo "ok  Debug-PersonalTeam"
 build_and_inspect() { # scheme config expect(standard|personal-team)
   local scheme="$1" cfg="$2" expect="$3" dd="$PWD/../build/dd-$2"
   rm -rf "$dd"
+  # Ad-hoc ondertekening ("-") voor de simulator: geen Apple-account nodig, maar de entitlements worden wél in de
+  # handtekening vastgelegd, zodat we de EFFECTIEVE entitlements kunnen uitlezen.
   xcodebuild -project "$PROJECT" -scheme "$scheme" -configuration "$cfg" -sdk iphonesimulator \
-    -destination 'generic/platform=iOS Simulator' -derivedDataPath "$dd" CODE_SIGNING_ALLOWED=NO build >/dev/null
+    -destination 'generic/platform=iOS Simulator' -derivedDataPath "$dd" \
+    CODE_SIGN_IDENTITY="-" CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" build >/dev/null
   local app; app="$(find "$dd/Build/Products" -name 'App.app' -maxdepth 3 | head -1)"
   [ -n "$app" ] || fail "$cfg: App.app niet gevonden"
   grep -q "profile:\"$expect\"" "$app/public/ringtools-build.js" || fail "$cfg: buildprofiel in de bundel is niet '$expect' ($(cat "$app/public/ringtools-build.js" 2>/dev/null))"
-  local xcent; xcent="$(find "$dd/Build/Intermediates.noindex" -name '*.xcent' | head -1 || true)"
+  codesign -v "$app" 2>/dev/null || fail "$cfg: app is niet (ad-hoc) ondertekend; entitlements zijn dan niet te controleren"
+  local ent; ent="$(codesign -d --entitlements :- "$app" 2>/dev/null || true)"
   if [ "$expect" = standard ]; then
-    [ -n "$xcent" ] || fail "$cfg: geen .xcent gevonden om de entitlements te controleren"
-    grep -q 'aps-environment' "$xcent" || fail "$cfg: aps-environment ontbreekt in de effectieve entitlements"
-    grep -q 'com.apple.developer.associated-domains' "$xcent" || fail "$cfg: associated-domains ontbreekt in de effectieve entitlements"
+    echo "$ent" | grep -q 'aps-environment' || fail "$cfg: aps-environment ontbreekt in de effectieve entitlements"
+    echo "$ent" | grep -q 'com.apple.developer.associated-domains' || fail "$cfg: associated-domains ontbreekt in de effectieve entitlements"
+    echo "$ent" | grep -q 'applinks:ringapeldoorn.nl' || fail "$cfg: applinks-domein ontbreekt in de effectieve entitlements"
   else
-    if [ -n "$xcent" ]; then
-      ! grep -q 'aps-environment' "$xcent" || fail "$cfg: aps-environment staat in de effectieve entitlements"
-      ! grep -q 'associated-domains' "$xcent" || fail "$cfg: associated-domains staat in de effectieve entitlements"
-    fi
-    # Ook de gebouwde binary mag de entitlements niet bevatten.
-    local bin="$app/App"
-    ! strings -a "$bin" | grep -q 'com.apple.developer.associated-domains' || fail "$cfg: associated-domains zit in de binary"
-    ! strings -a "$bin" | grep -q 'aps-environment' || fail "$cfg: aps-environment zit in de binary"
+    ! echo "$ent" | grep -q 'aps-environment' || fail "$cfg: aps-environment staat in de effectieve entitlements"
+    ! echo "$ent" | grep -q 'associated-domains' || fail "$cfg: associated-domains staat in de effectieve entitlements"
+    ! strings -a "$app/App" | grep -q 'com.apple.developer.associated-domains' || fail "$cfg: associated-domains zit in de binary"
   fi
-  echo "ok  $cfg gebouwd (profiel $expect)"
+  echo "ok  $cfg gebouwd en gecontroleerd (profiel $expect; effectieve entitlements: $(echo "$ent" | grep -c '<key>') sleutel(s))"
 }
 echo "== Simulatorbuilds =="
 build_and_inspect App Debug standard
