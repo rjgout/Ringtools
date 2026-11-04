@@ -34,7 +34,7 @@ export async function resolveOpenLink(rawToken: string): Promise<OpenLinkInfo> {
   });
   if (!token || token.expiresAt.getTime() < Date.now() || !token.user.active) return { valid: false };
   const member = await prisma.ringMembership.findFirst({
-    where: { userId: token.userId, ringId: token.calling.ringId, active: true },
+    where: { userId: token.userId, ringId: token.calling.ringId, active: true, ring: { active: true } },
     select: { id: true },
   });
   if (!member) return { valid: false };

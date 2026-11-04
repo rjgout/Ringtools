@@ -164,7 +164,7 @@ export async function getHogeraadOverview(userId: string, ringId: string) {
 
 /** Aantal openstaande acties over alle actieve ringen van een gebruiker (voor de app-badge op het apparaat). */
 export async function getPendingActionCount(userId: string): Promise<number> {
-  const memberships = await prisma.ringMembership.findMany({ where: { userId, active: true } });
+  const memberships = await prisma.ringMembership.findMany({ where: { userId, active: true, ring: { active: true } } });
   let count = 0;
   for (const m of memberships) {
     if (m.role === "HOGERAAD") {

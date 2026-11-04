@@ -1,4 +1,5 @@
 import type {
+  AdminRing,
   ApiMeta,
   AppNotification,
   CallingDetail,
@@ -6,11 +7,14 @@ import type {
   Dashboard,
   DeviceInfo,
   LoginResult,
+  ManagedUser,
   Me,
   RemindResult,
   RingMemberInfo,
   SessionInfo,
   TaskKey,
+  TokenResult,
+  UserSearchHit,
 } from "@shared/api-types";
 
 export class ApiRequestError extends Error {
@@ -38,6 +42,8 @@ export type ApiClientOptions = {
 
 /** Dunne client voor /api/mobile/v1. Het sessietoken gaat alleen in de Authorization-header, nooit in een URL. */
 export class ApiClient {
+  /** Beheermodus (webmin): sessie-, refresh- en logoutroutes liggen dan onder /admin. */
+  admin = false;
   constructor(private opts: ApiClientOptions) {}
 
   private async request<T>(method: "GET" | "POST", path: string, body?: unknown, tokenOverride?: string | null): Promise<T> {
@@ -85,13 +91,55 @@ export class ApiClient {
     return this.request<LoginResult>("POST", "/auth/login", { email, code, deviceName }, null);
   }
   refresh() {
-    return this.request<{ rotated: boolean; token?: string; expiresAt?: string }>("POST", "/auth/refresh", {});
+    return this.request<{ rotated: boolean; token?: string; expiresAt?: string }>("POST", this.admin ? "/admin/auth/refresh" : "/auth/refresh", {});
   }
   logout(pushToken?: string) {
-    return this.request<{ ok: boolean }>("POST", "/auth/logout", { pushToken });
+    return this.admin ? this.request<{ ok: boolean }>("POST", "/admin/auth/logout", {}) : this.request<{ ok: boolean }>("POST", "/auth/logout", { pushToken });
   }
   me() {
     return this.request<Me>("GET", "/me");
+  }
+  // ---- Webmin ----
+  adminLogin(username: string, password: string) {
+    return this.request<{ pendingToken: string; expiresAt: string }>("POST", "/admin/auth/login", { username, password }, null);
+  }
+  /** Tweede stap: het wachtende token gaat alleen in de Authorization-header. */
+  adminVerify(pendingToken: string, proof: { code?: string; recoveryCode?: string }) {
+    return this.request<TokenResult>("POST", "/admin/auth/totp", proof, pendingToken);
+  }
+  adminMe() {
+    return this.request<{ user: { id: string; name: string; email: string }; isAdmin: boolean }>("GET", "/admin/me");
+  }
+  adminReauth(code: string) {
+    return this.request<TokenResult>("POST", "/admin/auth/reauth", { code });
+  }
+  userReauth(code: string) {
+    return this.request<TokenResult>("POST", "/auth/reauth", { code });
+  }
+  adminRings() {
+    return this.request<{ rings: AdminRing[] }>("GET", "/admin/rings");
+  }
+  adminCreateRing(input: { name: string; existingUserId?: string; userName?: string; userEmail?: string; churchFunction: string; role: string }) {
+    return this.request<{ id: string; name: string }>("POST", "/admin/rings", input);
+  }
+  adminRenameRing(id: string, name: string) {
+    return this.request<{ ok: boolean }>("POST", `/admin/rings/${encodeURIComponent(id)}/rename`, { name });
+  }
+  adminSetRingActive(id: string, active: boolean) {
+    return this.request<{ ok: boolean }>("POST", `/admin/rings/${encodeURIComponent(id)}/active`, { active });
+  }
+  adminSearchUsers(q: string) {
+    return this.request<{ users: UserSearchHit[] }>("GET", `/admin/users?q=${encodeURIComponent(q)}`);
+  }
+  // ---- Gebruikersbeheer (ringbeheerder: eigen ring; webmin: via /admin) ----
+  ringUsers(ringId: string) {
+    return this.request<{ users: ManagedUser[] }>("GET", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/users`);
+  }
+  addRingUser(ringId: string, input: { existingUserId?: string; name?: string; email?: string; churchFunction: string; role: string; isRingManager: boolean }) {
+    return this.request<{ userId: string; name: string; joinedRounds: number }>("POST", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/users`, input);
+  }
+  updateRingUser(membershipId: string, input: { churchFunction: string; role: string; isRingManager: boolean; active: boolean; name?: string; email?: string }) {
+    return this.request<{ ok: boolean; joinedRounds: number }>("POST", `${this.admin ? "/admin" : ""}/memberships/${encodeURIComponent(membershipId)}`, input);
   }
   dashboard(ringId: string) {
     return this.request<Dashboard>("GET", `/dashboard?ring=${encodeURIComponent(ringId)}`);
@@ -159,9 +207,9 @@ export class ApiClient {
     return this.request<{ ok: boolean }>("POST", "/devices/unregister", { token }, null);
   }
   sessions() {
-    return this.request<{ sessions: SessionInfo[] }>("GET", "/sessions");
+    return this.request<{ sessions: SessionInfo[] }>("GET", this.admin ? "/admin/sessions" : "/sessions");
   }
   revokeSession(id: string) {
-    return this.request<{ ok: boolean }>("POST", `/sessions/${encodeURIComponent(id)}/revoke`, {});
+    return this.request<{ ok: boolean }>("POST", `${this.admin ? "/admin" : ""}/sessions/${encodeURIComponent(id)}/revoke`, {});
   }
 }

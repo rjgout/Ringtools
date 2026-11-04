@@ -26,7 +26,7 @@ export type RingContext = {
  */
 async function resolveContext(user: User): Promise<RingContext | null> {
   const memberships = await prisma.ringMembership.findMany({
-    where: { userId: user.id, active: true },
+    where: { userId: user.id, active: true, ring: { active: true } },
     include: { ring: true },
     orderBy: { createdAt: "asc" },
   });
@@ -70,7 +70,7 @@ export async function requireRingManager(): Promise<RingContext> {
 
 /** Zet de actieve ring (alleen toegestaan voor een ring waarvan de gebruiker actief lid is). */
 export async function setActiveRing(userId: string, ringId: string): Promise<boolean> {
-  const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId, active: true } });
+  const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, ring: { active: true } } });
   if (!membership) return false;
   const store = await cookies();
   store.set(RING_COOKIE_NAME, ringId, {

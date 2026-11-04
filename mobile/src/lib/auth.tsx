@@ -18,12 +18,28 @@ type AuthValue = {
   me: Me | null;
   ring: RingInfo | null;
   api: ApiClient;
+  /** Webmin is ingelogd (beheergedeelte); er is dan geen ring of voorstel. */
+  isAdmin: boolean;
   signIn: (email: string, code: string) => Promise<void>;
+  /** Webmin stap 1 (wachtwoord): geeft een wachtend token dat alleen voor stap 2 geldt. */
+  adminStart: (username: string, password: string) => Promise<string>;
+  /** Webmin stap 2 (TOTP of herstelcode): pas hierna bestaat er een sessie. */
+  adminFinish: (pendingToken: string, proof: { code?: string; recoveryCode?: string }) => Promise<void>;
+  /** Herverificatie voor gevoelige beheeracties; vervangt het sessietoken. */
+  reauth: (code: string) => Promise<void>;
+  /** Gewone gebruiker: vraagt een verse e-mailcode aan voor herverificatie. */
+  requestReauthCode: () => Promise<void>;
   signOut: () => Promise<void>;
   reloadMe: () => Promise<void>;
   selectRing: (id: string) => Promise<void>;
   enablePush: () => Promise<{ ok: boolean; message: string }>;
 };
+
+const adminMe = (u: { id: string; name: string; email: string }): Me => ({
+  user: { ...u, emailNotificationsEnabled: false, mfaEnabled: true },
+  rings: [],
+  pendingCount: 0,
+});
 
 const AuthContext = createContext<AuthValue | null>(null);
 
@@ -39,14 +55,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [startupError, setStartupError] = useState<ApiRequestError | null>(null);
   const [startupAttempt, setStartupAttempt] = useState(0);
   const [me, setMe] = useState<Me | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [ringId, setRingId] = useState<string | null>(null);
   const flushRef = useRef<() => Promise<void>>(async () => {});
 
+  const api_ref = useRef<ApiClient>(null as unknown as ApiClient);
   const clearSession = useCallback(async () => {
     // Onthoud het pushtoken tot de server het heeft afgemeld (ook bij 401 of zonder verbinding).
     const pushToken = await storage.getPushToken();
     if (pushToken) await storage.setPendingUnregister(pushToken);
     tokenRef.current = null;
+    api_ref.current.admin = false;
+    setIsAdmin(false);
     setMe(null);
     setRingId(null);
     setStatus("signedOut");
@@ -59,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [clearSession]
   );
 
+  api_ref.current = api;
   useEffect(() => {
     flushRef.current = async () => {
       const pending = await storage.getPendingUnregister();
@@ -86,15 +107,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     (async () => {
       setStatus("loading");
+      const adminMode = (await storage.getMode().catch(() => null)) === "admin";
+      api.admin = adminMode;
       const result = await resumeSession({
         getToken: () => storage.getToken(),
         useToken: (t) => void (tokenRef.current = t),
-        me: () => api.me(),
+        me: async () => (adminMode ? adminMe((await api.adminMe()).user) : api.me()),
       });
       if (cancelled) return;
       if (result.kind === "signedIn") {
         try {
-          await applyMe(result.me);
+          if (adminMode) setMe(result.me);
+          else await applyMe(result.me);
+          setIsAdmin(adminMode);
         } catch {
           /* ringkeuze niet te bewaren: doorgaan met de eerste ring */
         }
@@ -106,6 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setStatus("unavailable");
       } else {
         tokenRef.current = null;
+        api.admin = false;
         setStatus("signedOut");
       }
     })();
@@ -127,7 +153,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           tokenRef.current = result.token;
           await storage.setToken(result.token);
         }
-        await applyMe(await api.me());
+        if (api.admin) setMe(adminMe((await api.adminMe()).user));
+        else await applyMe(await api.me());
       } catch {
         /* 401 wordt door onUnauthorized afgehandeld; netwerkfouten negeren */
       }
@@ -151,6 +178,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     [api, applyMe]
   );
+
+  const adminStart = useCallback(async (username: string, password: string) => (await api.adminLogin(username, password)).pendingToken, [api]);
+
+  const adminFinish = useCallback(
+    async (pendingToken: string, proof: { code?: string; recoveryCode?: string }) => {
+      const result = await api.adminVerify(pendingToken, proof);
+      api.admin = true;
+      tokenRef.current = result.token;
+      await storage.setToken(result.token);
+      await storage.setMode("admin");
+      const who = await api.adminMe();
+      setMe(adminMe(who.user));
+      setRingId(null);
+      setIsAdmin(true);
+      setStatus("signedIn");
+    },
+    [api]
+  );
+
+  const reauth = useCallback(
+    async (code: string) => {
+      const result = api.admin ? await api.adminReauth(code) : await api.userReauth(code);
+      tokenRef.current = result.token;
+      await storage.setToken(result.token);
+    },
+    [api]
+  );
+
+  const requestReauthCode = useCallback(async () => {
+    if (me) await api.requestCode(me.user.email);
+  }, [api, me]);
 
   const signOut = useCallback(async () => {
     const pushToken = (await storage.getPushToken()) ?? undefined;
@@ -176,8 +234,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const ring = me?.rings.find((r) => r.id === ringId) ?? null;
   const value = useMemo<AuthValue>(
-    () => ({ status, startupError, retryStartup, me, ring, api, signIn, signOut, reloadMe, selectRing, enablePush }),
-    [status, startupError, retryStartup, me, ring, api, signIn, signOut, reloadMe, selectRing, enablePush]
+    () => ({ status, startupError, retryStartup, me, ring, api, isAdmin, signIn, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
+    [status, startupError, retryStartup, me, ring, api, isAdmin, signIn, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

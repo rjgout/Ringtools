@@ -39,19 +39,19 @@ Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet ·
 | Informatie over Ringtools, privacy, contact, accountverwijdering | ✅ (links) | ✅ (links) | 🔧 E | — |
 | Inloggen met e-mailcode | ✅ | ✅ | — (na omschakeling) | — |
 | Native passkeys / volledige MFA voor gebruikers | 🔧 C | 🔧 C | — | — |
-| Webmin-login: wachtwoord + verplichte TOTP | 🔧 B | 🔧 B | — | ✅ |
+| Webmin-login: wachtwoord + verplichte TOTP | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ |
 | Roepingen bekijken, ondersteunen (stemmen) | ✅ | ✅ | ⚠ | — |
 | Nieuw voorstel, verantwoordelijken, herinneren, opnieuw vragen, rondes beheren | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ⚠ | — |
 | Taken toewijzen/afronden, verwerken, definitief verwijderen | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ⚠ | — |
-| Gebruikersbeheer binnen eigen ring (ringbeheerder) | 🔧 B | 🔧 B | ⚠ | — |
-| Ringbeheer: ringen aanmaken/wijzigen/(de)activeren (alleen webmin) | 🔧 B | 🔧 B | — | ✅ |
-| Eerste ringbeheerder van een nieuwe ring aanwijzen (webmin) | 🔧 B | 🔧 B | — | ✅ |
+| Gebruikersbeheer binnen eigen ring (ringbeheerder) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | ⚠ | — |
+| Ringbeheer: ringen aanmaken/wijzigen/(de)activeren (alleen webmin) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ (aanmaken/wijzigen; activeren alleen in de app) |
+| Eerste ringbeheerder van een nieuwe ring aanwijzen (webmin) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ |
 | Uitnodigen en activeren van nieuwe gebruikers | 🔧 C | 🔧 C | — | — |
 | Ontheffingen (aparte module) | 🔧 D | 🔧 D | — | — |
 | Meldingen in de app (bel) | ✅ | ✅ | ⚠ | — |
 | Native push (APNs/FCM) | ✅ (niet in PersonalTeam) | ✅ | — | — |
 | Universal Links / App Links | ✅ (niet in PersonalTeam) | ✅ | `.well-known`-bestanden | — |
-| Sessies en apparaten beheren, sessie-intrekking op afstand | ✅ | ✅ | ⚠ | ✅ |
+| Sessies en apparaten beheren, sessie-intrekking op afstand | ✅ (ook webmin) | ✅ (ook webmin) | ⚠ | ✅ |
 | SMTP/instellingen, MFA-reset, noodprocedures | — | — | — | ✅ |
 
 Houd deze tabel actueel bij iedere functionele wijziging. Verplaatsen van webfunctionaliteit naar de app: API-route + gedeelde types + tests +
@@ -121,6 +121,11 @@ bijwerken van deze tabel en van `docs/MOBILE.md`.
   iOS-project of de entitlements: draai `npm run check:native-config` en `scripts/verify-ios-configs.sh` (CI doet dat op macOS).
 - Elke uitzondering in opstartcode moet in een eindtoestand eindigen (uitgelogd, ingelogd of "niet beschikbaar + opnieuw proberen"),
   nooit in een eeuwig laadscherm (zie `lib/resume.ts`); netwerkverzoeken hebben een time-out.
+
+- **Webmin-API en gebruikers-API blijven gescheiden.** Gewone routes weigeren het beheerdersaccount (403) en `/admin/*` weigert gewone
+  gebruikers; het wachtende token na het wachtwoord werkt nergens als sessie. Gevoelige beheeracties (gebruikers, ringen) vereisen een recente
+  tweede factor (`reauth-required` → herverificatie). Een gedeactiveerde ring (`Ring.active`) is voor niemand toegankelijk behalve voor de webmin;
+  bij nieuwe lidmaatschapscontroles altijd `ring: { active: true }` meenemen.
 
 ## Design
 

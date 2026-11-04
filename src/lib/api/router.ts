@@ -6,6 +6,7 @@ import { resolveOpenLink } from "../openLinks";
 import { authenticate, type ApiAuth } from "./auth";
 import { ApiError, jsonResponse, errorResponse, readJson, str } from "./http";
 import * as svc from "./service";
+import * as mgmt from "./management";
 
 /** Verhoog bij een niet-achterwaarts-compatibele wijziging; de app toont dan een update-melding. */
 export const API_VERSION = 1;
@@ -15,7 +16,7 @@ type Ctx = { request: Request; params: Record<string, string>; query: URLSearchP
 type Handler = (ctx: Ctx & { auth: ApiAuth }) => Promise<unknown>;
 type PublicHandler = (ctx: Ctx) => Promise<unknown>;
 
-type Route = { method: string; segments: string[]; auth: boolean; handler: PublicHandler };
+type Route = { method: string; segments: string[]; auth: false | "user" | "admin"; handler: PublicHandler };
 
 const routes: Route[] = [];
 
@@ -24,7 +25,12 @@ function publicRoute(method: string, pattern: string, handler: PublicHandler) {
 }
 
 function authedRoute(method: string, pattern: string, handler: Handler) {
-  routes.push({ method, segments: pattern.split("/").filter(Boolean), auth: true, handler: handler as PublicHandler });
+  routes.push({ method, segments: pattern.split("/").filter(Boolean), auth: "user", handler: handler as PublicHandler });
+}
+
+/** Alleen het beheerdersaccount (webmin) met voltooide TOTP; gewone gebruikers krijgen 403. */
+function adminRoute(method: string, pattern: string, handler: Handler) {
+  routes.push({ method, segments: pattern.split("/").filter(Boolean), auth: "admin", handler: handler as PublicHandler });
 }
 
 const ringOf = (ctx: Ctx) => ctx.query.get("ring") || str(ctx.body.ringId);
@@ -61,6 +67,16 @@ publicRoute("POST", "/auth/login", async ({ body }) => {
   const device = str(body.deviceName).slice(0, 60).replace(/[^\p{L}\p{N} ._-]/gu, "");
   const session = await createVerifiedSession(user.id, `Ringtools-app${device ? ` (${device})` : ""}`);
   return { token: session.rawToken, expiresAt: session.expiresAt.toISOString(), ...(await svc.getMe(user.id)) };
+});
+
+// Webmin: wachtwoord (stap 1) en TOTP/herstelcode (stap 2); pas daarna ontstaat een volledige sessie.
+publicRoute("POST", "/admin/auth/login", async ({ request, body }) =>
+  mgmt.adminLogin(body, request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "onbekend")
+);
+publicRoute("POST", "/admin/auth/totp", async ({ request, body }) => {
+  const token = /^Bearer\s+([A-Za-z0-9_-]{20,200})$/.exec(request.headers.get("authorization") || "")?.[1];
+  if (!token) throw new ApiError(401, "Je inlogsessie is verlopen. Log opnieuw in.", "unauthenticated");
+  return mgmt.adminVerifyTotp(token, body);
 });
 
 // Versie en capaciteiten van de API; de app controleert hiermee of ze nog compatibel is.
@@ -141,6 +157,37 @@ authedRoute("GET", "/sessions", async ({ auth }) => svc.listMySessions(auth.user
 authedRoute("POST", "/sessions/:id/revoke", async ({ auth, params }) => svc.revokeMySession(auth.user.id, params.id));
 authedRoute("POST", "/devices/remove", async ({ auth, body }) => svc.unregisterDevice(auth.user.id, str(body.token)));
 
+// ---- Gebruikersbeheer: ringbeheerder (eigen ring) ----
+
+authedRoute("POST", "/auth/reauth", async ({ auth, body }) => mgmt.userReauth(auth, body));
+authedRoute("GET", "/rings/:id/users", async ({ auth, params }) => mgmt.listUsersFor(auth, params.id));
+authedRoute("POST", "/rings/:id/users", async ({ auth, params, body }) => mgmt.addUserFor(auth, params.id, body));
+authedRoute("POST", "/memberships/:id", async ({ auth, params, body }) => mgmt.updateUserFor(auth, params.id, body));
+
+// ---- Systeembeheer (webmin) ----
+
+adminRoute("GET", "/admin/me", async ({ auth }) => ({ user: { id: auth.user.id, name: auth.user.name, email: auth.user.email }, isAdmin: true }));
+adminRoute("POST", "/admin/auth/reauth", async ({ auth, body }) => mgmt.adminReauth(auth, body));
+adminRoute("POST", "/admin/auth/refresh", async ({ auth }) => {
+  const result = await rotateSessionIfDue(auth.token);
+  if (result.status === "none") throw new ApiError(401, "Je sessie is verlopen.", "unauthenticated");
+  return result.rotated ? { rotated: true, token: result.rawToken, expiresAt: result.expiresAt.toISOString() } : { rotated: false };
+});
+adminRoute("POST", "/admin/auth/logout", async ({ auth }) => {
+  await destroySession(auth.token);
+  return { ok: true };
+});
+adminRoute("GET", "/admin/sessions", async ({ auth }) => svc.listMySessions(auth.user.id, auth.token));
+adminRoute("POST", "/admin/sessions/:id/revoke", async ({ auth, params }) => svc.revokeMySession(auth.user.id, params.id));
+adminRoute("GET", "/admin/rings", async () => mgmt.listRingsFor());
+adminRoute("POST", "/admin/rings", async ({ auth, body }) => mgmt.createRingFor(auth, body));
+adminRoute("POST", "/admin/rings/:id/rename", async ({ auth, params, body }) => mgmt.renameRingFor(auth, params.id, body));
+adminRoute("POST", "/admin/rings/:id/active", async ({ auth, params, body }) => mgmt.setRingActiveFor(auth, params.id, body));
+adminRoute("GET", "/admin/rings/:id/users", async ({ auth, params }) => mgmt.listUsersFor(auth, params.id));
+adminRoute("POST", "/admin/rings/:id/users", async ({ auth, params, body }) => mgmt.addUserFor(auth, params.id, body));
+adminRoute("POST", "/admin/memberships/:id", async ({ auth, params, body }) => mgmt.updateUserFor(auth, params.id, body));
+adminRoute("GET", "/admin/users", async ({ query }) => mgmt.searchUsersFor(query.get("q") || ""));
+
 function match(route: Route, method: string, segments: string[]): Record<string, string> | null {
   if (route.method !== method || route.segments.length !== segments.length) return null;
   const params: Record<string, string> = {};
@@ -163,7 +210,7 @@ export async function handleApi(request: Request, segments: string[]): Promise<R
         if (r.segments.length === segments.length && r.segments.every((s, i) => s.startsWith(":") || s === segments[i])) pathMatch = true;
         continue;
       }
-      const auth = r.auth ? await authenticate(request) : null;
+      const auth = r.auth ? await authenticate(request, r.auth) : null;
       const body = request.method === "GET" ? {} : await readJson(request);
       const data = await (r.handler as PublicHandler)({ request, params, query: url.searchParams, body, auth });
       return jsonResponse(data);

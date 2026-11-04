@@ -95,6 +95,26 @@ export type CallingDetail = {
 /** Actief lid van de eigen ring (alleen zichtbaar voor staf), o.a. om verantwoordelijken te kiezen. */
 export type RingMemberInfo = { id: string; name: string; role: Role; churchFunction: string };
 
+/** Gebruiker in beheerschermen (alleen voor ringbeheerders van die ring en de webmin). */
+export type ManagedUser = {
+  membershipId: string;
+  userId: string;
+  name: string;
+  email: string;
+  churchFunction: string;
+  role: Role;
+  isRingManager: boolean;
+  active: boolean;
+  otherRingCount: number;
+};
+
+export type AdminRing = { id: string; name: string; active: boolean; callingCount: number; memberCount: number; managers: string[] };
+
+export type UserSearchHit = { id: string; name: string; email: string };
+
+/** Nieuw sessietoken na herverificatie of voltooide webmin-login. */
+export type TokenResult = { token: string; expiresAt: string };
+
 export type RemindResult = { sent: number; skippedRecent: number };
 
 export type AppNotification = {

@@ -20,7 +20,7 @@ export function ErrorState({ error, onRetry }: { error: ApiRequestError; onRetry
   );
 }
 
-export function TabBar({ unread, pending }: { unread: number; pending: number }) {
+export function TabBar({ unread, pending, canManageUsers = false }: { unread: number; pending: number; canManageUsers?: boolean }) {
   const tab = ({ isActive }: { isActive: boolean }) => `tab${isActive ? " active" : ""}`;
   return (
     <nav className="tabbar" aria-label="Hoofdnavigatie">
@@ -31,6 +31,11 @@ export function TabBar({ unread, pending }: { unread: number; pending: number })
       <NavLink to="/voorstellen" className={tab}>
         Voorstellen
       </NavLink>
+      {canManageUsers && (
+        <NavLink to="/gebruikers" className={tab}>
+          Gebruikers
+        </NavLink>
+      )}
       <NavLink to="/meldingen" className={tab}>
         Meldingen
         {unread > 0 && <span className="dot" aria-label={`${unread} ongelezen`}>{unread}</span>}

@@ -8,6 +8,7 @@ import { KeychainAccess, SecureStorage } from "@aparajita/capacitor-secure-stora
  */
 const TOKEN = "ringtools.session";
 const RING = "ringtools.ring";
+const MODE = "ringtools.mode";
 const PUSH = "ringtools.pushToken";
 const DEVICE = "ringtools.deviceId";
 const PENDING_UNREGISTER = "ringtools.pendingPushUnregister";
@@ -45,6 +46,9 @@ async function remove(key: string): Promise<void> {
 export const storage = {
   getToken: () => get(TOKEN),
   setToken: (v: string) => set(TOKEN, v),
+  /** "admin" na een webmin-login; anders leeg (gewone gebruiker). */
+  getMode: () => get(MODE),
+  setMode: (v: string) => set(MODE, v),
   getRing: () => get(RING),
   setRing: (v: string) => set(RING, v),
   getPushToken: () => get(PUSH),
@@ -62,6 +66,6 @@ export const storage = {
   },
   /** Wist de sessiegegevens; de installatie-ID en een nog niet afgemeld pushtoken blijven bewust bestaan. */
   async clearSession() {
-    await Promise.all([TOKEN, RING, PUSH].map(remove));
+    await Promise.all([TOKEN, RING, PUSH, MODE].map(remove));
   },
 };

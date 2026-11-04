@@ -36,7 +36,8 @@ async function assertCanManageRing(db: Db, actorId: string, ringId: string): Pro
   const actor = await loadActiveActor(db, actorId);
   if (actor.role === "ADMIN") return actor;
   const membership = await db.ringMembership.findUnique({ where: { userId_ringId: { userId: actor.id, ringId } } });
-  if (!membership || !membership.active || !membership.isRingManager) throw new AuthorizationError();
+  const ring = await db.ring.findUnique({ where: { id: ringId } });
+  if (!membership || !membership.active || !membership.isRingManager || !ring?.active) throw new AuthorizationError();
   return actor;
 }
 
@@ -139,6 +140,17 @@ export async function renameRing(input: { actorId: string; ringId: string; name:
     });
     if (duplicate) throw new RingError("Er bestaat al een ring met deze naam.");
     return tx.ring.update({ where: { id: input.ringId }, data: { name } });
+  });
+}
+
+/** Activeert of deactiveert een ring. Alleen de webmin. Er wordt niets verwijderd: heractiveren herstelt alles. */
+export async function setRingActive(input: { actorId: string; ringId: string; active: boolean }) {
+  return prisma.$transaction(async (tx) => {
+    const actor = await loadActiveActor(tx, input.actorId);
+    if (actor.role !== "ADMIN") throw new AuthorizationError();
+    const ring = await tx.ring.findUnique({ where: { id: input.ringId } });
+    if (!ring) throw new RingError("Deze ring bestaat niet.");
+    return tx.ring.update({ where: { id: input.ringId }, data: { active: input.active } });
   });
 }
 
@@ -294,6 +306,7 @@ export async function listRingsOverview() {
   return rings.map((r) => ({
     id: r.id,
     name: r.name,
+    active: r.active,
     callingCount: r._count.callings,
     memberCount: r.memberships.filter((m) => m.active).length,
     managers: r.memberships.filter((m) => m.isRingManager && m.active && m.user.active).map((m) => m.user.name),

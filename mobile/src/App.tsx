@@ -15,6 +15,8 @@ import { NewCalling } from "./screens/NewCalling";
 import { CallingDetail } from "./screens/CallingDetail";
 import { Notifications } from "./screens/Notifications";
 import { Profile } from "./screens/Profile";
+import { AdminHome } from "./screens/admin/AdminHome";
+import { UserManager } from "./screens/UserManager";
 import { OpenLink } from "./screens/OpenLink";
 
 /**
@@ -45,7 +47,7 @@ function DeepLinks({ onTarget }: { onTarget: (route: string) => void }) {
 }
 
 function Shell() {
-  const { status, api, ring, me, startupError, retryStartup, signOut } = useAuth();
+  const { status, api, ring, me, startupError, retryStartup, signOut, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [online, setOnline] = useState(true);
@@ -95,6 +97,9 @@ function Shell() {
   }
   if (status === "signedOut") return (<><DeepLinks onTarget={goTo} /><Login /></>);
 
+  // Webmin: uitsluitend het beheergedeelte (geen ringen, voorstellen of meldingen).
+  if (isAdmin) return (<div className="shell"><DeepLinks onTarget={goTo} /><AdminHome /></div>);
+
   return (
     <div className="shell">
       <DeepLinks onTarget={goTo} />
@@ -109,13 +114,14 @@ function Shell() {
             <Route path="/voorstellen/nieuw" element={<NewCalling />} />
             <Route path="/roepingen/:id" element={<CallingDetail />} />
             <Route path="/open/:token" element={<OpenLink />} />
+            {ring.isRingManager && <Route path="/gebruikers" element={<div className="stack"><h1>{ring.name}</h1><UserManager ringId={ring.id} /></div>} />}
             <Route path="/meldingen" element={<Notifications onChanged={refreshUnread} />} />
             <Route path="/profiel" element={<Profile />} />
             <Route path="*" element={<Home />} />
           </Routes>
         )}
       </main>
-      <TabBar unread={unread} pending={me?.pendingCount ?? 0} />
+      <TabBar unread={unread} pending={me?.pendingCount ?? 0} canManageUsers={!!ring?.isRingManager} />
     </div>
   );
 }

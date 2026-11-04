@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AdminLogin } from "./AdminLogin";
 import { useAuth } from "../lib/auth";
 import { ApiRequestError } from "../lib/api";
 import { nativeCapabilities, PERSONAL_TEAM_NOTICE } from "../lib/buildProfile";
@@ -12,6 +13,7 @@ export function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [admin, setAdmin] = useState(false);
 
   async function request(e: React.FormEvent) {
     e.preventDefault();
@@ -39,6 +41,8 @@ export function Login() {
       setBusy(false);
     }
   }
+
+  if (admin) return <AdminLogin onBack={() => setAdmin(false)} />;
 
   return (
     <main className="page center">
@@ -69,7 +73,8 @@ export function Login() {
           </button>
         )}
         {nativeCapabilities().limited && <p role="note" className="muted">{PERSONAL_TEAM_NOTICE}</p>}
-        <p className="muted">Het beheerdersaccount (webmin) en accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd.</p>
+        <button type="button" className="btn btn-ghost btn-block" onClick={() => setAdmin(true)}>Inloggen als beheerder (webmin)</button>
+        <p className="muted">Accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd.</p>
       </form>
     </main>
   );

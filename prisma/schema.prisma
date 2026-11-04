@@ -425,6 +425,9 @@ model Notification {
 model Ring {
   id        String   @id @default(cuid())
   name      String   @unique
+  // Een gedeactiveerde ring blijft bewaard maar is voor niemand meer toegankelijk
+  // (ook niet voor leden); alleen de webmin beheert hem nog. Heractiveren herstelt alles.
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

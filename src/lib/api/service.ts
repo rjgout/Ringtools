@@ -44,7 +44,7 @@ export async function mapErrors<T>(fn: () => Promise<T>): Promise<T> {
 
 export async function requireMembership(userId: string, ringId: string) {
   const membership = ringId
-    ? await prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, user: { active: true } }, include: { ring: true } })
+    ? await prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, user: { active: true }, ring: { active: true } }, include: { ring: true } })
     : null;
   if (!membership) throw new ApiError(404, "Niet gevonden.", "not-found");
   return membership;
@@ -79,7 +79,7 @@ function toItem(c: Calling, needsMyResponse = false): CallingListItem {
 export async function getMe(userId: string) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
   const memberships = await prisma.ringMembership.findMany({
-    where: { userId, active: true },
+    where: { userId, active: true, ring: { active: true } },
     include: { ring: true },
     orderBy: { createdAt: "asc" },
   });
@@ -193,7 +193,7 @@ export async function getCallingView(userId: string, callingId: string) {
   const calling = await getCallingDetail(callingId);
   // Zelfde antwoord voor "bestaat niet" en "geen lid van de ring": niets lekken.
   if (!calling) throw new ApiError(404, "Niet gevonden.", "not-found");
-  const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId: calling.ringId, active: true } });
+  const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId: calling.ringId, active: true, ring: { active: true } } });
   if (!membership) throw new ApiError(404, "Niet gevonden.", "not-found");
 
   const staff = isStaff(membership.role);
@@ -301,7 +301,7 @@ export async function listRingMembersFor(userId: string, ringId: string) {
 async function staffForCalling(userId: string, callingId: string) {
   const calling = await prisma.calling.findUnique({ where: { id: callingId } });
   if (!calling) throw new ApiError(404, "Niet gevonden.", "not-found");
-  const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId: calling.ringId, active: true } });
+  const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId: calling.ringId, active: true, ring: { active: true } } });
   if (!membership) throw new ApiError(404, "Niet gevonden.", "not-found");
   if (!isStaff(membership.role)) throw new ApiError(403, "Je hebt hiervoor geen bevoegdheid.", "forbidden");
   return { calling, membership };
@@ -360,7 +360,7 @@ export async function completeTaskFor(userId: string, callingId: string, taskRaw
   const task = parseTask(taskRaw);
   const calling = await prisma.calling.findUnique({ where: { id: callingId } });
   if (!calling) throw new ApiError(404, "Niet gevonden.", "not-found");
-  const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId: calling.ringId, active: true } });
+  const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId: calling.ringId, active: true, ring: { active: true } } });
   if (!membership) throw new ApiError(404, "Niet gevonden.", "not-found");
   // Staf registreert elke taak; anderen alleen de aan henzelf toegewezen taak.
   if (!isStaff(membership.role) && calling[TASK_ASSIGNEE_FIELD[task]] !== userId) {

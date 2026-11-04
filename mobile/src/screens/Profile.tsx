@@ -65,7 +65,7 @@ export function Profile() {
       </section>
 
       <button className="btn btn-ghost btn-block" onClick={() => void signOut()}>Uitloggen</button>
-      <p className="muted">Ringtools {APP_VERSION}. Ringbeheer, gebruikersbeheer, MFA/passkeys, accountverwijdering en privacyinstellingen vind je in de webapp.</p>
+      <p className="muted">Ringtools {APP_VERSION}. MFA/passkeys, accountverwijdering en privacyinstellingen vind je voorlopig in de webapp.</p>
     </div>
   );
 }

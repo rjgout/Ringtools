@@ -54,9 +54,9 @@ async function assertActiveRingMembers(db: Db, ringId: string, userIds: string[]
 async function requireRingStaff(actorId: string, ringId: string): Promise<void> {
   const m = await prisma.ringMembership.findUnique({
     where: { userId_ringId: { userId: actorId, ringId } },
-    include: { user: true },
+    include: { user: true, ring: true },
   });
-  if (!m || !m.active || !m.user.active || !STAFF_ROLES.includes(m.role)) {
+  if (!m || !m.active || !m.user.active || !m.ring.active || !STAFF_ROLES.includes(m.role)) {
     throw new AuthorizationError();
   }
 }
@@ -228,13 +228,13 @@ export async function castVote(input: { callingId: string; userId: string; suppo
     }),
     prisma.ringMembership.findUnique({
       where: { userId_ringId: { userId: input.userId, ringId: calling.ringId } },
-      include: { user: true },
+      include: { user: true, ring: true },
     }),
   ]);
   // Naast de bevroren deelnemerslijst moet iemand NU nog actief lid van de
   // ring zijn met de juiste rol: een gedeactiveerd of van functie veranderd
   // lid kan niet meer reageren (bestaande reacties blijven wel staan).
-  if (!eligible || !membership || !membership.active || !membership.user.active || membership.role !== STAGE_ROLE[stage]) {
+  if (!eligible || !membership || !membership.active || !membership.user.active || !membership.ring.active || membership.role !== STAGE_ROLE[stage]) {
     throw new WorkflowError("Je kunt voor deze ondersteuningsronde geen ondersteuning uitbrengen.");
   }
 
