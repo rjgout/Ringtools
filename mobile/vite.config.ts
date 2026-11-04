@@ -10,5 +10,5 @@ export default defineConfig({
   resolve: { alias: { "@shared": path.resolve(__dirname, "../shared") } },
   build: { outDir: "dist", sourcemap: false, target: "es2022" },
   server: { proxy: { "/api": { target: process.env.VITE_API_URL || "http://localhost:2809", changeOrigin: true } } },
-  test: { environment: "jsdom", include: ["tests/**/*.test.ts"] },
+  test: { environment: "jsdom", include: ["tests/**/*.test.{ts,tsx}"] },
 });

@@ -54,7 +54,7 @@ publicRoute("POST", "/auth/login", async ({ body }) => {
   if (mfaRequired(user)) {
     throw new ApiError(
       403,
-      "Voor jouw account is passkey-verificatie ingeschakeld. Die wordt in de app nog niet ondersteund: schakel de verificatie uit via Profiel → Beveiliging in de webapp, of log in via de webapp.",
+      "Voor jouw account is passkey-verificatie ingeschakeld. Inloggen met een passkey wordt in de app nog niet ondersteund. Log voorlopig in via de webapp; je beveiliging blijft ongewijzigd.",
       "mfa-not-supported"
     );
   }

@@ -45,6 +45,8 @@ services:
       APNS_TEAM_ID: ${APNS_TEAM_ID:-}
       APNS_BUNDLE_ID: ${APNS_BUNDLE_ID:-}
       APNS_PRODUCTION: ${APNS_PRODUCTION:-true}
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      APNS_KEY_P8_FILE: ${APNS_KEY_P8_FILE:-}
       # Universele links / app-links (optioneel; leeg = de .well-known-bestanden zijn leeg)
       APPLE_APP_ID: ${APPLE_APP_ID:-}
       ANDROID_SHA256_FINGERPRINTS: ${ANDROID_SHA256_FINGERPRINTS:-}

@@ -67,7 +67,7 @@ export function Login() {
             Ander e-mailadres
           </button>
         )}
-        <p className="muted">Het beheerdersaccount (webmin) en gebruikers met passkey-verificatie gebruiken de webapp.</p>
+        <p className="muted">Het beheerdersaccount (webmin) en accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd.</p>
       </form>
     </main>
   );

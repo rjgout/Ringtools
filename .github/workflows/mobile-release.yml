@@ -151,6 +151,13 @@ jobs:
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Ringtools.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export"
           mkdir -p "$GITHUB_WORKSPACE/out" && cp "$RUNNER_TEMP"/export/*.ipa "$GITHUB_WORKSPACE/out/"
+      - name: Controleren of de IPA productie-APNs gebruikt (TestFlight/App Store)
+        run: |
+          rm -rf "$RUNNER_TEMP/ipa" && mkdir -p "$RUNNER_TEMP/ipa"
+          unzip -q "$GITHUB_WORKSPACE"/out/*.ipa -d "$RUNNER_TEMP/ipa"
+          ENT="$(codesign -d --entitlements :- "$RUNNER_TEMP"/ipa/Payload/*.app 2>/dev/null)"
+          echo "$ENT" | grep -A1 "aps-environment" | grep -q "<string>production</string>" || { echo "::error::aps-environment is niet 'production' in de IPA."; exit 1; }
+          echo "$ENT" | grep -q "applinks:" || { echo "::error::Associated Domains (applinks) ontbreken in de IPA."; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: ringtools-ios-ipa

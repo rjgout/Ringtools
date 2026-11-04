@@ -30,6 +30,8 @@ export type ApiClientOptions = {
   /** Aangeroepen bij 401 (sessie verlopen, ingetrokken of gebruiker gedeactiveerd). */
   onUnauthorized?: () => void;
   fetchImpl?: typeof fetch;
+  /** Maximale wachttijd per verzoek (standaard 20 s). */
+  timeoutMs?: number;
 };
 
 /** Dunne client voor /api/mobile/v1. Het sessietoken gaat alleen in de Authorization-header, nooit in een URL. */
@@ -39,8 +41,12 @@ export class ApiClient {
   private async request<T>(method: "GET" | "POST", path: string, body?: unknown, tokenOverride?: string | null): Promise<T> {
     const token = tokenOverride === undefined ? this.opts.getToken() : tokenOverride;
     let res: Response;
+    // Time-out: een hangende verbinding mag de app nooit eindeloos laten laden.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.opts.timeoutMs ?? 20_000);
     try {
       res = await (this.opts.fetchImpl ?? fetch)(`${this.opts.baseUrl}${path}`, {
+        signal: controller.signal,
         method,
         headers: {
           Accept: "application/json",
@@ -51,6 +57,8 @@ export class ApiClient {
       });
     } catch {
       throw new ApiRequestError(0, "Geen verbinding met de server. Controleer je internetverbinding.", "network");
+    } finally {
+      clearTimeout(timer);
     }
     let data: Record<string, unknown> = {};
     try {

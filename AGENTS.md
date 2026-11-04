@@ -63,6 +63,28 @@ ontwikkeld zonder uitdrukkelijke, vastgelegde reden (bijvoorbeeld: beheerfunctie
   paden herkend. Geen authenticatiebypass vanuit de native app (ook niet voor reviewers).
 - Open redirects voorkomen; eenmalige tokens niet lekken (niet loggen, niet in analytics, niet doorsturen).
 
+## Permanente lessen (uit eerdere audits; niet opnieuw maken)
+
+- **Geen React-state of opslagacties tijdens het renderen.** Statewijzigingen, `selectRing`, opslag en netwerkacties horen in een
+  `useEffect`/event-handler, met een controle of de waarde daadwerkelijk verandert (zie `CallingDetail.tsx`).
+- **Native pushlisteners nooit ongericht verwijderen.** Gebruik nooit `PushNotifications.removeAllListeners()` (of vergelijkbaar);
+  beheer alleen de listener-handles die een functie zelf registreert en verwijder precies die. De `pushNotificationActionPerformed`-
+  listener (tikken op een melding) moet in elke app-toestand blijven bestaan (`lib/deeplinks.ts`).
+- **Geen aanbevelingen om MFA uit te schakelen voor platformcompatibiliteit.** Ontbrekende native MFA-ondersteuning krijgt een veilige
+  melding ("log in via de webapp"), nooit het advies de beveiliging te verlagen (zie `docs/PASSKEYS-NATIVE.md`).
+- **Mobiele CI moet ook relevante backendwijzigingen dekken.** `mobile-ci.yml` draait bij wijzigingen in `src/lib/api/`, `auth.ts`,
+  `nativePush.ts`, `openLinks.ts`, `src/app/api/mobile/`, `src/app/.well-known/`, `prisma/`, `tests/` en dit bestand; voeg nieuwe
+  mobiele backendbestanden meteen aan de paden en de backend-job toe.
+- **Native pushproviders worden met hun officiële protocollen getest.** FCM: OAuth 2.0-serviceaccount (JWT bearer) als
+  `application/x-www-form-urlencoded`, tokencache/-vernieuwing, 401-retry. APNs: ES256-provider-token, HTTP/2 met `apns-topic`. Test de
+  echte requestheaders en -body (niet alleen gemockte succesresponses) en de echte transportlaag. Een geslaagde levering mag pas
+  worden geclaimd na verificatie met echte sleutels en een fysiek toestel.
+- **App Store- en TestFlight-configuraties worden afzonderlijk gevalideerd.** TestFlight en de App Store gebruiken productie-APNs
+  (`APNS_PRODUCTION=true`, `aps-environment=production` in de IPA); sandbox is alleen voor rechtstreekse Xcode-builds. Valideer
+  development, TestFlight en store-release apart; pushsleutels staan alleen op de server, nooit in GitHub.
+- Elke uitzondering in opstartcode moet in een eindtoestand eindigen (uitgelogd, ingelogd of "niet beschikbaar + opnieuw proberen"),
+  nooit in een eeuwig laadscherm (zie `lib/resume.ts`); netwerkverzoeken hebben een time-out.
+
 ## Design
 
 Mobile-first; Liquid Glass-stijl behouden (tokens in `src/app/globals.css` en `mobile/src/styles.css`); iPhone, iPad en
@@ -94,6 +116,7 @@ Verplaatsen naar mobiel vereist: API-route + gedeelde types + tests + bijwerken 
 - [ ] iOS: `npm run build:ios:simulator` op macOS met Xcode – of expliciet "niet getest".
 - [ ] Deep links, pushflow en inloggen op een fysiek toestel: handmatig; zo niet gedaan, expliciet rapporteren.
 - [ ] Docker/GitHub Actions blijven werken (`docker-publish.yml` ongewijzigd of bewust aangepast).
+- [ ] Wijziging aan mobiele backend, auth, push, links of API? → bevestig dat `mobile-ci.yml` die paden dekt en dat de backend-job draait.
 - [ ] Geen geheimen in diff/buildoutput (`git diff`, `npm run check:native-config`).
 - [ ] Documentatie bijgewerkt (`README.md`, `docs/MOBILE.md`, `docs/STORE-PRIVACY.md`, dit bestand).
 

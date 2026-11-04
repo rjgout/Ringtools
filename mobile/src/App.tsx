@@ -5,8 +5,8 @@ import { PushNotifications } from "@capacitor/push-notifications";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { API_HOST } from "./config";
 import { isNative, onBackButton, onNetworkChange, setupNativeChrome } from "./lib/native";
-import { parseTarget, routeFor } from "./lib/links";
-import { Spinner, TabBar } from "./components/ui";
+import { installDeepLinkHandlers } from "./lib/deeplinks";
+import { ErrorState, Spinner, TabBar } from "./components/ui";
 import { Login } from "./screens/Login";
 import { Home } from "./screens/Home";
 import { Callings } from "./screens/Callings";
@@ -15,27 +15,31 @@ import { Notifications } from "./screens/Notifications";
 import { Profile } from "./screens/Profile";
 import { OpenLink } from "./screens/OpenLink";
 
-/** Universele links/app-links en pushmeldingen: cold start, draaiende app en hervatten vanuit de achtergrond. */
+/**
+ * Universele links/app-links en pushmeldingen: koude start, draaiende app en hervatten vanuit de achtergrond.
+ * De listeners worden één keer geregistreerd (stabiele callback via een ref) en blijven bestaan, ook tijdens het
+ * laden en na pushregistratie; er worden nooit listeners van andere onderdelen verwijderd.
+ */
 function DeepLinks({ onTarget }: { onTarget: (route: string) => void }) {
+  const ref = useRef(onTarget);
+  ref.current = onTarget;
   useEffect(() => {
     if (!isNative) return;
-    const handle = (url?: string | null) => {
-      const target = parseTarget(url, API_HOST);
-      if (target) onTarget(routeFor(target));
-    };
-    void CapApp.getLaunchUrl().then((r) => handle(r?.url));
-    const open = CapApp.addListener("appUrlOpen", (e) => handle(e.url));
-    const tap = PushNotifications.addListener("pushNotificationActionPerformed", (a) => handle(String(a.notification.data?.url ?? "")));
-    return () => {
-      void open.then((h) => h.remove());
-      void tap.then((h) => h.remove());
-    };
-  }, [onTarget]);
+    return installDeepLinkHandlers(
+      {
+        getLaunchUrl: () => CapApp.getLaunchUrl(),
+        onUrlOpen: (cb) => CapApp.addListener("appUrlOpen", cb),
+        onPushTap: (cb) => PushNotifications.addListener("pushNotificationActionPerformed", cb as never),
+      },
+      API_HOST,
+      (route) => ref.current(route)
+    );
+  }, []);
   return null;
 }
 
 function Shell() {
-  const { status, api, ring, me } = useAuth();
+  const { status, api, ring, me, startupError, retryStartup, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [online, setOnline] = useState(true);
@@ -68,7 +72,21 @@ function Shell() {
   }, [api, ring, status]);
   useEffect(refreshUnread, [refreshUnread, location.pathname]);
 
-  if (status === "loading") return <main className="page center"><Spinner /></main>;
+  // DeepLinks staat in elke toestand gemonteerd, zodat een koude start via link of pushmelding niet verloren gaat.
+  if (status === "loading") return (<><DeepLinks onTarget={goTo} /><main className="page center"><Spinner /></main></>);
+  if (status === "unavailable" && startupError) {
+    return (
+      <>
+        <DeepLinks onTarget={goTo} />
+        <main className="page center">
+          <div className="glass card stack" style={{ width: "100%", maxWidth: 420 }}>
+            <ErrorState error={startupError} onRetry={retryStartup} />
+            <button className="btn btn-ghost" onClick={() => void signOut()}>Uitloggen op dit toestel</button>
+          </div>
+        </main>
+      </>
+    );
+  }
   if (status === "signedOut") return (<><DeepLinks onTarget={goTo} /><Login /></>);
 
   return (

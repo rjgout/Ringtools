@@ -18,6 +18,8 @@ export type NativeResult = "ok" | "invalid-token" | "error";
 export type NativeTransport = {
   /** POST met JSON naar een https-URL; geeft status en JSON-body (of null) terug. */
   postJson(url: string, headers: Record<string, string>, body: unknown): Promise<{ status: number; json: unknown }>;
+  /** POST als application/x-www-form-urlencoded (Google OAuth 2.0-tokenendpoint). */
+  postForm(url: string, params: Record<string, string>): Promise<{ status: number; json: unknown }>;
   /** POST via HTTP/2 (APNs). */
   http2Post(origin: string, path: string, headers: Record<string, string>, body: string): Promise<{ status: number; json: unknown }>;
 };
@@ -27,6 +29,22 @@ const b64url = (input: Buffer | string) => Buffer.from(input).toString("base64ur
 export const defaultTransport: NativeTransport = {
   async postJson(url, headers, body) {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
+    let json: unknown = null;
+    try {
+      json = await res.json();
+    } catch {
+      /* lege respons */
+    }
+    return { status: res.status, json };
+  },
+  async postForm(url, params) {
+    // Officiële serviceaccount-flow: Content-Type application/x-www-form-urlencoded met grant_type en assertion.
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params).toString(),
+      signal: AbortSignal.timeout(10_000),
+    });
     let json: unknown = null;
     try {
       json = await res.json();
@@ -74,45 +92,71 @@ export const defaultTransport: NativeTransport = {
 
 // ---- FCM (Android) ----
 
-let fcmToken: { value: string; expiresAt: number } | null = null;
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 
-async function fcmAccessToken(sa: { client_email: string; private_key: string }, transport: NativeTransport): Promise<string> {
-  if (fcmToken && fcmToken.expiresAt > Date.now() + 60_000) return fcmToken.value;
-  const now = Math.floor(Date.now() / 1000);
-  const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claim = b64url(
-    JSON.stringify({ iss: sa.client_email, scope: "https://www.googleapis.com/auth/firebase.messaging", aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 })
-  );
-  const signature = crypto.sign("RSA-SHA256", Buffer.from(`${header}.${claim}`), sa.private_key).toString("base64url");
-  const res = await transport.postJson("https://oauth2.googleapis.com/token", {}, {
-    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-    assertion: `${header}.${claim}.${signature}`,
+let fcmToken: { value: string; expiresAt: number } | null = null;
+let fcmTokenInFlight: Promise<string> | null = null;
+
+/**
+ * OAuth 2.0-toegangstoken voor FCM via de serviceaccount-flow (JWT bearer): een met RS256 ondertekende JWT
+ * (iss = service-account-e-mail, scope, aud = tokenendpoint, kid = private_key_id, geldigheid ≤ 1 uur) wordt als
+ * application/x-www-form-urlencoded (grant_type + assertion) naar het tokenendpoint gestuurd. Het token wordt
+ * gecachet tot 60 s vóór verlopen; gelijktijdige aanvragen delen één tokenaanvraag; een mislukte aanvraag wordt
+ * niet gecachet (volgende verzending probeert opnieuw).
+ */
+async function fcmAccessToken(sa: { client_email: string; private_key: string; private_key_id?: string }, transport: NativeTransport, force = false): Promise<string> {
+  if (!force && fcmToken && fcmToken.expiresAt > Date.now() + 60_000) return fcmToken.value;
+  if (fcmTokenInFlight) return fcmTokenInFlight;
+  fcmTokenInFlight = (async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT", ...(sa.private_key_id ? { kid: sa.private_key_id } : {}) }));
+    const claim = b64url(JSON.stringify({ iss: sa.client_email, scope: FCM_SCOPE, aud: GOOGLE_TOKEN_URL, iat: now, exp: now + 3600 }));
+    const signature = crypto.sign("RSA-SHA256", Buffer.from(`${header}.${claim}`), sa.private_key).toString("base64url");
+    const res = await transport.postForm(GOOGLE_TOKEN_URL, {
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: `${header}.${claim}.${signature}`,
+    });
+    const json = res.json as { access_token?: string; expires_in?: number; error?: string } | null;
+    if (res.status !== 200 || !json?.access_token) {
+      fcmToken = null;
+      throw new Error(`FCM-token ophalen mislukt (status ${res.status}${json?.error ? `, ${json.error}` : ""})`);
+    }
+    fcmToken = { value: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 };
+    return fcmToken.value;
+  })().finally(() => {
+    fcmTokenInFlight = null;
   });
-  const json = res.json as { access_token?: string; expires_in?: number } | null;
-  if (res.status !== 200 || !json?.access_token) throw new Error(`FCM-token ophalen mislukt (status ${res.status})`);
-  fcmToken = { value: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 };
-  return fcmToken.value;
+  return fcmTokenInFlight;
+}
+
+function fcmMessage(token: string, payload: NativePayload) {
+  return {
+    message: {
+      token,
+      notification: { title: payload.title, body: payload.body },
+      data: { url: payload.url },
+      android: { ...(payload.tag ? { collapse_key: payload.tag } : {}), notification: { channel_id: "default" } },
+    },
+  };
 }
 
 export async function sendFcm(token: string, payload: NativePayload, transport: NativeTransport = defaultTransport): Promise<NativeResult> {
   const fcm = env.fcm;
   if (!fcm) return "error";
-  const access = await fcmAccessToken(fcm.serviceAccount, transport);
-  const res = await transport.postJson(
-    `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(fcm.projectId)}/messages:send`,
-    { Authorization: `Bearer ${access}` },
-    {
-      message: {
-        token,
-        notification: { title: payload.title, body: payload.body },
-        data: { url: payload.url },
-        android: { ...(payload.tag ? { collapse_key: payload.tag } : {}), notification: { channel_id: "default" } },
-      },
-    }
-  );
+  const url = `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(fcm.projectId)}/messages:send`;
+  let access = await fcmAccessToken(fcm.serviceAccount, transport);
+  let res = await transport.postJson(url, { Authorization: `Bearer ${access}` }, fcmMessage(token, payload));
+  if (res.status === 401) {
+    // Verlopen of ingetrokken toegangstoken: eenmalig vernieuwen en opnieuw proberen.
+    access = await fcmAccessToken(fcm.serviceAccount, transport, true);
+    res = await transport.postJson(url, { Authorization: `Bearer ${access}` }, fcmMessage(token, payload));
+  }
   if (res.status === 200) return "ok";
   const error = (res.json as { error?: { status?: string } } | null)?.error?.status;
-  return res.status === 404 || error === "UNREGISTERED" || error === "INVALID_ARGUMENT" ? "invalid-token" : "error";
+  // UNREGISTERED (404) = token bestaat niet meer. INVALID_ARGUMENT kan ook een fout in ons bericht zijn: alleen
+  // opruimen bij 404/UNREGISTERED, zodat een bug in de payload geen geldige tokens verwijdert.
+  return res.status === 404 || error === "UNREGISTERED" ? "invalid-token" : "error";
 }
 
 // ---- APNs (iOS) ----

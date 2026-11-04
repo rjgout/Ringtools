@@ -29,7 +29,7 @@ Android-terugknop, veilige schermranden, dark mode, native statusbar/splash/toet
 
 ### Nog niet geïmplementeerd (bewust)
 - Staf-acties in de app: nieuw voorstel, herinneren, taken, verwerken, verwijderen (nu in de webapp; API-routes bestaan al).
-- Passkeys/WebAuthn in de app en inloggen voor gebruikers met passkey-verificatie of het beheerdersaccount (webapp).
+- Passkeys/WebAuthn in de app en inloggen voor gebruikers met passkey-verificatie of het beheerdersaccount: gebruik voorlopig de webapp. Er is **geen** advies om MFA uit te schakelen. Plan en tests: [`docs/PASSKEYS-NATIVE.md`](PASSKEYS-NATIVE.md).
 - Biometrische ontgrendeling, offline cache van voorstellen, native delen in de UI (plugin is aanwezig, nog niet gebruikt).
 - Eenmalige browser→app-authenticatieoverdracht: niet nodig; e-maillinks openen de app direct en de code-login werkt zonder cookies.
 - Accountverwijdering in de app (zie `docs/STORE-PRIVACY.md`).
@@ -92,6 +92,15 @@ link in de webapp. Het token wordt alleen naar de eigen backend gestuurd en nooi
 - **Native:** `POST /api/mobile/v1/devices` registreert een toestel (platform, `deviceId`, token); de server kiest APNs (iOS) of FCM (Android). De app vraagt toestemming pas als de gebruiker op "Meldingen aanzetten" tikt.
 - **Android (FCM):** Firebase-project → Android-app met je pakketnaam → `google-services.json` in `mobile/android/app/` (staat in `.gitignore`, **niet committen**) en een service-account-JSON op de server: `FCM_SERVICE_ACCOUNT_JSON`.
 - **iOS (APNs):** Apple Developer → Keys → APNs-sleutel (`.p8`) → server-env `APNS_KEY_P8`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID` (+ `APNS_PRODUCTION=false` voor sandbox/TestFlight-ontwikkelbuilds). Push-capability staat in de entitlements.
+### APNs: development versus production (en TestFlight)
+- Een APNs-apparaattoken hoort bij **één** APNs-omgeving, bepaald door de `aps-environment`-entitlement waarmee de app is ondertekend:
+  - **sandbox (development):** apps die rechtstreeks vanuit Xcode op een toestel draaien (development-provisioning, `aps-environment=development`, zoals in de repository).
+  - **production:** **TestFlight- én App Store-builds**. Bij archiveren/exporteren voor App Store Connect zet Xcode de entitlement op `production` (distributie-provisioningprofiel). Een TestFlight-build gebruikt dus de **productie**-APNs, niet de sandbox.
+- Server: `APNS_PRODUCTION=true` (standaard) → `api.push.apple.com`; `false` → `api.sandbox.push.apple.com`. Voor TestFlight en de store dus **true**. De server waarschuwt in de log als `false` is ingesteld. Eén server kan niet tegelijk tokens van beide omgevingen bedienen: test sandbox-builds met een aparte (test)omgeving.
+- Controle van een gebouwde IPA: `unzip -q App.ipa -d x && codesign -d --entitlements :- x/Payload/App.app` moet `aps-environment` = `production` tonen (de handmatige release-workflow controleert dit automatisch en faalt anders).
+- **Sleutels staan nooit in GitHub:** de APNs-`.p8` en de FCM-service-account-JSON horen alleen op de server (Portainer-omgevingsvariabelen, of als bestand gemount en via `APNS_KEY_P8_FILE` / `FCM_SERVICE_ACCOUNT_FILE` aangewezen). De GitHub-workflows hebben ze niet nodig; alleen `mobile-release.yml` gebruikt signing-secrets (certificaat/profiel), niet de pushsleutels.
+- Valideer APNs-sandbox en APNs-production en TestFlight afzonderlijk op een echt toestel; ze zijn verschillende configuraties.
+
 - **Geen dubbele meldingen:** een webabonnement van hetzelfde mobiele platform als een actief native toestel wordt overgeslagen (`webSubscriptionCoveredByNative`). Gebruikers kunnen per toestel meldingen uitzetten (`/devices/:id/active`).
 - Meldingen bevatten alleen generieke tekst en een intern pad; nooit namen, functies of resultaten.
 
@@ -111,7 +120,7 @@ Eigenaar doet handmatig, **vóór** de eerste upload:
 
 ### CI
 - `.github/workflows/docker-publish.yml` – web/Docker naar GHCR (ongewijzigd, alleen `main` publiceert).
-- `.github/workflows/mobile-ci.yml` – client-typecheck/tests/build, `check:native-config`, Android **debug**-build (ubuntu) en iOS **simulator**-build (macOS-runner). Geen secrets, geen publicatie.
+- `.github/workflows/mobile-ci.yml` – draait bij wijzigingen in `mobile/`, `shared/`, de mobiele backend (`src/lib/api/`, `auth.ts`, `nativePush.ts`, `push.ts`, `openLinks.ts`, `src/app/api/mobile/`, `src/app/.well-known/`, `prisma/`, de bijbehorende tests), `AGENTS.md` en `docs/MOBILE.md`: backend-regressietests met Postgres, client-typecheck/tests/build, `check:native-config`, Android **debug**-build (ubuntu) en iOS **simulator**-build (macOS-runner). Geen secrets, geen publicatie.
 - `.github/workflows/mobile-release.yml` – **handmatig**; bouwt een ondertekende AAB / iOS-archive als de signing-secrets zijn ingesteld en uploadt ze alleen als artifact. Publiceert nooit naar de stores.
 
 ## Wat u zelf live moet testen

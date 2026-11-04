@@ -4,15 +4,108 @@ name: Mobiele app (controle)
 # client (typecheck, tests, build), native configuratie, Android debug-build en iOS simulator-build.
 on:
   push:
-    paths: ["mobile/**", "shared/**", ".github/workflows/mobile-ci.yml"]
+    paths:
+      - "mobile/**"
+      - "shared/**"
+      # Mobiele backend: wijzigingen hier mogen nooit buiten de native regressietests blijven.
+      - "src/lib/api/**"
+      - "src/lib/auth.ts"
+      - "src/lib/session.ts"
+      - "src/lib/mfa.ts"
+      - "src/lib/mfaActor.ts"
+      - "src/lib/webauthn.ts"
+      - "src/lib/nativePush.ts"
+      - "src/lib/push.ts"
+      - "src/lib/pushEndpoint.ts"
+      - "src/lib/notifications.ts"
+      - "src/lib/openLinks.ts"
+      - "src/lib/loginMail.ts"
+      - "src/lib/safePath.ts"
+      - "src/lib/rings.ts"
+      - "src/lib/workflow.ts"
+      - "src/lib/env.ts"
+      - "src/app/api/mobile/**"
+      - "src/app/.well-known/**"
+      - "src/app/open/**"
+      - "prisma/**"
+      - "tests/**"
+      - "AGENTS.md"
+      - "docs/MOBILE.md"
+      - "docker-compose.yml"
+      - ".github/workflows/mobile-ci.yml"
   pull_request:
-    paths: ["mobile/**", "shared/**", ".github/workflows/mobile-ci.yml"]
+    paths:
+      - "mobile/**"
+      - "shared/**"
+      # Mobiele backend: wijzigingen hier mogen nooit buiten de native regressietests blijven.
+      - "src/lib/api/**"
+      - "src/lib/auth.ts"
+      - "src/lib/session.ts"
+      - "src/lib/mfa.ts"
+      - "src/lib/mfaActor.ts"
+      - "src/lib/webauthn.ts"
+      - "src/lib/nativePush.ts"
+      - "src/lib/push.ts"
+      - "src/lib/pushEndpoint.ts"
+      - "src/lib/notifications.ts"
+      - "src/lib/openLinks.ts"
+      - "src/lib/loginMail.ts"
+      - "src/lib/safePath.ts"
+      - "src/lib/rings.ts"
+      - "src/lib/workflow.ts"
+      - "src/lib/env.ts"
+      - "src/app/api/mobile/**"
+      - "src/app/.well-known/**"
+      - "src/app/open/**"
+      - "prisma/**"
+      - "tests/**"
+      - "AGENTS.md"
+      - "docs/MOBILE.md"
+      - "docker-compose.yml"
+      - ".github/workflows/mobile-ci.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  backend:
+    name: Mobiele backend (API, push, links, sessies)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ringtools_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ringtools_ci?schema=public
+      SETTINGS_ENCRYPTION_KEY: ci-test-encryptie-sleutel-niet-voor-productie
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx tsc --noEmit
+      - run: npx prisma migrate deploy
+      - name: Backend-tests die de mobiele apps raken
+        run: >-
+          npx vitest run
+          tests/api.test.ts tests/nativePush.test.ts tests/wellknown.test.ts tests/push.test.ts
+          tests/sessions.test.ts tests/openlinks.test.ts tests/mfa.test.ts tests/mfaProof.test.ts
+          tests/rings.test.ts tests/hardening.test.ts tests/notifications.test.ts
+
   client:
     name: Client en native configuratie
     runs-on: ubuntu-latest
@@ -38,7 +131,7 @@ jobs:
   android:
     name: Android debug-build (zonder signing)
     runs-on: ubuntu-latest
-    needs: client
+    needs: [client, backend]
     defaults:
       run:
         working-directory: mobile
@@ -69,7 +162,7 @@ jobs:
   ios:
     name: iOS simulator-build (zonder signing)
     runs-on: macos-latest
-    needs: client
+    needs: [client, backend]
     defaults:
       run:
         working-directory: mobile

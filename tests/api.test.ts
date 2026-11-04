@@ -95,6 +95,31 @@ describe("API: inloggen", () => {
     expect(me.body.code).toBe("admin-web-only");
   });
 
+  it("MFA is via de mobiele API niet te omzeilen en de melding adviseert nooit MFA uit te schakelen", async () => {
+    const { users } = await ringWith("HOGERAAD");
+    await prisma.user.update({ where: { id: users[0].id }, data: { mfaEnabled: true } });
+    const { code } = await createMagicLinkToken(users[0].id, { withCode: true });
+    const res = await call("POST", "/auth/login", { body: { email: users[0].email, code, deviceName: "iPhone" } });
+    expect(res.status).toBe(403);
+    expect(res.body.token).toBeUndefined();
+    expect(res.body.error).not.toMatch(/uit(schakel|zet)|uitschakelen|deactiveer/i);
+    expect(res.body.error).toMatch(/webapp/);
+    // De code is bij de weigering verbruikt: nogmaals proberen levert niets op.
+    expect((await call("POST", "/auth/login", { body: { email: users[0].email, code } })).status).toBe(401);
+
+    // Een sessie die alleen de eerste factor heeft (mfaAt = null) is als bearer onbruikbaar.
+    const { createSession } = await import("@/lib/auth");
+    const pending = await createSession(users[0].id, "pending");
+    expect((await call("GET", "/me", { token: pending.rawToken })).status).toBe(401);
+    expect((await call("GET", "/sessions", { token: pending.rawToken })).status).toBe(401);
+    expect((await call("POST", "/devices", { token: pending.rawToken, body: { token: "x".repeat(30), platform: "ios" } })).status).toBe(401);
+
+    // Het beheerdersaccount kan de app-API niet gebruiken, ook niet met een volledige sessie.
+    const admin = await createTestUser("ADMIN", "Webmin");
+    const adminToken = await login(admin.id);
+    for (const path of ["/me", "/dashboard", "/sessions", "/devices"]) expect((await call("GET", path, { token: adminToken })).status).toBe(403);
+  });
+
   it("verlengt, roteert en trekt sessies in zoals in de webapp", async () => {
     const { users } = await ringWith("HOGERAAD");
     const token = await login(users[0].id);

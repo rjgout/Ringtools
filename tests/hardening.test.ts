@@ -119,3 +119,21 @@ describe("Push-token afmelden zonder sessie", () => {
     await expect(unregisterDeviceToken("zomaar")).resolves.toEqual({ ok: true });
   });
 });
+
+describe("APNs-omgeving", () => {
+  it("waarschuwt bij sandbox (TestFlight/App Store vereisen productie) en zwijgt bij productie", async () => {
+    const { warnApnsEnvironment } = await import("@/lib/bootstrap");
+    const { vi } = await import("vitest");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const base = { APNS_KEY_P8: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----", APNS_KEY_ID: "K", APNS_TEAM_ID: "T", APNS_BUNDLE_ID: "b" };
+    Object.assign(process.env, base, { APNS_PRODUCTION: "false" });
+    warnApnsEnvironment();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toMatch(/TestFlight[\s\S]*productie/);
+    process.env.APNS_PRODUCTION = "true";
+    warnApnsEnvironment();
+    expect(warn).toHaveBeenCalledTimes(1);
+    for (const k of [...Object.keys(base), "APNS_PRODUCTION"]) delete process.env[k];
+    warn.mockRestore();
+  });
+});

@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -6,6 +8,18 @@ function required(name: string): string {
     );
   }
   return value;
+}
+
+/** Leest een geheim uit een bestand (bijv. Docker secret / gemounte file), zodat de sleutel niet in een env-var of in GitHub hoeft. */
+function readSecretFile(variable: string): string | null {
+  const path = process.env[variable];
+  if (!path) return null;
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    console.error(`[env] ${variable} verwijst naar een bestand dat niet gelezen kan worden.`);
+    return null;
+  }
 }
 
 export const env = {
@@ -32,20 +46,20 @@ export const env = {
   },
   /** Firebase Cloud Messaging (Android-app): service-account-JSON (ruw of base64) uit FCM_SERVICE_ACCOUNT_JSON. */
   get fcm() {
-    const raw = process.env.FCM_SERVICE_ACCOUNT_JSON;
+    const raw = process.env.FCM_SERVICE_ACCOUNT_JSON || readSecretFile("FCM_SERVICE_ACCOUNT_FILE");
     if (!raw) return null;
     try {
       const text = raw.trim().startsWith("{") ? raw : Buffer.from(raw, "base64").toString("utf8");
-      const sa = JSON.parse(text) as { project_id?: string; client_email?: string; private_key?: string };
+      const sa = JSON.parse(text) as { project_id?: string; client_email?: string; private_key?: string; private_key_id?: string };
       if (!sa.project_id || !sa.client_email || !sa.private_key) return null;
-      return { projectId: sa.project_id, serviceAccount: { client_email: sa.client_email, private_key: sa.private_key } };
+      return { projectId: sa.project_id, serviceAccount: { client_email: sa.client_email, private_key: sa.private_key, private_key_id: sa.private_key_id } };
     } catch {
       return null;
     }
   },
   /** Apple Push Notification service (iOS-app): .p8-sleutel (ruw of base64) plus sleutel-ID, team-ID en bundle-ID. */
   get apns() {
-    const key = process.env.APNS_KEY_P8;
+    const key = process.env.APNS_KEY_P8 || readSecretFile("APNS_KEY_P8_FILE");
     const keyId = process.env.APNS_KEY_ID;
     const teamId = process.env.APNS_TEAM_ID;
     const bundleId = process.env.APNS_BUNDLE_ID;

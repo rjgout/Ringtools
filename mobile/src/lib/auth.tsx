@@ -6,11 +6,15 @@ import { storage } from "./storage";
 import { API_BASE } from "../config";
 import { isNative, platform } from "./native";
 import { registerForPush } from "./push";
+import { resumeSession } from "./resume";
 
-type Status = "loading" | "signedOut" | "signedIn";
+type Status = "loading" | "signedOut" | "signedIn" | "unavailable";
 
 type AuthValue = {
   status: Status;
+  /** Alleen bij status "unavailable": waarom de sessie niet hervat kon worden. */
+  startupError: ApiRequestError | null;
+  retryStartup: () => void;
   me: Me | null;
   ring: RingInfo | null;
   api: ApiClient;
@@ -32,6 +36,8 @@ export function useAuth(): AuthValue {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const tokenRef = useRef<string | null>(null);
   const [status, setStatus] = useState<Status>("loading");
+  const [startupError, setStartupError] = useState<ApiRequestError | null>(null);
+  const [startupAttempt, setStartupAttempt] = useState(0);
   const [me, setMe] = useState<Me | null>(null);
   const [ringId, setRingId] = useState<string | null>(null);
   const flushRef = useRef<() => Promise<void>>(async () => {});
@@ -75,23 +81,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (chosen) await storage.setRing(chosen.id);
   }, []);
 
-  // Opstarten: bestaande sessie hervatten.
+  // Opstarten: bestaande sessie hervatten. Eindigt altijd in signedOut, signedIn of unavailable (met opnieuw proberen).
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      const token = await storage.getToken();
-      if (!token) return setStatus("signedOut");
-      tokenRef.current = token;
-      try {
-        await applyMe(await api.me());
-        setStatus("signedIn");
-      } catch (err) {
-        // 401 wordt door onUnauthorized afgehandeld. Zonder verbinding de sessie bewaren en de app tonen.
-        if (err instanceof ApiRequestError && err.isNetwork) {
-          setStatus("signedIn");
+      setStatus("loading");
+      const result = await resumeSession({
+        getToken: () => storage.getToken(),
+        useToken: (t) => void (tokenRef.current = t),
+        me: () => api.me(),
+      });
+      if (cancelled) return;
+      if (result.kind === "signedIn") {
+        try {
+          await applyMe(result.me);
+        } catch {
+          /* ringkeuze niet te bewaren: doorgaan met de eerste ring */
         }
+        if (cancelled) return;
+        setStartupError(null);
+        setStatus("signedIn");
+      } else if (result.kind === "unavailable") {
+        setStartupError(result.error);
+        setStatus("unavailable");
+      } else {
+        tokenRef.current = null;
+        setStatus("signedOut");
       }
     })();
-  }, [api, applyMe]);
+    return () => {
+      cancelled = true;
+    };
+  }, [api, applyMe, startupAttempt]);
+
+  const retryStartup = useCallback(() => setStartupAttempt((n) => n + 1), []);
 
   // Terug naar de voorgrond: sessie verlengen en zo nodig het token vernieuwen.
   useEffect(() => {
@@ -153,8 +176,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const ring = me?.rings.find((r) => r.id === ringId) ?? null;
   const value = useMemo<AuthValue>(
-    () => ({ status, me, ring, api, signIn, signOut, reloadMe, selectRing, enablePush }),
-    [status, me, ring, api, signIn, signOut, reloadMe, selectRing, enablePush]
+    () => ({ status, startupError, retryStartup, me, ring, api, signIn, signOut, reloadMe, selectRing, enablePush }),
+    [status, startupError, retryStartup, me, ring, api, signIn, signOut, reloadMe, selectRing, enablePush]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

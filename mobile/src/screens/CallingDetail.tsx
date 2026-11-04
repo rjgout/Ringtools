@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
@@ -7,14 +7,19 @@ import { ErrorState, Spinner } from "../components/ui";
 
 export function CallingDetail() {
   const { id = "" } = useParams();
-  const { api, selectRing } = useAuth();
+  const { api, ring, selectRing } = useAuth();
+  const activeRingId = ring?.id;
   const navigate = useNavigate();
   const { data, error, loading, reload } = useLoad(() => api.calling(id), [id]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   // Het voorstel hoort bij een bepaalde ring: de server bepaalt dat, de app volgt (bijv. na een e-maillink).
-  if (data) void selectRing(data.ring.id);
+  // Bewust in een effect (niet tijdens het renderen) en alleen als de ring daadwerkelijk anders is.
+  const ringId = data?.ring.id;
+  useEffect(() => {
+    if (ringId && ringId !== activeRingId) void selectRing(ringId);
+  }, [ringId, activeRingId, selectRing]);
 
   async function vote(support: boolean) {
     setBusy(true);

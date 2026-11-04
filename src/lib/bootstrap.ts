@@ -21,6 +21,17 @@ export function warnWeakEncryptionKey(): void {
   }
 }
 
+/** Waarschuwt als APNs op sandbox staat: TestFlight- en App Store-builds hebben production-tokens nodig. */
+export function warnApnsEnvironment(): void {
+  const apns = env.apns;
+  if (apns && !apns.production) {
+    console.warn(
+      "[bootstrap] WAARSCHUWING: APNS_PRODUCTION=false (sandbox). Dit werkt alleen voor builds die rechtstreeks vanuit Xcode op een toestel draaien. " +
+        "TestFlight- en App Store-builds gebruiken ALTIJD de productieomgeving van APNs: zet APNS_PRODUCTION=true (of laat de variabele weg)."
+    );
+  }
+}
+
 /**
  * Zorgt dat het admin-account (webmin) bestaat. Dit gebeurt uitsluitend bij
  * het allereerste opstarten: zodra het account eenmaal bestaat, wordt het
