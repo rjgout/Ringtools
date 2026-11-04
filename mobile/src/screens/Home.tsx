@@ -24,7 +24,7 @@ export function Home() {
           ))}
           {(data.isStaff || (data.ontheffingen?.open ?? 0) > 0) && (
             <Link to="/ontheffingen" className="glass panel row between">
-              <span>Ontheffingen{(data.ontheffingen?.needsMyVote ?? 0) > 0 ? " – wacht op jouw reactie" : ""}</span>
+              <span>Ontheffingen{(data.ontheffingen?.needsMyVote ?? 0) > 0 ? " – wacht op jouw reactie" : (data.ontheffingen?.needsReview ?? 0) > 0 ? " – beoordeling nodig" : ""}</span>
               <strong>{(data.ontheffingen?.needsMyVote ?? 0) > 0 ? data.ontheffingen.needsMyVote : (data.ontheffingen?.open ?? 0)}</strong>
             </Link>
           )}

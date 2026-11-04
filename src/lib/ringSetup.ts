@@ -1,7 +1,7 @@
 import type { AppointAuthority, UnitKind } from "@prisma/client";
 import { prisma } from "./prisma";
 import { AuthorizationError, RingError, assertCanManageRing } from "./rings";
-import { CATEGORIES, getCatalogEntry, type AuthorityRule } from "./catalog/callings";
+import { CATEGORIES, getCatalogEntry, isOutsideRingtoolsFunctionName, OUTSIDE_RINGTOOLS, type AuthorityRule } from "./catalog/callings";
 
 /**
  * Ringinrichting: wijken/gemeenten (organisatorische instellingen, geen ledenregister), eigen roepingen per ring,
@@ -159,6 +159,7 @@ export async function createCustomCalling(actorId: string, ringId: string, input
   await asManager(actorId, ringId);
   const name = cleanName(input.name);
   const category = cleanCategory(input.category);
+  if (isOutsideRingtoolsFunctionName(name)) throw new RingError(OUTSIDE_RINGTOOLS);
   if (await prisma.ringCustomCalling.findFirst({ where: { ringId, name: { equals: name, mode: "insensitive" } } })) {
     throw new RingError("Deze eigen roeping bestaat al.");
   }
@@ -173,6 +174,7 @@ export async function updateCustomCalling(actorId: string, id: string, input: { 
   const data: Record<string, unknown> = {};
   if (input.name !== undefined) {
     const name = cleanName(input.name);
+    if (isOutsideRingtoolsFunctionName(name)) throw new RingError(OUTSIDE_RINGTOOLS);
     if (await prisma.ringCustomCalling.findFirst({ where: { ringId: row.ringId, name: { equals: name, mode: "insensitive" }, NOT: { id } } })) {
       throw new RingError("Deze eigen roeping bestaat al.");
     }

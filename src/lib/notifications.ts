@@ -60,6 +60,10 @@ const TEMPLATES: Record<NotificationEvent, { title: string; message: string }> =
     title: "Vertrouwelijk voorstel",
     message: "Een vertrouwelijk voorstel is gepauzeerd en vraagt aandacht.",
   },
+  CONFIDENTIAL_REMINDER: {
+    title: "Vertrouwelijk voorstel",
+    message: "Een vertrouwelijk voorstel staat al langere tijd open en vraagt aandacht.",
+  },
 };
 
 export type EmailBuilder = (user: User) => { subject: string; text: string } | Promise<{ subject: string; text: string }>;
@@ -92,7 +96,9 @@ export async function notify(params: {
   /** Herhaalde levering: sla ontvangers over die voor dit voorstel al een melding van dit type hebben (geen dubbele meldingen). */
   skipExisting?: boolean;
 }): Promise<void> {
-  const { userIds, ringId, event, url, callingId, ontheffingId, buildEmail, skipExisting } = params;
+  const { userIds, ringId, event, url, callingId, ontheffingId, skipExisting } = params;
+  // Vertrouwelijke meldingen (ontheffingen) versturen NOOIT e-mail, ongeacht wat de aanroeper meegeeft.
+  const buildEmail = ontheffingId || event.startsWith("CONFIDENTIAL_") ? undefined : params.buildEmail;
   if (userIds.length === 0) return;
 
   // Nooit naar gedeactiveerde gebruikers (ook niet intern) en nooit naar

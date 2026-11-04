@@ -1,7 +1,7 @@
 import type { Calling, CallingDraft, FunctionSource, Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { STAFF_ROLES } from "./rbac";
-import { getCatalogEntry, requiresProcedureConfirmation, isBishopFunctionName, BISHOP_OUTSIDE_RINGTOOLS, CATALOG_VERSION, type CatalogEntry } from "./catalog/callings";
+import { getCatalogEntry, requiresProcedureConfirmation, isOutsideRingtoolsFunctionName, OUTSIDE_RINGTOOLS, CATALOG_VERSION, type CatalogEntry } from "./catalog/callings";
 import { eligibleAppointers, eligibleForRule, listUnits } from "./ringSetup";
 import { WorkflowError, AuthorizationError, assignTask, createCallingInTx, deliverCreationNotifications } from "./workflow";
 
@@ -69,7 +69,8 @@ export async function resolveFunction(ringId: string, source: FunctionSource | n
   if (source === "EIGEN") {
     const own = await prisma.ringCustomCalling.findFirst({ where: { id: code, ringId, active: true, ring: { active: true } } });
     if (!own) throw new WorkflowError("Deze eigen roeping bestaat niet in deze ring.");
-    if (isBishopFunctionName(own.name)) throw new WorkflowError(BISHOP_OUTSIDE_RINGTOOLS);
+    // Ook een eigen roeping die al bestaat (van vóór deze controle) kan hier niet meer worden gebruikt.
+    if (isOutsideRingtoolsFunctionName(own.name)) throw new WorkflowError(OUTSIDE_RINGTOOLS);
     return { source: "EIGEN", code, name: own.name, category: own.category, entry: null, requiresConfirmation: true };
   }
   throw new WorkflowError("Kies een roeping uit de catalogus of een eigen roeping.");

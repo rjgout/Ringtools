@@ -1,7 +1,7 @@
 import type { AccountLinkMode, FollowUpAnswer, FunctionSource, Ontheffing, OntheffingPerson, OntheffingStatus, Prisma, Role, VoteStage } from "@prisma/client";
 import { prisma } from "./prisma";
 import { STAFF_ROLES, STAGE_ROLE } from "./rbac";
-import { getCatalogEntry, CATALOG_VERSION } from "./catalog/callings";
+import { getCatalogEntry, CATALOG_VERSION, HOGERAAD_FUNCTION_CODES } from "./catalog/callings";
 import { notify } from "./notifications";
 import { AuthorizationError, CREATION_NOTIFY_LEASE_MS, WorkflowError, parseMeetingDate } from "./workflow";
 import { procedureSnapshot, resolveFunction } from "./proposals";
@@ -25,6 +25,9 @@ import { procedureSnapshot, resolveFunction } from "./proposals";
  */
 
 export const ONTHEFFING_RETENTION_DAYS = 30;
+/** Lopende dossiers worden nooit automatisch verwijderd: na 30 dagen zonder activiteit volgt een herinnering, na 90 dagen een markering voor expliciete beoordeling. */
+export const ONTHEFFING_REMINDER_DAYS = 30;
+export const ONTHEFFING_REVIEW_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const text = (v: unknown, max: number): string | null => {
@@ -88,6 +91,10 @@ function visibleWhere(userId: string, ringId: string, role: Role): Prisma.Onthef
 
 async function audit(tx: Tx, ontheffingId: string, actorId: string, type: string, detail?: string | null) {
   await tx.ontheffingAudit.create({ data: { ontheffingId, actorId, type, detail: detail ?? null } });
+}
+/** Registreert inhoudelijke activiteit en start de herinnerings-/beoordelingstermijn opnieuw. */
+async function touch(tx: Tx | typeof prisma, id: string) {
+  await tx.ontheffing.update({ where: { id }, data: { lastActivityAt: new Date(), reminderSentAt: null, reviewFlaggedAt: null } });
 }
 async function lock(tx: Tx, id: string) {
   await tx.$queryRaw`SELECT "id" FROM "Ontheffing" WHERE "id" = ${id} FOR UPDATE`;
@@ -242,6 +249,7 @@ export async function updateConcept(actorId: string, id: string, input: ConceptI
     const o = await tx.ontheffing.findUniqueOrThrow({ where: { id }, include: { persons: true } });
     if (o.status !== "CONCEPT") throw new WorkflowError("Een ingediend dossier kan niet meer als concept worden gewijzigd.");
     await applyConcept(tx, o, actorId, input);
+    await touch(tx, id);
   });
 }
 
@@ -305,7 +313,7 @@ export async function submitOntheffing(actorId: string, id: string): Promise<Sub
         unitId: unit.id, unitNameSnapshot: unit.name, unitKindSnapshot: unit.kind,
         functionName: fn.name, catalogVersion: fn.entry ? CATALOG_VERSION : null, procedureSnapshot: procedureSnapshot(fn),
         procedureConfirmedAt: fn.requiresConfirmation ? now : null,
-        notifyEvent: "SUBMITTED", notifyClaimedAt: null,
+        notifyEvent: "SUBMITTED", notifyClaimedAt: null, lastActivityAt: now, reminderSentAt: null, reviewFlaggedAt: null,
       },
     });
     await audit(tx, id, actorId, "SUBMITTED", o.joint ? "gezamenlijk" : null);
@@ -382,6 +390,7 @@ export async function castOntheffingVote(userId: string, id: string, support: bo
     where: { ontheffingId_stage_userId: { ontheffingId: id, stage, userId } },
     update: { support }, create: { ontheffingId: id, stage, userId, support },
   });
+  await touch(prisma, id);
   return recompute(id);
 }
 
@@ -476,6 +485,21 @@ export async function registerOntheffingDecision(actorId: string, id: string, in
       if (present.some((u) => absent.includes(u))) throw new WorkflowError("Iemand kan niet tegelijk aanwezig en afwezig zijn.");
       const eligible = new Set((await tx.ontheffingVoter.findMany({ where: { ontheffingId: id, stage: "HOGERAAD" }, select: { userId: true } })).map((e) => e.userId));
       if ([...present, ...absent].some((u) => !eligible.has(u))) throw new WorkflowError("Aanwezigen en afwezigen moeten deelnemers van de hogeraadsronde van dit dossier zijn.");
+    } else {
+      // Een gezamenlijk presidiumbesluit is het besluit van de presidiumleden zelf. De registrerende staf (ook een secretaris of administrateur) legt
+      // uitsluitend vast wat is besloten: er moet minstens één actief, niet-betrokken presidiumlid zijn dat het besluit heeft genomen.
+      const members = await tx.ringMembership.findMany({ where: { ringId: o.ringId, role: "RINGPRESIDIUM", active: true, user: { active: true } }, select: { userId: true } });
+      const available = members.map((m) => m.userId).filter((u) => !subjects.has(u));
+      if (available.length === 0) {
+        throw new WorkflowError("Er is geen actief, niet-betrokken lid van het ringpresidium dat dit besluit kan hebben genomen. Een gezamenlijk presidiumbesluit kan dan niet worden vastgelegd.");
+      }
+      present = [...new Set(input.presentUserIds ?? [])];
+      if (present.length === 0) {
+        throw new WorkflowError("Geef aan welke leden van het ringpresidium het besluit hebben genomen. Een secretaris of administrateur legt alleen een werkelijk genomen besluit vast en neemt het niet zelf.");
+      }
+      if (present.some((u) => !available.includes(u))) {
+        throw new WorkflowError("De leden die het besluit hebben genomen moeten actieve, niet-betrokken leden van het ringpresidium van deze ring zijn.");
+      }
     }
     const negatives = await tx.ontheffingVote.count({ where: { ontheffingId: id, stage: input.stage, support: false } });
     let resolutionNote: string | null = null;
@@ -493,9 +517,10 @@ export async function registerOntheffingDecision(actorId: string, id: string, in
     });
     await audit(tx, id, actorId, input.stage === "PRESIDIUM" ? "GROUP_DECISION_PRESIDIUM" : "GROUP_DECISION_HOGERAAD", negatives > 0 ? "met afhandeling van negatieve reactie(s)" : null);
     const now = new Date();
+    const activity = { lastActivityAt: now, reminderSentAt: null, reviewFlaggedAt: null };
     const updated = input.stage === "PRESIDIUM"
-      ? await tx.ontheffing.update({ where: { id }, data: { status: "PRESIDIUM_APPROVED", presidiumApprovedAt: now, presidiumApprovalMethod: "MEETING" } })
-      : await tx.ontheffing.update({ where: { id }, data: { status: "APPROVED", approvedAt: now, hogeraadApprovalMethod: "MEETING" } });
+      ? await tx.ontheffing.update({ where: { id }, data: { status: "PRESIDIUM_APPROVED", presidiumApprovedAt: now, presidiumApprovalMethod: "MEETING", ...activity } })
+      : await tx.ontheffing.update({ where: { id }, data: { status: "APPROVED", approvedAt: now, hogeraadApprovalMethod: "MEETING", ...activity } });
     return { status: updated.status, alreadyRegistered: false };
   });
 }
@@ -509,12 +534,13 @@ export async function releaseOntheffingToHogeraad(actorId: string, id: string): 
     if (o.hogeraadReleasedAt) return { released: false, alreadyReleased: true };
     if (o.status !== "PRESIDIUM_APPROVED") throw new WorkflowError("Dit dossier heeft geen presidiumakkoord dat op vrijgave wacht.");
     const subjects = new Set(o.persons.flatMap((p) => (p.userId ? [p.userId] : [])));
+    const blockers = await releaseBlockers(tx, o);
+    if (blockers.length > 0) throw new WorkflowError(blockers[0]);
     const hr = await tx.ringMembership.findMany({ where: { ringId: o.ringId, role: "HOGERAAD", active: true, user: { active: true } }, select: { userId: true } });
     const ids = hr.map((r) => r.userId).filter((u) => !subjects.has(u));
-    if (ids.length === 0) throw new WorkflowError("Er zijn geen actieve hogeraadsleden die kunnen deelnemen. Zonder deelnemers kan er geen ondersteuningsronde starten.");
     const now = new Date();
     await tx.ontheffingVoter.createMany({ data: ids.map((userId) => ({ ontheffingId: id, stage: "HOGERAAD" as const, userId, lastInvitedAt: now })), skipDuplicates: true });
-    await tx.ontheffing.update({ where: { id }, data: { status: "HOGERAAD_VOTING", hogeraadReleasedAt: now, hogeraadReleasedById: actorId, notifyEvent: "RELEASED", notifyClaimedAt: null } });
+    await tx.ontheffing.update({ where: { id }, data: { status: "HOGERAAD_VOTING", hogeraadReleasedAt: now, hogeraadReleasedById: actorId, notifyEvent: "RELEASED", notifyClaimedAt: null, lastActivityAt: now, reminderSentAt: null, reviewFlaggedAt: null } });
     await audit(tx, id, actorId, "HOGERAAD_RELEASED");
     return { released: true, alreadyReleased: false };
   });
@@ -545,11 +571,16 @@ export async function markInformed(actorId: string, personId: string): Promise<v
     if (!INFORM_STATUSES.includes(cur.status)) throw new WorkflowError("De betrokkene kan pas persoonlijk worden geïnformeerd nadat het ringpresidium akkoord is.");
     await tx.ontheffingPerson.update({ where: { id: p.id }, data: { informedAt: new Date(), informedById: actorId } });
     await audit(tx, o.id, actorId, "PERSON_INFORMED", person.role === "HOOFD" ? "hoofdpersoon" : "raadgever");
+    await touch(tx, o.id);
   });
 }
 
-/** Registreert de bekendmaking (en eventueel de dankbetuiging). Geen stemknoppen: het is een vastlegging van wat plaatsvond. */
-export async function registerAnnouncement(actorId: string, personId: string, opts: { thanked?: boolean } = {}): Promise<void> {
+/**
+ * Registreert de bekendmaking en of daarbij gelegenheid tot dankbetuiging is geboden. Verwerken vereist de bekendmaking, maar niet dat leden
+ * daadwerkelijk dank hebben uitgesproken. Geen stemknoppen: het is een vastlegging van wat plaatsvond.
+ */
+export async function registerAnnouncement(actorId: string, personId: string, opts: { thanksOffered: boolean }): Promise<void> {
+  if (typeof opts.thanksOffered !== "boolean") throw new WorkflowError("Geef aan of er gelegenheid tot dankbetuiging is geboden.");
   const { p, o } = await personFor(actorId, personId);
   await prisma.$transaction(async (tx) => {
     await lock(tx, o.id);
@@ -557,13 +588,10 @@ export async function registerAnnouncement(actorId: string, personId: string, op
     const person = await tx.ontheffingPerson.findUniqueOrThrow({ where: { id: p.id } });
     if (cur.status !== "APPROVED") throw new WorkflowError("Bekendmaking kan pas worden vastgelegd nadat het besluit definitief is.");
     if (!person.informedAt) throw new WorkflowError("Informeer de betrokkene eerst persoonlijk voordat de bekendmaking wordt vastgelegd.");
-    const now = new Date();
-    const data: Prisma.OntheffingPersonUncheckedUpdateInput = {};
-    if (!person.announcedAt) { data.announcedAt = now; data.announcedById = actorId; }
-    if (opts.thanked === true && !person.thankedAt) data.thankedAt = now;
-    if (Object.keys(data).length === 0) return;
-    await tx.ontheffingPerson.update({ where: { id: p.id }, data });
-    await audit(tx, o.id, actorId, "PERSON_ANNOUNCED", data.thankedAt ? "met dankbetuiging" : null);
+    if (person.announcedAt) return; // idempotent: de eerste registratie blijft staan
+    await tx.ontheffingPerson.update({ where: { id: p.id }, data: { announcedAt: new Date(), announcedById: actorId, thanksOffered: opts.thanksOffered } });
+    await audit(tx, o.id, actorId, "PERSON_ANNOUNCED", opts.thanksOffered ? "gelegenheid tot dankbetuiging geboden" : "geen gelegenheid tot dankbetuiging geboden");
+    await touch(tx, o.id);
   });
 }
 
@@ -581,6 +609,7 @@ export async function processPerson(actorId: string, personId: string): Promise<
       if (!person.announcedAt) throw new WorkflowError("Leg eerst de bekendmaking vast.");
       await tx.ontheffingPerson.update({ where: { id: p.id }, data: { processedAt: new Date(), processedById: actorId } });
       await audit(tx, o.id, actorId, "PERSON_PROCESSED", person.role === "HOOFD" ? "hoofdpersoon" : "raadgever");
+      await touch(tx, o.id);
     }
     const all = await tx.ontheffingPerson.findMany({ where: { ontheffingId: o.id } });
     const counting = all.filter((x) => x.role === "HOOFD" || x.answer === "NAAM");
@@ -602,6 +631,7 @@ export async function renamePerson(actorId: string, personId: string, name: stri
   await prisma.$transaction(async (tx) => {
     await tx.ontheffingPerson.update({ where: { id: p.id }, data: { name: clean } });
     await audit(tx, o.id, actorId, "PERSON_RENAMED");
+    await touch(tx, o.id);
   });
 }
 
@@ -659,15 +689,15 @@ export async function listOntheffingen(actorId: string, ringId: string) {
     return {
       id: o.id, status: o.status, statusLabel: STATUS_LABEL[o.status],
       personName: o.persons[0]?.name ?? null, functionName: o.functionName, unitName: o.unitNameSnapshot,
-      joint: o.joint, needsMyVote: mine, updatedAt: o.updatedAt.toISOString(),
+      joint: o.joint, needsMyVote: mine, needsReview: STAFF_ROLES.includes(m.role) && !!o.reviewFlaggedAt && o.status !== "PROCESSED", updatedAt: o.updatedAt.toISOString(),
     };
   });
 }
 
 /** Aantallen voor badges: dezelfde zichtbaarheid als de lijst (een betrokkene ziet dus nooit een aantal dat naar het dossier verwijst). */
-export async function ontheffingCounts(actorId: string, ringId: string): Promise<{ needsMyVote: number; open: number }> {
+export async function ontheffingCounts(actorId: string, ringId: string): Promise<{ needsMyVote: number; open: number; needsReview: number }> {
   const m = await activeMembership(actorId, ringId);
-  if (!m) return { needsMyVote: 0, open: 0 };
+  if (!m) return { needsMyVote: 0, open: 0, needsReview: 0 };
   const visible = visibleWhere(actorId, ringId, m.role);
   const open = await prisma.ontheffing.count({ where: { AND: [visible, { status: { notIn: ["PROCESSED", "CONCEPT"] } }] } });
   const needsMyVote = await prisma.ontheffing.count({
@@ -679,7 +709,10 @@ export async function ontheffingCounts(actorId: string, ringId: string): Promise
       ],
     },
   });
-  return { needsMyVote, open };
+  const needsReview = STAFF_ROLES.includes(m.role)
+    ? await prisma.ontheffing.count({ where: { AND: [visible, { status: { notIn: ["PROCESSED", "CONCEPT"] }, reviewFlaggedAt: { not: null } }] } })
+    : 0;
+  return { needsMyVote, open, needsReview };
 }
 
 export async function getOntheffingView(actorId: string, id: string) {
@@ -737,19 +770,94 @@ export async function getOntheffingView(actorId: string, id: string) {
       id: p.id, role: p.role, followUpCode: p.followUpCode, functionName: p.functionName, answer: p.answer, name: p.name, naReason: p.naReason,
       accountMode: p.accountMode, userId: p.userId,
       execution: sees(p)
-        ? { informedAt: p.informedAt?.toISOString() ?? null, announcedAt: p.announcedAt?.toISOString() ?? null, thankedAt: p.thankedAt?.toISOString() ?? null, processedAt: p.processedAt?.toISOString() ?? null }
+        ? { informedAt: p.informedAt?.toISOString() ?? null, announcedAt: p.announcedAt?.toISOString() ?? null, thanksOffered: p.thanksOffered ?? null, processedAt: p.processedAt?.toISOString() ?? null }
         : null,
     })),
     rounds: { presidium: summary("PRESIDIUM"), hogeraad: summary("HOGERAAD") },
     decisions: decisions.map((d) => ({ stage: d.stage, decidedOn: d.decidedOn.toISOString().slice(0, 10), note: d.note, presentCount: d.presentUserIds.length, absentCount: d.absentUserIds.length, overrodeNegativeVotes: d.overrodeNegativeVotes })),
     audit: audits.map((a) => ({ type: a.type, actor: a.actor.name, createdAt: a.createdAt.toISOString(), detail: a.detail })),
+    activity: { lastActivityAt: o.lastActivityAt.toISOString(), reminderSentAt: o.reminderSentAt?.toISOString() ?? null, needsReview: !!o.reviewFlaggedAt && o.status !== "PROCESSED" && o.status !== "CONCEPT" },
     retention: o.processedAt ? { deleteAfter: new Date(o.processedAt.getTime() + ONTHEFFING_RETENTION_DAYS * DAY_MS).toISOString() } : null,
-    blockers: o.status === "PRESIDIUM_APPROVED" ? await releaseBlockers(o) : [],
+    blockers: o.status === "PRESIDIUM_APPROVED" ? await releaseBlockers(prisma, o) : [],
   };
 }
 
-async function releaseBlockers(o: Full): Promise<string[]> {
+/**
+ * Belemmeringen voor de vrijgave aan de hoge raad (leeg = vrij te geven); dezelfde controle voor de server en voor de weergave in de app.
+ * - Er moet minstens één actief, niet-betrokken hogeraadslid zijn (een lege hoge raad leidt nooit tot goedkeuring).
+ * - Is de betrokkene zelf hogeraadslid (functie hogeraadslid of organisatiepresident die hogeraadslid is, of een gekoppeld account met de rol
+ *   hoge raad), dan moet die eerst persoonlijk zijn geïnformeerd door het ringpresidium voordat de hogeraadronde start.
+ */
+async function releaseBlockers(db: Tx | typeof prisma, o: Full): Promise<string[]> {
+  const blockers: string[] = [];
   const subjects = new Set(o.persons.flatMap((p) => (p.userId ? [p.userId] : [])));
-  const hr = await prisma.ringMembership.findMany({ where: { ringId: o.ringId, role: "HOGERAAD", active: true, user: { active: true } }, select: { userId: true } });
-  return hr.filter((r) => !subjects.has(r.userId)).length === 0 ? ["Er zijn geen actieve hogeraadsleden die kunnen deelnemen."] : [];
+  const hr = await db.ringMembership.findMany({ where: { ringId: o.ringId, role: "HOGERAAD", active: true, user: { active: true } }, select: { userId: true } });
+  if (hr.filter((r) => !subjects.has(r.userId)).length === 0) {
+    blockers.push("Er zijn geen actieve hogeraadsleden die kunnen deelnemen. Zonder deelnemers kan er geen ondersteuningsronde starten.");
+  }
+  const mustBeInformed = new Set<string>();
+  const main = o.persons.find((p) => p.role === "HOOFD");
+  if (main && o.functionSource === "STANDAARD" && o.functionCode && HOGERAAD_FUNCTION_CODES.has(o.functionCode)) mustBeInformed.add(main.id);
+  const linked = o.persons.filter((p) => p.userId);
+  if (linked.length > 0) {
+    const asHr = await db.ringMembership.findMany({ where: { ringId: o.ringId, role: "HOGERAAD", active: true, userId: { in: linked.map((p) => p.userId!) } }, select: { userId: true } });
+    const hrIds = new Set(asHr.map((m) => m.userId));
+    for (const p of linked) if (hrIds.has(p.userId!)) mustBeInformed.add(p.id);
+  }
+  if (o.persons.some((p) => mustBeInformed.has(p.id) && !p.informedAt)) {
+    blockers.push("De betrokkene is hogeraadslid en moet eerst persoonlijk door het ringpresidium zijn geïnformeerd voordat de hoge raad de ontheffing te zien krijgt. Registreer eerst de persoonlijke kennisgeving.");
+  }
+  return blockers;
+}
+
+// ---- Openstaande dossiers: herinnering en beoordeling (geen automatische verwijdering) ----
+
+/**
+ * Er is (nog) geen vastgesteld bewaarbeleid voor lopende dossiers, dus ze worden nooit automatisch verwijderd. In plaats daarvan:
+ * na 30 dagen zonder activiteit een herinnering aan het ringpresidium, na 90 dagen een markering "beoordeling nodig" (en nogmaals een melding).
+ * Alleen een expliciete beoordeling door ringstaf (aanhouden of verwijderen) lost de markering op. Meldingen zijn generiek en gaan niet naar betrokkenen.
+ */
+export async function remindStaleOntheffingen(now: Date = new Date()): Promise<{ reminded: number; flagged: number }> {
+  const t30 = new Date(now.getTime() - ONTHEFFING_REMINDER_DAYS * DAY_MS);
+  const t90 = new Date(now.getTime() - ONTHEFFING_REVIEW_DAYS * DAY_MS);
+  const open: Prisma.OntheffingWhereInput = { status: { notIn: ["CONCEPT", "PROCESSED"] } };
+  let reminded = 0;
+  let flagged = 0;
+
+  const toRemind = await prisma.ontheffing.findMany({ where: { ...open, lastActivityAt: { lte: t30 }, reminderSentAt: null }, select: { id: true, ringId: true } });
+  for (const o of toRemind) {
+    if (await notifyPresidium(o.id, o.ringId)) {
+      await prisma.ontheffing.updateMany({ where: { id: o.id, reminderSentAt: null }, data: { reminderSentAt: now } });
+      reminded++;
+    }
+  }
+  const toFlag = await prisma.ontheffing.findMany({ where: { ...open, lastActivityAt: { lte: t90 }, reviewFlaggedAt: null }, select: { id: true, ringId: true } });
+  for (const o of toFlag) {
+    await prisma.ontheffing.updateMany({ where: { id: o.id, reviewFlaggedAt: null }, data: { reviewFlaggedAt: now } });
+    await notifyPresidium(o.id, o.ringId);
+    flagged++;
+  }
+  return { reminded, flagged };
+}
+
+async function notifyPresidium(id: string, ringId: string): Promise<boolean> {
+  try {
+    const staff = await prisma.ringMembership.findMany({ where: { ringId, role: "RINGPRESIDIUM", active: true, user: { active: true } }, select: { userId: true } });
+    await notify({ userIds: staff.map((s) => s.userId), ringId, ontheffingId: id, event: "CONFIDENTIAL_REMINDER", url: `/ontheffingen/${id}` });
+    return true;
+  } catch (err) {
+    console.error(`[ontheffingen] Herinnering voor dossier ${id} mislukt:`, err);
+    return false;
+  }
+}
+
+/** Expliciete beoordeling van een openstaand dossier: aanhouden start de termijnen opnieuw (verwijderen kan via deleteOntheffing). */
+export async function reviewOntheffing(actorId: string, id: string): Promise<void> {
+  const { o } = await requireStaffAccess(actorId, id);
+  if (o.status === "CONCEPT" || o.status === "PROCESSED") throw new WorkflowError("Dit dossier hoeft niet te worden beoordeeld.");
+  await prisma.$transaction(async (tx) => {
+    await lock(tx, id);
+    await touch(tx, id);
+    await audit(tx, id, actorId, "REVIEWED", "aangehouden");
+  });
 }

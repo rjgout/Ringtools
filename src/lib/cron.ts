@@ -4,7 +4,7 @@ import { sendDue30DayReminders, deleteDueProcessedCallings, retryPendingCreation
 import { deleteExpiredAuthData } from "./auth";
 import { deleteExpiredOpenLinks } from "./openLinks";
 import { deleteStaleDrafts } from "./proposals";
-import { deleteDueOntheffingen, retryPendingOntheffingNotifications } from "./ontheffingen";
+import { deleteDueOntheffingen, remindStaleOntheffingen, retryPendingOntheffingNotifications } from "./ontheffingen";
 
 let started = false;
 
@@ -62,6 +62,9 @@ async function runOnce(): Promise<void> {
 
   const retried = await retryPendingCreationNotifications();
   if (retried > 0) console.log(`[cron] ${retried} aanmaakmelding(en) alsnog afgeleverd.`);
+
+  const stale = await remindStaleOntheffingen();
+  if (stale.reminded + stale.flagged > 0) console.log(`[cron] Ontheffingen: ${stale.reminded} herinnering(en), ${stale.flagged} gemarkeerd voor beoordeling.`);
 
   const ontheffingen = await deleteDueOntheffingen();
   if (ontheffingen > 0) console.log(`[cron] ${ontheffingen} ontheffingsdossier(s) volgens de bewaarregels verwijderd.`);

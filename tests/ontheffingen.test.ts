@@ -4,7 +4,9 @@ import { createVerifiedSession } from "@/lib/auth";
 import type { AppNotification, Dashboard, OntheffingListItem, OntheffingView } from "@shared/api-types";
 import { createUnit, createCustomCalling } from "@/lib/ringSetup";
 import { notify } from "@/lib/notifications";
-import { deleteDueOntheffingen, deliverOntheffingNotifications, ontheffingCounts, retryPendingOntheffingNotifications } from "@/lib/ontheffingen";
+import { deleteDueOntheffingen, deliverOntheffingNotifications, ontheffingCounts, remindStaleOntheffingen, retryPendingOntheffingNotifications } from "@/lib/ontheffingen";
+import { isOutsideRingtoolsFunctionName } from "@/lib/catalog/callings";
+import { updateCustomCalling } from "@/lib/ringSetup";
 import { getPendingActionCount } from "@/lib/queries";
 import { createTestRing, createTestUser, resetDatabase } from "./setup";
 
@@ -76,6 +78,13 @@ async function submitted(s: S, over: Record<string, unknown> = {}) {
   expect(r.status, JSON.stringify(r.body)).toBe(200);
   return c.body.id as string;
 }
+/** Registreert de persoonlijke kennisgeving van de hoofdpersoon (nodig vóór de vrijgave bij de ontheffing van een hogeraadslid). */
+async function informMain(s: S, id: string) {
+  const pid = ((await view(id, s.t.manager)).body.persons as { id: string; role: string }[]).find((p) => p.role === "HOOFD")!.id;
+  const r = await step(pid, "inform", s.t.manager);
+  expect(r.status, JSON.stringify(r.body)).toBe(200);
+  return pid;
+}
 /** Doorloopt presidium (alle presidiumleden steunen) + vrijgave + hoge raad (alle hogeraadsleden steunen). */
 async function approveFully(s: S, id: string, hr: (keyof S["t"])[] = ["ha1", "ha2", "ha3"]) {
   for (const who of ["president", "counselor"] as const) {
@@ -132,7 +141,8 @@ describe("Concept", () => {
     expect(linkForeign.status).toBe(400);
     expect(linkForeign.body.error).toMatch(/geen actief lid van deze ring/);
 
-    const bishop = await createCustomCalling(s.manager.id, s.ring.id, { name: "Bisschop", category: "Overig" });
+    // een eigen roeping van vóór de controle (rechtstreeks in de database) kan ook niet meer worden gebruikt
+    const bishop = await prisma.ringCustomCalling.create({ data: { ringId: s.ring.id, name: "Bisschop", category: "Overig" } });
     const b = await concept(s, full(s, { functionSource: "EIGEN", functionCode: bishop.id }));
     expect(b.status).toBe(400);
     expect(b.body.error).toMatch(/bisschop/i);
@@ -273,11 +283,12 @@ describe("Behandeling: individueel en gezamenlijk, vrijgave, uitvoering", () => 
     expect((await step(pid, "inform", s.t.manager)).status).toBe(200);
     expect((await step(pid, "inform", s.t.manager)).status).toBe(200); // idempotent
     expect((await step(pid, "process", s.t.manager)).status).toBe(400);
-    expect((await step(pid, "announce", s.t.manager, { thanked: true })).status).toBe(200);
+    expect((await step(pid, "announce", s.t.manager)).status).toBe(400); // expliciet vastleggen of gelegenheid is geboden
+    expect((await step(pid, "announce", s.t.manager, { thanksOffered: true })).status).toBe(200);
     expect((await step(pid, "process", s.t.manager)).body).toMatchObject({ dossierProcessed: true });
     v = (await view(id, s.t.manager)).body;
     expect(v.status).toBe("PROCESSED");
-    expect(v.persons[0].execution).toMatchObject({ informedAt: expect.any(String), announcedAt: expect.any(String), thankedAt: expect.any(String), processedAt: expect.any(String) });
+    expect(v.persons[0].execution).toMatchObject({ informedAt: expect.any(String), announcedAt: expect.any(String), thanksOffered: true, processedAt: expect.any(String) });
     expect(v.audit.map((a: { type: string }) => a.type)).toEqual(expect.arrayContaining(["SUBMITTED", "HOGERAAD_RELEASED", "PERSON_INFORMED", "PERSON_ANNOUNCED", "PERSON_PROCESSED", "PROCESSED"]));
     // audit bevat geen namen
     expect(JSON.stringify(v.audit)).not.toMatch(/Piet|Voorbeeld/);
@@ -317,10 +328,10 @@ describe("Behandeling: individueel en gezamenlijk, vrijgave, uitvoering", () => 
     expect((await decide(s.t.manager, { stage: "PRESIDIUM", decidedOn: today(), agreed: false })).status).toBe(400);
     expect((await decide(s.t.manager, { stage: "HOGERAAD", decidedOn: today(), agreed: true })).status).toBe(400); // verkeerde fase
     await vote(id, s.t.president, false);
-    expect((await decide(s.t.manager, { stage: "PRESIDIUM", decidedOn: today(), agreed: true })).status).toBe(400); // negatieve reactie niet afgehandeld
-    expect((await decide(s.t.manager, { stage: "PRESIDIUM", decidedOn: today(), agreed: true, resolveNegative: true, resolutionNote: "Besproken en alsnog akkoord in vergadering." })).body).toMatchObject({ status: "PRESIDIUM_APPROVED" });
+    expect((await decide(s.t.manager, { stage: "PRESIDIUM", decidedOn: today(), agreed: true, presentUserIds: [s.president.id] })).status).toBe(400); // negatieve reactie niet afgehandeld
+    expect((await decide(s.t.manager, { stage: "PRESIDIUM", decidedOn: today(), agreed: true, presentUserIds: [s.president.id, s.counselor.id], resolveNegative: true, resolutionNote: "Besproken en alsnog akkoord in vergadering." })).body).toMatchObject({ status: "PRESIDIUM_APPROVED" });
     expect(await prisma.ontheffingVote.count()).toBe(1); // de negatieve reactie blijft staan; geen reacties aangemaakt
-    expect((await decide(s.t.manager, { stage: "PRESIDIUM", decidedOn: today(), agreed: true })).body).toMatchObject({ alreadyRegistered: true });
+    expect((await decide(s.t.manager, { stage: "PRESIDIUM", decidedOn: today(), agreed: true, presentUserIds: [s.president.id] })).body).toMatchObject({ alreadyRegistered: true });
 
     await release(id, s.t.manager);
     expect((await decide(s.t.manager, { stage: "HOGERAAD", decidedOn: today(), agreed: true, presentUserIds: [s.ha1.id] })).status).toBe(400); // presiderend lid ontbreekt
@@ -379,7 +390,8 @@ describe("Robuustheid van de rondes", () => {
     const decide = (body: Record<string, unknown>) => call("POST", `/ontheffingen/${id}/group-decision`, { token: s.t.manager, body });
     await vote(id, s.t.president, true);
     await vote(id, s.t.counselor, true);
-    await release(id, s.t.manager);
+    await informMain(s, id);
+    expect((await release(id, s.t.manager)).status).toBe(200);
     expect((await decide({ stage: "HOGERAAD", decidedOn: today(), agreed: true, presidingUserId: s.president.id, presentUserIds: [s.ha1.id] })).status).toBe(400);
     expect((await decide({ stage: "HOGERAAD", decidedOn: today(), agreed: true, presidingUserId: s.president.id, presentUserIds: [s.ha2.id, s.ha3.id] })).body.status).toBe("APPROVED");
   });
@@ -391,7 +403,8 @@ describe("Vertrouwelijkheid van de betrokkene", () => {
     const id = await submitted(s, { functionCode: "hogeraadslid", persons: [main("Hogeraad A", { accountMode: "GEKOPPELD", userId: s.ha1.id })] });
     await vote(id, s.t.president, true);
     await vote(id, s.t.counselor, true);
-    await release(id, s.t.manager);
+    await informMain(s, id); // betrokkene is hogeraadslid: eerst persoonlijk informeren
+    expect((await release(id, s.t.manager)).status).toBe(200);
 
     // uitgesloten van de ronde; de anderen doen mee
     expect((await prisma.ontheffingVoter.findMany({ where: { ontheffingId: id, stage: "HOGERAAD" } })).map((v) => v.userId).sort()).toEqual([s.ha2.id, s.ha3.id].sort());
@@ -405,9 +418,9 @@ describe("Vertrouwelijkheid van de betrokkene", () => {
     // lijst, aantallen, dashboard, app-badge
     expect((await call("GET", `/ontheffingen?ring=${s.ring.id}`, { token: s.t.ha1 })).body.ontheffingen).toEqual([]);
     expect((await call("GET", `/ontheffingen?ring=${s.ring.id}`, { token: s.t.ha2 })).body.ontheffingen).toHaveLength(1);
-    expect(await ontheffingCounts(s.ha1.id, s.ring.id)).toEqual({ needsMyVote: 0, open: 0 });
-    expect(await ontheffingCounts(s.ha2.id, s.ring.id)).toEqual({ needsMyVote: 1, open: 1 });
-    expect((await call("GET", `/dashboard?ring=${s.ring.id}`, { token: s.t.ha1 })).body.ontheffingen).toEqual({ needsMyVote: 0, open: 0 });
+    expect(await ontheffingCounts(s.ha1.id, s.ring.id)).toEqual({ needsMyVote: 0, open: 0, needsReview: 0 });
+    expect(await ontheffingCounts(s.ha2.id, s.ring.id)).toEqual({ needsMyVote: 1, open: 1, needsReview: 0 });
+    expect((await call("GET", `/dashboard?ring=${s.ring.id}`, { token: s.t.ha1 })).body.ontheffingen).toEqual({ needsMyVote: 0, open: 0, needsReview: 0 });
     expect(await getPendingActionCount(s.ha1.id)).toBe(0);
     expect(await getPendingActionCount(s.ha2.id)).toBeGreaterThan(0);
     expect((await call("GET", `/notifications?ring=${s.ring.id}`, { token: s.t.ha1 })).body.notifications ?? []).toHaveLength(0);
@@ -435,7 +448,8 @@ describe("Vertrouwelijkheid van de betrokkene", () => {
     const id = await submitted(s, { functionCode: "hogeraadslid", persons: [main(s.ha1.name, { accountMode: "GEEN_ACCOUNT" })] });
     await vote(id, s.t.president, true);
     await vote(id, s.t.counselor, true);
-    await release(id, s.t.manager);
+    await informMain(s, id);
+    expect((await release(id, s.t.manager)).status).toBe(200);
     expect(await prisma.ontheffingVoter.count({ where: { ontheffingId: id, stage: "HOGERAAD" } })).toBe(3);
     expect((await view(id, s.t.ha1)).status).toBe(200); // geen automatische koppeling: de staf heeft expliciet 'geen account' verklaard
     expect(await prisma.ontheffingPerson.count({ where: { userId: { not: null } } })).toBe(0);
@@ -539,13 +553,13 @@ describe("Gezamenlijke ontheffing (president(e) en raadgevers)", () => {
     expect((await step(naPerson.id, "inform", s.t.manager)).status).toBe(400); // niet van toepassing: niets te informeren
 
     // hoofdpersoon volledig afgerond, raadgever nog niet → dossier nog niet verwerkt
-    for (const st of ["inform", "announce"]) expect((await step(head.id, st, s.t.manager)).status).toBe(200);
+    for (const st of ["inform", "announce"]) expect((await step(head.id, st, s.t.manager, { thanksOffered: false })).status).toBe(200);
     expect((await step(head.id, "process", s.t.manager)).body).toMatchObject({ dossierProcessed: false });
     let w = (await view(c.body.id, s.t.manager)).body;
     expect(w.status).toBe("APPROVED");
     expect(w.persons.find((p: { id: string }) => p.id === head.id).execution.processedAt).toEqual(expect.any(String));
     expect(w.persons.find((p: { id: string }) => p.id === adv.id).execution).toMatchObject({ informedAt: null, processedAt: null });
-    for (const st of ["inform", "announce"]) expect((await step(adv.id, st, s.t.manager)).status).toBe(200);
+    for (const st of ["inform", "announce"]) expect((await step(adv.id, st, s.t.manager, { thanksOffered: true })).status).toBe(200);
     expect((await step(adv.id, "process", s.t.manager)).body).toMatchObject({ dossierProcessed: true });
     w = (await view(c.body.id, s.t.manager)).body;
     expect(w.status).toBe("PROCESSED");
@@ -555,7 +569,15 @@ describe("Gezamenlijke ontheffing (president(e) en raadgevers)", () => {
     const s = await setup();
     const c = await concept(s, body(s, [main("Presidente Voorbeeld"), { ...ok, accountMode: "GEKOPPELD", userId: s.ha2.id }, na]));
     await submit(c.body.id, s.t.manager);
-    await approveFully(s, c.body.id, ["ha1", "ha3"]);
+    for (const who of ["president", "counselor"] as const) await vote(c.body.id, s.t[who], true);
+    // de raadgever is zelf hogeraadslid: eerst persoonlijk informeren, anders blijft de vrijgave geblokkeerd
+    const blocked = await release(c.body.id, s.t.manager);
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.error).toMatch(/persoonlijk .*geïnformeerd/);
+    const advId = ((await view(c.body.id, s.t.manager)).body.persons as { id: string; followUpCode?: string }[]).find((p) => p.followUpCode === RG1)!.id;
+    expect((await step(advId, "inform", s.t.manager)).status).toBe(200);
+    expect((await release(c.body.id, s.t.manager)).status).toBe(200);
+    for (const who of ["ha1", "ha3"] as const) await vote(c.body.id, s.t[who], true);
     expect((await prisma.ontheffing.findUniqueOrThrow({ where: { id: c.body.id } })).status).toBe("APPROVED");
     expect((await view(c.body.id, s.t.ha2)).status).toBe(403);
     expect(await prisma.notification.count({ where: { userId: s.ha2.id } })).toBe(0);
@@ -575,8 +597,248 @@ describe("API-contract ontheffingen (gedeelde types)", () => {
     const voter = (await view(id, s.t.president)).body as OntheffingView;
     expect(voter.viewer).toMatchObject({ staff: true, canVote: true });
     const dash = (await call("GET", `/dashboard?ring=${s.ring.id}`, { token: s.t.president })).body as Dashboard;
-    expect(dash.ontheffingen).toEqual({ needsMyVote: 1, open: 1 });
+    expect(dash.ontheffingen).toEqual({ needsMyVote: 1, open: 1, needsReview: 0 });
     const notes = (await call("GET", `/notifications?ring=${s.ring.id}`, { token: s.t.president })).body.notifications as AppNotification[];
     expect(notes[0]).toMatchObject({ ontheffingId: id, callingId: null, type: "CONFIDENTIAL_PROPOSAL" });
+  });
+});
+
+describe("C4-correcties: persoonlijke kennisgeving vóór vrijgave bij een hogeraadslid", () => {
+  it("de vrijgave is server-side geblokkeerd tot de betrokkene (hogeraadslid) persoonlijk is geïnformeerd; ook in de blokkades van de app", async () => {
+    const s = await setup();
+    const id = await submitted(s, { functionCode: "hogeraadslid", persons: [main("Hogeraad X")] });
+    await vote(id, s.t.president, true);
+    await vote(id, s.t.counselor, true);
+    let v = (await view(id, s.t.manager)).body as OntheffingView;
+    expect(v.status).toBe("PRESIDIUM_APPROVED");
+    expect(v.blockers?.[0]).toMatch(/persoonlijk door het ringpresidium zijn geïnformeerd/);
+    const r = await release(id, s.t.manager);
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/persoonlijk/);
+    expect((await prisma.ontheffing.findUniqueOrThrow({ where: { id } })).status).toBe("PRESIDIUM_APPROVED");
+    expect(await prisma.ontheffingVoter.count({ where: { stage: "HOGERAAD" } })).toBe(0);
+    expect(await prisma.notification.count({ where: { ontheffingId: id, type: "CONFIDENTIAL_HOGERAAD" } })).toBe(0);
+    // gelijktijdig proberen levert ook niets op
+    const raced = await Promise.all([release(id, s.t.manager), release(id, s.t.manager)]);
+    expect(raced.every((x) => x.status === 400)).toBe(true);
+
+    await informMain(s, id);
+    v = (await view(id, s.t.manager)).body as OntheffingView;
+    expect(v.blockers).toEqual([]);
+    expect((await release(id, s.t.manager)).body).toMatchObject({ released: true });
+  });
+
+  it("geldt ook voor organisatiepresidenten die hogeraadslid zijn; andere functies en niet-van-toepassing-raadgevers hebben geen extra blokkade", async () => {
+    const s = await setup();
+    const jm = await submitted(s, { functionCode: "jongemannenpresident", persons: [main("JM President"),
+      { role: "RAADGEVER", followUpCode: "eerste-raadgever-jongemannen", answer: "NIET_VAN_TOEPASSING" }, { role: "RAADGEVER", followUpCode: "tweede-raadgever-jongemannen", answer: "NIET_VAN_TOEPASSING" }] });
+    await vote(jm, s.t.president, true);
+    await vote(jm, s.t.counselor, true);
+    expect((await release(jm, s.t.manager)).status).toBe(400);
+    await informMain(s, jm);
+    expect((await release(jm, s.t.manager)).status).toBe(200);
+
+    const plain = await submitted(s); // ringadministrateur: geen hogeraadslid
+    await vote(plain, s.t.president, true);
+    await vote(plain, s.t.counselor, true);
+    expect((await view(plain, s.t.manager)).body.blockers).toEqual([]);
+    expect((await release(plain, s.t.manager)).status).toBe(200);
+  });
+
+  it("een gekoppeld account met de rol hoge raad vraagt dezelfde kennisgeving, ook bij een andere functie", async () => {
+    const s = await setup();
+    const id = await submitted(s, { persons: [main("Iemand Anders", { accountMode: "GEKOPPELD", userId: s.ha2.id })] });
+    await vote(id, s.t.president, true);
+    await vote(id, s.t.counselor, true);
+    expect((await release(id, s.t.manager)).status).toBe(400);
+    await informMain(s, id);
+    expect((await release(id, s.t.manager)).status).toBe(200);
+  });
+
+  it("na de kennisgeving blijft het gekoppelde hogeraadslid uitgesloten van dossier, deelnemerslijsten, aantallen en meldingen", async () => {
+    const s = await setup();
+    const id = await submitted(s, { functionCode: "hogeraadslid", persons: [main("Hogeraad A", { accountMode: "GEKOPPELD", userId: s.ha1.id })] });
+    await vote(id, s.t.president, true);
+    await vote(id, s.t.counselor, true);
+    await informMain(s, id);
+    expect((await release(id, s.t.manager)).status).toBe(200);
+    for (const who of ["ha2", "ha3"] as const) await vote(id, s.t[who], true);
+    expect((await prisma.ontheffing.findUniqueOrThrow({ where: { id } })).status).toBe("APPROVED");
+
+    expect((await prisma.ontheffingPerson.findFirstOrThrow({ where: { ontheffingId: id, role: "HOOFD" } })).informedAt).not.toBeNull(); // kennisgeving is vastgelegd...
+    expect((await view(id, s.t.ha1)).status).toBe(403); // ...maar geeft geen toegang
+    expect((await call("GET", `/ontheffingen?ring=${s.ring.id}`, { token: s.t.ha1 })).body.ontheffingen).toEqual([]);
+    expect(await ontheffingCounts(s.ha1.id, s.ring.id)).toEqual({ needsMyVote: 0, open: 0, needsReview: 0 });
+    expect(await prisma.ontheffingVoter.count({ where: { ontheffingId: id, userId: s.ha1.id } })).toBe(0);
+    expect(await prisma.notification.count({ where: { userId: s.ha1.id } })).toBe(0);
+    expect((await vote(id, s.t.ha1, true)).status).toBe(403);
+    expect((await step(((await view(id, s.t.manager)).body.persons as { id: string }[])[0].id, "inform", s.t.ha1)).status).toBe(403);
+  });
+});
+
+describe("C4-correcties: functies buiten Ringtools als eigen roeping", () => {
+  const blocked = ["Ringpresident", "ringpresident", "Ring president", "President van de ring", "Eerste raadgever ringpresidium", "Tweede raadgever ringpresidium",
+    "Eerste raadgever in het ringpresidium", "Raadgever ringpresidium", "Ringpatriarch", "Patriarch", "Bisschop", "Bisschóp"];
+  const allowed = ["Jongemannenpresident", "Eerste raadgever jongemannen", "Ringadministrateur", "Ringsecretaris", "Eerste raadgever in de bisschap", "Tweede raadgever in de bisschap",
+    "Eerste raadgeefster ZHV-presidium (ring)", "Zondagsschoolpresident", "Assistent ringpresidium", "Patriarchale zegen coördinator", "Bisschapsraadgever", "Presidentieel adviseur"];
+
+  it("herkent de bedoelde functies en laat vergelijkbare woorden met rust", () => {
+    for (const n of blocked) expect(isOutsideRingtoolsFunctionName(n), n).toBe(true);
+    for (const n of allowed) expect(isOutsideRingtoolsFunctionName(n), n).toBe(false);
+  });
+
+  it("kan niet als eigen roeping worden toegevoegd of hernoemd; toegestane namen wel", async () => {
+    const s = await setup();
+    for (const n of blocked) await expect(createCustomCalling(s.manager.id, s.ring.id, { name: n, category: "Overig" }), n).rejects.toThrow(/buiten Ringtools/);
+    for (const n of allowed) await expect(createCustomCalling(s.manager.id, s.ring.id, { name: n, category: "Overig" }), n).resolves.toBeTruthy();
+    const ok = await prisma.ringCustomCalling.findFirstOrThrow({ where: { ringId: s.ring.id, name: "Ringadministrateur" } });
+    await expect(updateCustomCalling(s.manager.id, ok.id, { name: "Ringpatriarch" })).rejects.toThrow(/buiten Ringtools/);
+    expect(await prisma.ringCustomCalling.count({ where: { ringId: s.ring.id, name: { in: blocked } } })).toBe(0);
+  });
+
+  it("bestaande eigen roepingen met zo'n naam worden bij indienen server-side geweigerd (ontheffing en concept)", async () => {
+    const s = await setup();
+    for (const n of ["Ringpresident", "Eerste raadgever ringpresidium", "Ringpatriarch", "Bisschop"]) {
+      const legacy = await prisma.ringCustomCalling.create({ data: { ringId: s.ring.id, name: n, category: "Overig" } });
+      const c = await concept(s, full(s, { functionSource: "EIGEN", functionCode: legacy.id }));
+      expect(c.status, n).toBe(400);
+      expect(c.body.error).toMatch(/buiten Ringtools/);
+    }
+    // direct in de database ingestelde functie wordt bij indienen opnieuw getoetst
+    const sneaky = await prisma.ringCustomCalling.create({ data: { ringId: s.ring.id, name: "Toegestaan", category: "Overig" } });
+    const c = await concept(s, full(s, { functionSource: "EIGEN", functionCode: sneaky.id, procedureConfirmed: true }));
+    expect(c.status).toBe(200);
+    await prisma.ringCustomCalling.update({ where: { id: sneaky.id }, data: { name: "Patriarch" } });
+    expect((await submit(c.body.id, s.t.manager)).status).toBe(400);
+  });
+});
+
+describe("C4-correcties: gezamenlijk presidiumbesluit", () => {
+  const decide = (id: string, token: string, body: Record<string, unknown> = {}) =>
+    call("POST", `/ontheffingen/${id}/group-decision`, { token, body: { stage: "PRESIDIUM", decidedOn: today(), agreed: true, ...body } });
+
+  it("legt alleen een werkelijk genomen besluit vast: de presidiumleden die het namen moeten worden genoemd; een secretaris maakt het niet zelf", async () => {
+    const s = await setup();
+    const id = await submitted(s);
+    expect((await decide(id, s.t.manager)).body.error).toMatch(/Geef aan welke leden van het ringpresidium/);
+    expect((await decide(id, s.t.manager, { presentUserIds: [s.manager.id] })).status).toBe(400); // secretaris is geen presidiumlid
+    expect((await decide(id, s.t.manager, { presentUserIds: [s.ha1.id] })).status).toBe(400);
+    expect((await prisma.ontheffing.findUniqueOrThrow({ where: { id } })).status).toBe("PRESIDIUM_VOTING");
+    expect(await prisma.ontheffingDecision.count()).toBe(0);
+    const ok = await decide(id, s.t.manager, { presentUserIds: [s.president.id, s.counselor.id] });
+    expect(ok.body).toMatchObject({ status: "PRESIDIUM_APPROVED", alreadyRegistered: false });
+    expect((await prisma.ontheffingDecision.findFirstOrThrow()).presentUserIds.sort()).toEqual([s.president.id, s.counselor.id].sort());
+    expect(await prisma.ontheffingVote.count()).toBe(0); // geen reacties namens anderen
+  });
+
+  it("wordt geweigerd als er geen actief, niet-betrokken presidiumlid beschikbaar is", async () => {
+    const s = await setup();
+    const id = await submitted(s, { functionCode: "hogeraadslid", persons: [main("President X", { accountMode: "GEKOPPELD", userId: s.president.id })] });
+    await prisma.ringMembership.updateMany({ where: { userId: s.counselor.id }, data: { active: false } });
+    const r = await decide(id, s.t.manager, { presentUserIds: [s.counselor.id] });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/geen actief, niet-betrokken lid van het ringpresidium/);
+    expect((await decide(id, s.t.manager, { presentUserIds: [s.president.id] })).status).toBe(400); // betrokkene kan het niet hebben genomen
+    expect(await prisma.ontheffingDecision.count()).toBe(0);
+    expect((await prisma.ontheffing.findUniqueOrThrow({ where: { id } })).status).toBe("PRESIDIUM_VOTING");
+
+    // alle presidiumleden inactief
+    const s2 = await setup();
+    const id2 = await submitted(s2);
+    await prisma.ringMembership.updateMany({ where: { ringId: s2.ring.id, role: "RINGPRESIDIUM" }, data: { active: false } });
+    expect((await decide(id2, s2.t.manager, { presentUserIds: [s2.president.id] })).body.error).toMatch(/geen actief, niet-betrokken/);
+  });
+});
+
+describe("C4-correcties: bekendmaking en gelegenheid tot dankbetuiging", () => {
+  it("registreert of gelegenheid is geboden; verwerking vereist de bekendmaking maar niet dat dank is uitgesproken", async () => {
+    const s = await setup();
+    const id = await submitted(s);
+    await approveFully(s, id);
+    const pid = await informMain(s, id);
+    for (const bad of [undefined, "ja", 1, null]) expect((await step(pid, "announce", s.t.manager, { thanksOffered: bad })).status, String(bad)).toBe(400);
+    expect((await step(pid, "process", s.t.manager)).status).toBe(400); // zonder bekendmaking
+    expect((await step(pid, "announce", s.t.manager, { thanksOffered: false })).status).toBe(200);
+    expect((await step(pid, "announce", s.t.manager, { thanksOffered: true })).status).toBe(200); // idempotent: eerste registratie blijft
+    let v = (await view(id, s.t.manager)).body as OntheffingView;
+    expect(v.persons[0].execution).toMatchObject({ announcedAt: expect.any(String), thanksOffered: false });
+    expect((await step(pid, "process", s.t.manager)).body).toMatchObject({ dossierProcessed: true });
+    v = (await view(id, s.t.manager)).body as OntheffingView;
+    expect(v.status).toBe("PROCESSED");
+    expect(v.audit?.find((a) => a.type === "PERSON_ANNOUNCED")?.detail).toBe("geen gelegenheid tot dankbetuiging geboden");
+  });
+});
+
+describe("C4-correcties: openstaande dossiers (herinnering na 30 dagen, beoordeling na 90 dagen, nooit automatisch verwijderen)", () => {
+  const ago = (days: number) => new Date(Date.now() - days * 86_400_000);
+
+  it("herinnert eenmalig na 30 dagen zonder activiteit en markeert na 90 dagen voor expliciete beoordeling; er wordt niets verwijderd", async () => {
+    const s = await setup();
+    const id = await submitted(s);
+    const conceptId = (await concept(s, full(s))).body.id as string;
+    await prisma.ontheffing.update({ where: { id }, data: { lastActivityAt: ago(10) } });
+    expect(await remindStaleOntheffingen()).toEqual({ reminded: 0, flagged: 0 });
+
+    await prisma.ontheffing.update({ where: { id }, data: { lastActivityAt: ago(31) } });
+    await prisma.ontheffing.update({ where: { id: conceptId }, data: { lastActivityAt: ago(200) } }); // concepten vallen hier buiten
+    await prisma.notification.deleteMany();
+    expect(await remindStaleOntheffingen()).toEqual({ reminded: 1, flagged: 0 });
+    const reminders = await prisma.notification.findMany({ where: { ontheffingId: id, type: "CONFIDENTIAL_REMINDER" } });
+    expect(reminders.map((r) => r.userId).sort()).toEqual([s.president.id, s.counselor.id].sort());
+    expect(`${reminders[0].title} ${reminders[0].message}`).not.toMatch(/Piet|Voorbeeld|Ringadministrateur|ontheffing/i);
+    expect(await remindStaleOntheffingen()).toEqual({ reminded: 0, flagged: 0 }); // niet nogmaals
+
+    await prisma.ontheffing.update({ where: { id }, data: { lastActivityAt: ago(91) } });
+    expect(await remindStaleOntheffingen()).toEqual({ reminded: 0, flagged: 1 });
+    expect(await remindStaleOntheffingen()).toEqual({ reminded: 0, flagged: 0 });
+    expect(await ontheffingCounts(s.manager.id, s.ring.id)).toMatchObject({ needsReview: 1 });
+    expect(await ontheffingCounts(s.president.id, s.ring.id)).toMatchObject({ needsReview: 1 });
+    expect(await ontheffingCounts(s.ha1.id, s.ring.id)).toMatchObject({ needsReview: 0 }); // hoge raad ziet het dossier niet eens
+    const list = (await call("GET", `/ontheffingen?ring=${s.ring.id}`, { token: s.t.manager })).body.ontheffingen as OntheffingListItem[];
+    expect(list.find((o) => o.id === id)).toMatchObject({ needsReview: true });
+    expect(((await view(id, s.t.manager)).body as OntheffingView).activity).toMatchObject({ needsReview: true });
+
+    // nooit automatisch verwijderen
+    expect(await deleteDueOntheffingen()).toBe(0);
+    expect(await prisma.ontheffing.count({ where: { id } })).toBe(1);
+
+    // alleen ringstaf beoordeelt; aanhouden start de termijnen opnieuw
+    expect((await call("POST", `/ontheffingen/${id}/review`, { token: s.t.ha1 })).status).toBe(403);
+    expect((await call("POST", `/ontheffingen/${id}/review`, { token: s.t.manager })).status).toBe(200);
+    const after = await prisma.ontheffing.findUniqueOrThrow({ where: { id } });
+    expect(after.reviewFlaggedAt).toBeNull();
+    expect(after.reminderSentAt).toBeNull();
+    expect(Date.now() - after.lastActivityAt.getTime()).toBeLessThan(60_000);
+    expect(await ontheffingCounts(s.manager.id, s.ring.id)).toMatchObject({ needsReview: 0 });
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("activiteit (een stem) zet de termijn terug; verwerkte dossiers en betrokkenen worden niet herinnerd", async () => {
+    const s = await setup();
+    const id = await submitted(s, { persons: [main("Pres X", { accountMode: "GEKOPPELD", userId: s.president.id })] });
+    await prisma.ontheffing.update({ where: { id }, data: { lastActivityAt: ago(40) } });
+    expect(await remindStaleOntheffingen()).toMatchObject({ reminded: 1 });
+    expect(await prisma.notification.count({ where: { userId: s.president.id } })).toBe(0); // de betrokkene krijgt ook geen herinnering
+    expect(await prisma.notification.count({ where: { userId: s.counselor.id, type: "CONFIDENTIAL_REMINDER" } })).toBe(1);
+    await vote(id, s.t.counselor, true);
+    expect((await prisma.ontheffing.findUniqueOrThrow({ where: { id } })).reminderSentAt).toBeNull();
+    await prisma.ontheffing.update({ where: { id }, data: { status: "PROCESSED", processedAt: new Date(), lastActivityAt: ago(300) } });
+    expect(await remindStaleOntheffingen()).toEqual({ reminded: 0, flagged: 0 });
+  });
+});
+
+describe("C4-correcties: ontheffingen versturen centraal nooit e-mail", () => {
+  it("ook niet als de aanroeper een e-mailbouwer meegeeft of het meldingstype vertrouwelijk is", async () => {
+    const s = await setup();
+    const id = await submitted(s);
+    sendMailMock.mockClear();
+    const buildEmail = async () => ({ subject: "Onderwerp", text: "Tekst met naam" });
+    await notify({ userIds: [s.president.id, s.counselor.id], ringId: s.ring.id, ontheffingId: id, event: "CONFIDENTIAL_PROPOSAL", url: `/ontheffingen/${id}`, buildEmail });
+    await notify({ userIds: [s.president.id], ringId: s.ring.id, event: "CONFIDENTIAL_PAUSED", url: "/x", buildEmail }); // zonder ontheffingId, maar vertrouwelijk type
+    await notify({ userIds: [s.president.id], ringId: s.ring.id, ontheffingId: id, event: "NEW_PROPOSAL", url: "/x", buildEmail }); // ontheffingId wint van het type
+    expect(sendMailMock).not.toHaveBeenCalled();
+    // controle dat de mock zelf wel werkt: een gewone melding mét e-mailbouwer verstuurt wél
+    await notify({ userIds: [s.president.id], ringId: s.ring.id, event: "NEW_PROPOSAL", url: "/x", buildEmail });
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,7 +1,7 @@
 import type { AccountLinkMode, FollowUpAnswer, FunctionSource } from "@prisma/client";
 import {
   castOntheffingVote, createConcept, deleteOntheffing, getOntheffingView, listOntheffingen, markInformed, processPerson, registerAnnouncement,
-  registerOntheffingDecision, releaseOntheffingToHogeraad, renamePerson, submitOntheffing, updateConcept, type ConceptInput, type PersonInput,
+  registerOntheffingDecision, releaseOntheffingToHogeraad, renamePerson, reviewOntheffing, submitOntheffing, updateConcept, type ConceptInput, type PersonInput,
 } from "../ontheffingen";
 import { ApiError, str } from "./http";
 import { mapErrors } from "./service";
@@ -63,9 +63,13 @@ export async function decisionFor(userId: string, id: string, body: Record<strin
     })
   );
 }
+export async function reviewFor(userId: string, id: string) {
+  await mapErrors(() => reviewOntheffing(userId, id));
+  return { ok: true };
+}
 export async function personStepFor(userId: string, personId: string, step: string, body: Record<string, unknown>) {
   if (step === "inform") { await mapErrors(() => markInformed(userId, personId)); return { ok: true }; }
-  if (step === "announce") { await mapErrors(() => registerAnnouncement(userId, personId, { thanked: body.thanked === true })); return { ok: true }; }
+  if (step === "announce") { await mapErrors(() => registerAnnouncement(userId, personId, { thanksOffered: body.thanksOffered as boolean })); return { ok: true }; }
   if (step === "process") return mapErrors(() => processPerson(userId, personId));
   if (step === "rename") { await mapErrors(() => renamePerson(userId, personId, str(body.name))); return { ok: true }; }
   throw new ApiError(404, "Niet gevonden.", "not-found");

@@ -77,6 +77,7 @@ enum NotificationType {
   CONFIDENTIAL_PROPOSAL
   CONFIDENTIAL_HOGERAAD
   CONFIDENTIAL_PAUSED
+  CONFIDENTIAL_REMINDER
 }
 
 model User {
@@ -728,6 +729,12 @@ model Ontheffing {
   approvedAt              DateTime?
   processedAt             DateTime?
 
+  // Laatste inhoudelijke activiteit (niet: technische bijwerkingen). Basis voor herinnering na 30 dagen en markering voor beoordeling na 90 dagen;
+  // lopende dossiers worden nooit automatisch verwijderd zonder vastgesteld bewaarbeleid.
+  lastActivityAt  DateTime  @default(now())
+  reminderSentAt  DateTime?
+  reviewFlaggedAt DateTime?
+
   // Herstelbare meldingen (zelfde principe als Calling.creationNotify*): welke gebeurtenis nog moet worden gemeld.
   notifyEvent     String?
   notifyClaimedAt DateTime?
@@ -765,7 +772,8 @@ model OntheffingPerson {
   informedById  String?
   announcedAt   DateTime?
   announcedById String?
-  thankedAt     DateTime?
+  // Bij de bekendmaking vastgelegd: is gelegenheid tot dankbetuiging geboden? (niet: is er daadwerkelijk dank uitgesproken). Leeg tot de bekendmaking.
+  thanksOffered Boolean?
   processedAt   DateTime?
   processedById String?
   createdAt     DateTime  @default(now())

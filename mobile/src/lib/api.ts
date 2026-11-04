@@ -262,6 +262,10 @@ export class ApiClient {
   voteOntheffing(id: string, support: boolean) {
     return this.request<{ status: string }>("POST", `/ontheffingen/${encodeURIComponent(id)}/vote`, { support });
   }
+  /** Expliciete beoordeling van een openstaand dossier (aanhouden); verwijderen gaat via deleteOntheffing. */
+  reviewOntheffing(id: string) {
+    return this.request<{ ok: boolean }>("POST", `/ontheffingen/${encodeURIComponent(id)}/review`, {});
+  }
   releaseOntheffing(id: string) {
     return this.request<{ released: boolean; alreadyReleased: boolean }>("POST", `/ontheffingen/${encodeURIComponent(id)}/release`, {});
   }
@@ -272,7 +276,7 @@ export class ApiClient {
     return this.request<{ status: string; alreadyRegistered: boolean }>("POST", `/ontheffingen/${encodeURIComponent(id)}/group-decision`, input);
   }
   /** Uitvoering per persoon: persoonlijk informeren, bekendmaking (met eventuele dankbetuiging) en administratief verwerken. */
-  ontheffingStep(personId: string, step: "inform" | "announce" | "process" | "rename", body: { thanked?: boolean; name?: string } = {}) {
+  ontheffingStep(personId: string, step: "inform" | "announce" | "process" | "rename", body: { thanksOffered?: boolean; name?: string } = {}) {
     return this.request<{ ok?: boolean; dossierProcessed?: boolean }>("POST", `/ontheffingen/persons/${encodeURIComponent(personId)}/${step}`, body);
   }
   // ---- Ringinrichting en catalogus (ringbeheerder: eigen ring; webmin: via /admin) ----

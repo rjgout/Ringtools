@@ -33,6 +33,7 @@ export function Ontheffingen() {
               <div className="muted">{o.statusLabel}</div>
             </div>
             {o.needsMyVote && <span className="dot" aria-label="Wacht op jouw reactie">!</span>}
+            {o.needsReview && <span className="dot" aria-label="Beoordeling nodig">?</span>}
           </div>
         </Link>
       ))}

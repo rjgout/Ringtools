@@ -328,15 +328,46 @@ export const CALLINGS: CatalogEntry[] = RAW.map((e) => {
 
 export const CATEGORIES: string[] = [...new Set(CALLINGS.map((c) => c.category))];
 
+function normName(name: string): string {
+  return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 /**
  * De bisschop zelf (handboek 30.7) volgt een procedure buiten de normale Ringtools-goedkeuring. De catalogus bevat hem daarom niet; deze
  * controle voorkomt dat hij via een eigen roeping alsnog in een Ringtools-proces terechtkomt. Raadgevers in de bisschap vallen er niet onder.
  */
 export function isBishopFunctionName(name: string): boolean {
-  const n = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const n = normName(name);
   return /\bbisschop\b/.test(n) && !/raadgever|raadgeefster|secretaris|secretaresse|administrateur/.test(n);
 }
 export const BISHOP_OUTSIDE_RINGTOOLS = "De procedure voor een bisschop (handboek 30.7) loopt buiten de normale Ringtools-goedkeuring; hiervoor kan in Ringtools niets worden ingediend.";
+
+/** Gangbare schrijfwijzen van functies met een procedure buiten Ringtools, naast de exacte catalogusnamen (aanvullend; bewust strikt ankerend). */
+const OUTSIDE_PATTERNS: RegExp[] = [
+  /^(de )?(ring ?president|president van (de )?ring)$/,
+  /^(de )?(eerste|tweede|1e|2e)? ?raadgever (in )?(het |de )?(ring ?presidium|presidium van (de )?ring)$/,
+  /^(de )?(ring ?presidium) (eerste|tweede) raadgever$/,
+  /^(de )?(ring ?)?patriarch$/,
+];
+let outsideNames: Set<string> | null = null;
+/**
+ * Is dit (eigen) roepingsnaam een functie met een procedure buiten Ringtools (ringpresident, raadgevers in het ringpresidium, ringpatriarch,
+ * bisschop)? Afgeleid van de catalogus (`ringtoolsProcess = false`) plus gangbare varianten. Anker-vergelijking op de volledige naam, zodat
+ * functies met vergelijkbare woorden (bijv. "Jongemannenpresident", "Eerste raadgever jongemannen", "Raadgever in de bisschap") niet worden geblokkeerd.
+ */
+export function isOutsideRingtoolsFunctionName(name: string): boolean {
+  if (!outsideNames) {
+    outsideNames = new Set<string>();
+    for (const c of CALLINGS) if (!c.ringtoolsProcess) for (const n of [c.name, ...c.aliases]) outsideNames.add(normName(n));
+  }
+  const n = normName(name);
+  if (!n) return false;
+  return outsideNames.has(n) || OUTSIDE_PATTERNS.some((r) => r.test(n)) || isBishopFunctionName(name);
+}
+export const OUTSIDE_RINGTOOLS = "Deze functie volgt een procedure buiten Ringtools (ringpresident, raadgevers in het ringpresidium, ringpatriarch en bisschop). Hiervoor kan geen eigen roeping worden gebruikt of ingediend.";
+
+/** Functies waarvan de betrokkene (ook) hogeraadslid is: de ontheffing vereist dan eerst persoonlijke kennisgeving vóór de hogeraadronde. */
+export const HOGERAAD_FUNCTION_CODES = new Set(["hogeraadslid", "jongemannenpresident", "zondagsschoolpresident"]);
 
 const BY_CODE = new Map(CALLINGS.map((c) => [c.code, c]));
 export function getCatalogEntry(code: string): CatalogEntry | null {

@@ -14,7 +14,7 @@ trackingfunctionaliteit.
 |---|---|---|---|
 | Naam, e-mailadres, rol/functie, ringlidmaatschap | Account, autorisatie, notificaties | PostgreSQL (self-hosted) | Zolang lidmaatschap actief; verwijdering op verzoek |
 | Roepingsvoorstellen (naam kandidaat, functie), stemmen/ondersteuning, taken | Kernfunctie | PostgreSQL | Verwerkte voorstellen worden 30 dagen na verwerking verwijderd |
-| Ontheffingsdossiers (namen betrokkenen en raadgevers, functie, wijk/gemeente, besluitregistratie, tijdelijke accountkoppeling) | Procedure ontheffing | PostgreSQL | Verwerkt: 30 dagen na verwerking verwijderd (inclusief de accountkoppeling); concept: 30 dagen na laatste wijziging. Alleen zichtbaar voor ringstaf en deelnemers van de lopende ronde; nooit voor de betrokkene zelf; geen e-mail, geen namen in push |
+| Ontheffingsdossiers (namen betrokkenen en raadgevers, functie, wijk/gemeente, besluitregistratie, tijdelijke accountkoppeling) | Procedure ontheffing | PostgreSQL | Verwerkt: 30 dagen na verwerking verwijderd (inclusief de accountkoppeling); concept: 30 dagen na laatste wijziging; lopende dossiers: nooit automatisch, wel herinnering na 30 en beoordeling na 90 dagen zonder activiteit. Alleen zichtbaar voor ringstaf en deelnemers van de lopende ronde; nooit voor de betrokkene zelf; geen e-mail, geen namen in push |
 | Sessietoken (gehasht op server; Keychain/Keystore op toestel), apparaatnaam/user-agent | Ingelogd blijven, apparaten beheren | PostgreSQL / toestel | 60 dagen inactiviteit, 180 dagen absoluut |
 | Pushtoken (APNs/FCM), platform, installatie-ID | Pushmeldingen | PostgreSQL | Tot uitloggen/uitschakelen of ongeldig token |
 | Web-push-abonnement (PWA) | Pushmeldingen web | PostgreSQL | Tot afmelden |

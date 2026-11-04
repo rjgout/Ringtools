@@ -26,12 +26,12 @@ describe("ApiClient: ontheffingen", () => {
     const api = new ApiClient({ baseUrl: "https://x/api", getToken: () => "t".repeat(30), fetchImpl });
     await api.ontheffingen("r1"); await api.ontheffing("o1"); await api.createOntheffing("r1", { unitId: "w1" }); await api.updateOntheffing("o1", { unitId: "w1" });
     await api.submitOntheffing("o1"); await api.voteOntheffing("o1", true); await api.releaseOntheffing("o1"); await api.deleteOntheffing("o1");
-    await api.ontheffingStep("p1", "inform"); await api.ontheffingStep("p1", "announce", { thanked: true }); await api.ontheffingStep("p1", "process");
+    await api.ontheffingStep("p1", "inform"); await api.ontheffingStep("p1", "announce", { thanksOffered: true }); await api.ontheffingStep("p1", "process");
     expect(calls.map((c) => c.url.replace("https://x/api", ""))).toEqual([
       "/ontheffingen?ring=r1", "/ontheffingen/o1", "/ontheffingen?ring=r1", "/ontheffingen/o1", "/ontheffingen/o1/submit", "/ontheffingen/o1/vote",
       "/ontheffingen/o1/release", "/ontheffingen/o1/delete", "/ontheffingen/persons/p1/inform", "/ontheffingen/persons/p1/announce", "/ontheffingen/persons/p1/process",
     ]);
-    expect(calls.find((c) => c.url.endsWith("/announce"))?.body).toBe(JSON.stringify({ thanked: true }));
+    expect(calls.find((c) => c.url.endsWith("/announce"))?.body).toBe(JSON.stringify({ thanksOffered: true }));
   });
 });
 
@@ -135,7 +135,7 @@ function renderDetail(api: Record<string, unknown>, role = "RINGSECRETARIS") {
   return full as Record<string, ReturnType<typeof vi.fn>>;
 }
 
-const execution = (over: Record<string, unknown> = {}) => ({ informedAt: null, announcedAt: null, thankedAt: null, processedAt: null, ...over });
+const execution = (over: Record<string, unknown> = {}) => ({ informedAt: null, announcedAt: null, thanksOffered: null, processedAt: null, ...over });
 const approvedView = (persons: unknown[]) => ({
   id: "o1", ringId: "r1", status: "APPROVED", statusLabel: "Besluit genomen — uitvoering", stage: null, joint: true, unit: { name: "Voorbeeld", kind: "WIJK" },
   function: { source: "STANDAARD", code: "zhv-presidente", name: "ZHV-presidente", ruleStatus: "GEVERIFIEERD", warning: null }, persons,
@@ -159,9 +159,11 @@ describe("Ontheffing: uitvoering per persoon", () => {
     expect(screen.getAllByRole("button", { name: "Bekendmaking registreren" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Administratief verwerkt" })).toBeNull(); // pas na bekendmaking
     expect(screen.queryByRole("button", { name: /Ik ondersteun/ })).toBeNull();
-    fireEvent.click(screen.getByLabelText("Er is ook een dankbetuiging uitgesproken"));
+    // eerst expliciet kiezen of gelegenheid tot dankbetuiging is geboden; daarvoor is registreren uitgeschakeld
+    expect((screen.getByRole("button", { name: "Bekendmaking registreren" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText("Ja, gelegenheid geboden"));
     fireEvent.click(screen.getByRole("button", { name: "Bekendmaking registreren" }));
-    await waitFor(() => expect(api.ontheffingStep).toHaveBeenCalledWith("p0", "announce", { thanked: true }));
+    await waitFor(() => expect(api.ontheffingStep).toHaveBeenCalledWith("p0", "announce", { thanksOffered: true }));
     fireEvent.click(screen.getByRole("button", { name: "Persoonlijk geïnformeerd registreren" }));
     await waitFor(() => expect(api.ontheffingStep).toHaveBeenCalledWith("p1", "inform"));
   });
@@ -196,7 +198,7 @@ describe("Ontheffing: uitvoering per persoon", () => {
 
 describe("Ontheffingen: lijst", () => {
   it("toont de lijst en de knop voor een nieuwe ontheffing alleen aan ringstaf", async () => {
-    auth.value = { api: { ontheffingen: vi.fn(async () => ({ ontheffingen: [{ id: "o1", status: "PRESIDIUM_VOTING", statusLabel: "Behandeling door het ringpresidium", personName: "Anna", functionName: "Ringadministrateur", unitName: "Voorbeeld", joint: false, needsMyVote: true, updatedAt: "2026-11-01T10:00:00Z" }] })) }, ring: { id: "r1", name: "Ring", role: "HOGERAAD" } };
+    auth.value = { api: { ontheffingen: vi.fn(async () => ({ ontheffingen: [{ id: "o1", status: "PRESIDIUM_VOTING", statusLabel: "Behandeling door het ringpresidium", personName: "Anna", functionName: "Ringadministrateur", unitName: "Voorbeeld", joint: false, needsMyVote: true, needsReview: false, updatedAt: "2026-11-01T10:00:00Z" }] })) }, ring: { id: "r1", name: "Ring", role: "HOGERAAD" } };
     render(<MemoryRouter><Ontheffingen /></MemoryRouter>);
     expect(await screen.findByText("Anna")).toBeTruthy();
     expect(screen.queryByText("Nieuwe ontheffing")).toBeNull();

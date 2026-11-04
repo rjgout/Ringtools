@@ -135,11 +135,13 @@ coördineren; **LCR blijft de officiële bron**, Ringtools houdt geen blijvend p
 ### C4 – Ontheffingen (gerealiseerd)
 Zelfstandige module (`src/lib/ontheffingen.ts`, `src/lib/api/ontheffingen.ts`, app-schermen `Ontheffingen`, `OntheffingForm`, `OntheffingDetail`), los van `Calling`.
 - **Route**: concept → ringpresidium (individueel via ondersteuning in de app, of gezamenlijk besluit in een vergadering) → `PRESIDIUM_APPROVED` wacht op **expliciete, idempotente vrijgave** → hoge raad
-  (individueel of gezamenlijk; presiderend presidiumlid verplicht) → `APPROVED` → uitvoering per persoon: persoonlijk informeren → bekendmaking (met registratie of er ook een dankbetuiging is uitgesproken; geen
-  stemknoppen) → administratief verwerken → `PROCESSED` → dossier wordt 30 dagen later verwijderd. Een lege hoge raad (ook na uitsluiting van betrokkenen) leidt nooit tot goedkeuring en blokkeert de vrijgave.
+  (individueel of gezamenlijk; presiderend presidiumlid verplicht) → `APPROVED` → uitvoering per persoon: persoonlijk informeren → bekendmaking (met registratie of er **gelegenheid tot dankbetuiging is geboden**; geen
+  stemknoppen; verwerken vereist de bekendmaking, niet dat er daadwerkelijk dank is uitgesproken) → administratief verwerken → `PROCESSED` → dossier wordt 30 dagen later verwijderd. Een lege hoge raad (ook na uitsluiting van betrokkenen) leidt nooit tot goedkeuring en blokkeert de vrijgave.
 - **Concept**: naam handmatig, wijk/gemeente (verplicht bij indienen), roeping uit de Nederlandstalige catalogus (of eigen roeping met procedurebevestiging); bewaren en later wijzigen; alleen zichtbaar voor de
   aanmaker; start niets; vervalt 30 dagen na de laatste wijziging. Indienen valideert alles opnieuw, is atomair en idempotent en legt unit, functie, cataloguversie en procedure vast.
-- **Buiten Ringtools**: functies met `ringtoolsProcess = false` (o.a. ringpresident, eerste/tweede raadgever ringpresidium, ringpatriarch) en de bisschop zijn niet te kiezen; raadgevers in een bisschap wel (afspraak eigenaar).
+- **Buiten Ringtools**: functies met `ringtoolsProcess = false` (ringpresident, eerste/tweede raadgever ringpresidium, ringpatriarch) en de bisschop zijn niet te kiezen, **ook niet als eigen roeping**: `isOutsideRingtoolsFunctionName`
+  (catalogus + gangbare schrijfwijzen, volledig geankerd zodat o.a. "Jongemannenpresident" of "Eerste raadgever jongemannen" niet worden geraakt) weigert ze bij het toevoegen/hernoemen van een eigen roeping én bij elk gebruik/indienen
+  (voorstellen en ontheffingen, ook voor eigen roepingen die al bestonden). Raadgevers in een bisschap blijven toegestaan (afspraak eigenaar).
 - **Vertrouwelijkheid betrokkene** (geen register van huidige roepingen, dus nooit koppelen op naam):
   - Bij elke betrokkene verklaart de staf expliciet "Ringtools-account: dit account" (`GEKOPPELD`) of "geen account" (`GEEN_ACCOUNT`); zonder antwoord kan niet worden ingediend. Je kunt jezelf niet koppelen; een account
     maar één keer per dossier; alleen een actief lid van déze ring. De koppeling ligt na indienen vast (geen wijziging) en verdwijnt met het dossier (cascade bij verwijderen/opruimen).
@@ -155,12 +157,26 @@ Zelfstandige module (`src/lib/ontheffingen.ts`, `src/lib/api/ontheffingen.ts`, a
   drie `NotificationType`-waarden. Plus `20261110100000_c4a_aanmaakmeldingen` (C3-correctie). Niets wordt verwijderd.
 - **Herstelbare meldingen**: `Ontheffing.notifyEvent/notifyClaimedAt` (zelfde claim/lease-principe); cron elke 10 minuten.
 
+### C4-correcties na review (`be43e92` → vervolgcommit)
+- **Persoonlijke kennisgeving vóór vrijgave**: is de betrokkene hogeraadslid (functie `hogeraadslid`, `jongemannenpresident`, `zondagsschoolpresident`, of een gekoppeld account met de rol hoge raad), dan weigert
+  `releaseOntheffingToHogeraad` de vrijgave server-side zolang `informedAt` ontbreekt (`releaseBlockers`, dezelfde controle in de weergave `blockers` van de app). Niet-van-toepassing-raadgevers en andere functies hebben geen extra blokkade.
+- **Gekoppeld hogeraadslid blijft uitgesloten** van dossier, deelnemerslijsten, aantallen, meldingen, push en deeplinks, ook ná de kennisgeving (getest).
+- **Gezamenlijk presidiumbesluit**: alleen mogelijk met minstens één actief, niet-betrokken presidiumlid; de registrerende staf (ook secretaris/administrateur) moet de presidiumleden noemen die het besluit namen (`presentUserIds`,
+  gevalideerd, opgeslagen). Een secretaris legt dus vast wat besloten is en neemt het niet zelf. Let op: voor roepingsvoorstellen (C1, `registerGroupDecision`) is deze aanscherping nog niet doorgevoerd.
+- **Dankbetuiging**: `OntheffingPerson.thanksOffered` (ja/nee, verplicht bij de bekendmaking) i.p.v. een tijdstip van daadwerkelijk uitgesproken dank.
+- **Openstaande dossiers**: `lastActivityAt` (inhoudelijke activiteit). Na 30 dagen zonder activiteit een generieke herinnering aan het ringpresidium (eenmalig), na 90 dagen een markering "beoordeling nodig" (+ melding, zichtbaar in lijst, dossier en aantallen);
+  alleen een expliciete beoordeling door ringstaf (`POST /ontheffingen/:id/review` = aanhouden, of verwijderen) lost dat op. **Lopende dossiers worden nooit automatisch verwijderd** zolang er geen vastgesteld bewaarbeleid is. Alleen verwerkte dossiers
+  (30 dagen na verwerking) en niet-ingediende concepten (30 dagen na laatste wijziging, zoals bij roepingsconcepten) worden automatisch opgeruimd.
+- **E-mail centraal uitgesloten**: `notify()` negeert `buildEmail` zodra `ontheffingId` is meegegeven of het type met `CONFIDENTIAL_` begint, ongeacht de aanroeper (getest).
+- **Migratie** `20261112100000_c4b_correcties` (additief + opschoning van een nog ongebruikt veld): meldingstype `CONFIDENTIAL_REMINDER`, kolommen `lastActivityAt/reminderSentAt/reviewFlaggedAt` op `Ontheffing`, `OntheffingPerson.thanksOffered`
+  (vervangt het ongebruikte `thankedAt`, waarde wordt overgenomen).
+
 ### Open vragen voor de eigenaar (niet zelf beslist)
 1. **Deelname van een betrokken hogeraadslid na kennisgeving.** Hoe neemt de betrokkene daarna deel aan de eigen behandeling, of wordt hij daarvan uitgesloten? Er is geen kerkelijke regel verzonnen: een gekoppeld account blijft
    voorlopig *altijd* uitgesloten en zonder toegang (veiligste uitgangspunt). Het register van de kennisgeving (`informedAt`) staat klaar, maar geeft geen toegang.
-2. Moet persoonlijk informeren verplicht zijn vóór de vrijgave aan de hoge raad bij de ontheffing van een hogeraadslid (nu: mogelijk vanaf presidiumakkoord, niet verplicht)?
-3. Is de dankbetuiging verplicht vóór administratief verwerken (nu: bekendmaking is verplicht; of er een dankbetuiging was wordt geregistreerd)?
+2. ~~Persoonlijk informeren vóór vrijgave bij een hogeraadslid~~ — door de eigenaar vastgesteld en geïmplementeerd.
+3. ~~Dankbetuiging~~ — vastgesteld: registreren of gelegenheid is geboden; verwerken vereist de bekendmaking.
 4. Wat als het hele ringpresidium betrokkene is (bijv. ontheffing van alle drie)? Er blijven dan geen presidiumdeelnemers over; alleen een gezamenlijk besluit door secretaris/administrateur kan dan worden vastgelegd.
-5. Bewaartermijn van dossiers die nooit worden afgerond (nu alleen: verwerkt = 30 dagen, concept = 30 dagen na laatste wijziging).
+5. Definitief bewaarbeleid voor lopende dossiers (nu: herinnering na 30 dagen, beoordeling na 90 dagen, nooit automatisch verwijderen).
 6. Geldt de wijk/gemeente van herkomst ook voor ontheffingen van ringfuncties zonder wijkbinding?
 

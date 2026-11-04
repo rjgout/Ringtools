@@ -46,6 +46,13 @@ export function OntheffingDetail() {
       </div>
       {v.function?.warning && <div className="muted" role="note">{v.function.warning}</div>}
       {message && <div role="status" className="glass panel">{message}</div>}
+      {v.viewer.staff && v.activity?.needsReview && (
+        <div className="glass card stack" role="alert">
+          <strong>Beoordeling nodig</strong>
+          <span className="muted">Dit dossier staat al lange tijd stil (laatste activiteit {fmt(v.activity.lastActivityAt)}). Er is geen automatische verwijdering: beoordeel of het moet worden aangehouden of verwijderd.</span>
+          <button className="btn btn-primary" disabled={busy} onClick={() => act(() => api.reviewOntheffing(v.id), "Dossier aangehouden.")}>Beoordeeld: dossier aanhouden</button>
+        </div>
+      )}
 
       <div className="glass card stack">
         <strong>{v.joint ? "Betrokkenen (gezamenlijke ontheffing)" : "Betrokkene"}</strong>
@@ -101,7 +108,7 @@ function PersonRow({ v, p, busy, act, showExecution }: { v: OntheffingView; p: O
   const { api } = useAuth();
   const ex = p.execution ?? null;
   const na = p.answer === "NIET_VAN_TOEPASSING";
-  const [thanked, setThanked] = useState(false);
+  const [thanks, setThanks] = useState<"" | "ja" | "nee">("");
   const approved = v.status === "APPROVED";
   return (
     <div className="glass panel stack">
@@ -115,7 +122,7 @@ function PersonRow({ v, p, busy, act, showExecution }: { v: OntheffingView; p: O
         <>
           <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
             <li>{ex.informedAt ? `✓ Persoonlijk geïnformeerd (${fmt(ex.informedAt)})` : "○ Persoonlijk informeren"}</li>
-            <li>{ex.announcedAt ? `✓ Bekendgemaakt (${fmt(ex.announcedAt)})${ex.thankedAt ? " · dankbetuiging geregistreerd" : ""}` : "○ Bekendmaking en dankbetuiging"}</li>
+            <li>{ex.announcedAt ? `✓ Bekendgemaakt (${fmt(ex.announcedAt)}) · ${ex.thanksOffered ? "gelegenheid tot dankbetuiging geboden" : "geen gelegenheid tot dankbetuiging geboden"}` : "○ Bekendmaking en gelegenheid tot dankbetuiging"}</li>
             <li>{ex.processedAt ? `✓ Administratief verwerkt (${fmt(ex.processedAt)})` : "○ Administratief verwerken"}</li>
           </ul>
           {!ex.informedAt && v.status !== "PROCESSED" && (
@@ -123,12 +130,14 @@ function PersonRow({ v, p, busy, act, showExecution }: { v: OntheffingView; p: O
           )}
           {approved && ex.informedAt && !ex.announcedAt && (
             <div className="stack">
-              <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={thanked} onChange={(e) => setThanked(e.target.checked)} /> Er is ook een dankbetuiging uitgesproken</label>
-              <button className="btn btn-ghost" disabled={busy} onClick={() => act(() => api.ontheffingStep(p.id, "announce", { thanked }), "Vastgelegd.")}>Bekendmaking registreren</button>
+              <fieldset className="stack">
+                <legend>Is bij de bekendmaking gelegenheid tot dankbetuiging geboden?</legend>
+                <label className="row"><input type="radio" name={`thanks-${p.id}`} style={{ width: 24, minHeight: 24 }} checked={thanks === "ja"} onChange={() => setThanks("ja")} /> Ja, gelegenheid geboden</label>
+                <label className="row"><input type="radio" name={`thanks-${p.id}`} style={{ width: 24, minHeight: 24 }} checked={thanks === "nee"} onChange={() => setThanks("nee")} /> Nee, niet geboden</label>
+                <span className="muted">Het gaat om de gelegenheid; het is niet nodig dat leden daadwerkelijk dank hebben uitgesproken.</span>
+              </fieldset>
+              <button className="btn btn-ghost" disabled={busy || !thanks} onClick={() => act(() => api.ontheffingStep(p.id, "announce", { thanksOffered: thanks === "ja" }), "Vastgelegd.")}>Bekendmaking registreren</button>
             </div>
-          )}
-          {approved && ex.announcedAt && !ex.thankedAt && (
-            <button className="btn btn-ghost" disabled={busy} onClick={() => act(() => api.ontheffingStep(p.id, "announce", { thanked: true }), "Vastgelegd.")}>Dankbetuiging alsnog registreren</button>
           )}
           {approved && ex.announcedAt && !ex.processedAt && (
             <button className="btn btn-primary" disabled={busy} onClick={() => act(() => api.ontheffingStep(p.id, "process"), "Verwerkt.")}>Administratief verwerkt</button>
@@ -164,6 +173,12 @@ function DecisionForm({ v, members, busy, act }: { v: OntheffingView; members: {
       <strong>Gezamenlijk besluit {stage === "PRESIDIUM" ? "ringpresidium" : "hoge raad"}</strong>
       <span className="muted">Alleen vastleggen als het besluit daadwerkelijk akkoord is genomen. Er worden geen reacties namens anderen aangemaakt.</span>
       <div><label htmlFor="d-date">Datum van het besluit</label><input id="d-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} required /></div>
+      {stage === "PRESIDIUM" && (
+        <>
+          <fieldset className="stack"><legend>Leden van het ringpresidium die het besluit hebben genomen</legend>{pres.map((m) => <label key={m.id} className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={present.includes(m.id)} onChange={() => toggle(present, setPresent, m.id)} /> {m.name}</label>)}</fieldset>
+          <span className="muted">Een secretaris of administrateur legt alleen een werkelijk genomen besluit vast; het besluit is van de presidiumleden zelf. Een betrokkene van dit dossier kan het niet nemen.</span>
+        </>
+      )}
       {stage === "HOGERAAD" && (
         <>
           <div><label htmlFor="d-pres">Voorzitter van de vergadering (ringpresidium)</label>
@@ -182,7 +197,7 @@ function DecisionForm({ v, members, busy, act }: { v: OntheffingView; members: {
         </div>
       )}
       <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /> Het besluit is daadwerkelijk akkoord vastgesteld</label>
-      <div className="row"><button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>Annuleren</button><button className="btn btn-primary" disabled={busy || !agreed}>Vastleggen</button></div>
+      <div className="row"><button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>Annuleren</button><button className="btn btn-primary" disabled={busy || !agreed || (stage === "PRESIDIUM" && present.length === 0)}>Vastleggen</button></div>
     </form>
   );
 }

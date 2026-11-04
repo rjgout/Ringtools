@@ -289,7 +289,7 @@ describe("Bisschop buiten Ringtools", () => {
     expect(isBishopFunctionName("  Bisschóp van de wijk ")).toBe(true);
     expect(isBishopFunctionName("Eerste raadgever in de bisschap")).toBe(false);
     expect(isBishopFunctionName("Raadgever van de bisschop")).toBe(false);
-    const own = await createCustomCalling(s.manager.id, s.ring.id, { name: "Bisschop", category: "Overig" });
+    const own = await prisma.ringCustomCalling.create({ data: { ringId: s.ring.id, name: "Bisschop", category: "Overig" } }); // bestaande eigen roeping van vóór de controle
     const d = await draft(s, base(s, { functionSource: "EIGEN", functionCode: own.id, procedureConfirmed: true }));
     expect(d.status).toBe(400);
     expect(d.body.error).toMatch(/bisschop/i);

@@ -48,7 +48,7 @@ export type Dashboard = {
     awaitingRelease: number;
   } | null;
   /** Aantallen voor ontheffingen; volgen dezelfde zichtbaarheid als de lijst (een betrokkene ziet dus nooit een aantal). */
-  ontheffingen: { needsMyVote: number; open: number };
+  ontheffingen: { needsMyVote: number; open: number; needsReview: number };
   attention: CallingItem[];
   pendingSupport: CallingItem[];
   myTasks: (CallingItem & { tasks: string[] })[];
@@ -258,10 +258,13 @@ export type OntheffingListItem = {
   unitName: string | null;
   joint: boolean;
   needsMyVote: boolean;
+  /** Alleen staf: het dossier staat 90 dagen stil en wacht op een expliciete beoordeling. */
+  needsReview: boolean;
   updatedAt: string;
 };
 
-export type OntheffingExecution = { informedAt: string | null; announcedAt: string | null; thankedAt: string | null; processedAt: string | null };
+/** `thanksOffered`: is bij de bekendmaking gelegenheid tot dankbetuiging geboden? (null tot de bekendmaking; niet: is er daadwerkelijk dank uitgesproken). */
+export type OntheffingExecution = { informedAt: string | null; announcedAt: string | null; thanksOffered: boolean | null; processedAt: string | null };
 
 /** Staf ziet alle velden; een hogeraadslid ziet alleen id, rol, functie en naam. */
 export type OntheffingPerson = {
@@ -299,6 +302,7 @@ export type OntheffingView = {
   rounds?: { presidium: RoundSummary; hogeraad: RoundSummary };
   decisions?: { stage: "PRESIDIUM" | "HOGERAAD"; decidedOn: string; note: string | null; presentCount: number; absentCount: number; overrodeNegativeVotes: boolean }[];
   audit?: { type: string; actor: string; createdAt: string; detail: string | null }[];
+  activity?: { lastActivityAt: string; reminderSentAt: string | null; needsReview: boolean };
   retention?: { deleteAfter: string } | null;
   blockers?: string[];
 };

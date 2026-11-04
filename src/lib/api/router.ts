@@ -138,6 +138,7 @@ authedRoute("POST", "/ontheffingen/:id", async ({ auth, params, body }) => onthe
 authedRoute("POST", "/ontheffingen/:id/submit", async ({ auth, params }) => ontheffingen.submitFor(auth.user.id, params.id));
 authedRoute("POST", "/ontheffingen/:id/delete", async ({ auth, params, body }) => ontheffingen.deleteFor(auth.user.id, params.id, body.confirmed === true));
 authedRoute("POST", "/ontheffingen/:id/vote", async ({ auth, params, body }) => ontheffingen.voteFor(auth.user.id, params.id, body.support));
+authedRoute("POST", "/ontheffingen/:id/review", async ({ auth, params }) => ontheffingen.reviewFor(auth.user.id, params.id));
 authedRoute("POST", "/ontheffingen/:id/release", async ({ auth, params }) => ontheffingen.releaseFor(auth.user.id, params.id));
 authedRoute("POST", "/ontheffingen/:id/group-decision", async ({ auth, params, body }) => ontheffingen.decisionFor(auth.user.id, params.id, body));
 authedRoute("POST", "/ontheffingen/persons/:pid/:step", async ({ auth, params, body }) => ontheffingen.personStepFor(auth.user.id, params.pid, params.step, body));
