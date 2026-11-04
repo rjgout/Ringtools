@@ -123,7 +123,10 @@ export type CallingDetail = {
 };
 
 /** Actief lid van de eigen ring (alleen zichtbaar voor staf), o.a. om verantwoordelijken te kiezen. */
-export type RingMemberInfo = { id: string; name: string; role: Role; churchFunction: string };
+export type RingMemberInfo = { id: string; name: string; role: Role; churchFunction: string; churchFunctionCode: ChurchFunctionCode };
+
+/** Gestructureerde kerkelijke functie (los van de Ringtools-rol; bepaalt welke bevoegdheden mogelijk zijn). ONBEKEND = nog niet vastgelegd: geen bevoegdheden. */
+export type ChurchFunctionCode = "ONBEKEND" | "RINGPRESIDENT" | "EERSTE_RAADGEVER" | "TWEEDE_RAADGEVER" | "RINGSECRETARIS" | "RINGADMINISTRATEUR" | "HOGERAADSLID" | "ANDERS";
 
 /** Gebruiker in beheerschermen (alleen voor ringbeheerders van die ring en de webmin). */
 export type ManagedUser = {
@@ -132,6 +135,7 @@ export type ManagedUser = {
   name: string;
   email: string;
   churchFunction: string;
+  churchFunctionCode: ChurchFunctionCode;
   role: Role;
   isRingManager: boolean;
   appointAuthority: AppointAuthority;
@@ -216,7 +220,11 @@ export type CatalogCalling = {
   requiresProcedureConfirmation: boolean;
 };
 export type CatalogResult = { version: string; categories: string[]; callings: CatalogCalling[] };
-export type EligibleAppointers = { rule: string | null; appointers: { id: string; name: string; authority: AppointAuthority }[] };
+/** Bevoegde Ringtools-leden (functie + zo nodig machtiging). Een externe uitvoerder zonder Ringtools-account staat hier nooit in. */
+export type EligibleAppointers = {
+  rule: string | null;
+  appointers: { id: string; name: string; authority: "RINGPRESIDENT" | "AANGEWEZEN_RAADGEVER" | "AANGEWEZEN_HOGERAADSLID"; basis: string; churchFunction: string }[];
+};
 export type CustomCalling = { id: string; name: string; category: string; active: boolean; source: "EIGEN" };
 
 // ---- Concepten en nieuwe voorstellen (Fase C3) ----
@@ -227,12 +235,18 @@ export type DraftData = {
   roepenAssigneeId: string | null; ondersteunenAssigneeId: string | null; aanstellenAssigneeId: string | null;
   roepenExternalName: string | null; aanstellenExternalName: string | null; procedureConfirmed: boolean; submitted: boolean; updatedAt: string;
 };
-export type DraftSuggestion = { userId: string; name: string; source: "UNIT_STANDAARD" | "UNIT_VERANTWOORDELIJKE" } | null;
+export type DraftSuggestion = {
+  userId: string;
+  name: string;
+  source: "UNIT_STANDAARD" | "UNIT_VERANTWOORDELIJKE" | "FUNCTIE_RINGPRESIDENT" | "FUNCTIE_ENIGE_BEVOEGDE";
+  /** Op welke grond de persoon bevoegd is (functie + machtiging); leeg bij ondersteunen (geen bevoegdheidsregel). */
+  basis?: string;
+} | null;
 export type DraftSuggestions = {
   unit: { id: string; name: string; kind: UnitKind; responsibleStatus: "OK" | "VACANT" | "INACTIEF" } | null;
   roepen: DraftSuggestion; ondersteunen: DraftSuggestion; aanstellen: DraftSuggestion;
   notes: { roepen: string | null; aanstellen: string | null };
-  eligible: { roepen: { id: string; name: string }[]; aanstellen: { id: string; name: string }[] };
+  eligible: { roepen: { id: string; name: string; basis?: string; churchFunction?: string }[]; aanstellen: { id: string; name: string; basis?: string; churchFunction?: string }[] };
 };
 export type DraftView = {
   draft: DraftData;

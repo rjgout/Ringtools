@@ -52,9 +52,14 @@ async function setup() {
 }
 type S = Awaited<ReturnType<typeof setup>>;
 
-async function authorize(s: S, userId: string, role: "RINGPRESIDENT" | "AANGEWEZEN_RAADGEVER" | "AANGEWEZEN_HOGERAADSLID", fn = "Functie") {
+/** Legt functie + (waar vereist) machtiging vast zoals de ringbeheerder dat doet. De ringpresident heeft geen aparte machtiging nodig; raadgever en hogeraadslid wel. */
+async function authorize(s: S, userId: string, role: "RINGPRESIDENT" | "AANGEWEZEN_RAADGEVER" | "AANGEWEZEN_HOGERAADSLID", fn = "Functie", tweede = false) {
   const m = await prisma.ringMembership.findFirstOrThrow({ where: { userId, ringId: s.ring.id } });
-  await updateMember({ actorId: s.manager.id, membershipId: m.id, churchFunction: fn, role: m.role, isRingManager: m.isRingManager, active: true, appointAuthority: role });
+  const churchFunctionCode = role === "RINGPRESIDENT" ? "RINGPRESIDENT" : role === "AANGEWEZEN_RAADGEVER" ? (tweede ? "TWEEDE_RAADGEVER" : "EERSTE_RAADGEVER") : "HOGERAADSLID";
+  await updateMember({
+    actorId: s.manager.id, membershipId: m.id, churchFunction: fn, churchFunctionCode, role: m.role, isRingManager: m.isRingManager, active: true,
+    appointAuthority: role === "RINGPRESIDENT" ? "NONE" : role,
+  });
 }
 
 const base = (s: S, over: Record<string, unknown> = {}) => ({ personName: "Voorbeeld Persoon", unitId: s.unit.id, functionSource: "STANDAARD", functionCode: "ringadministrateur", ...over });

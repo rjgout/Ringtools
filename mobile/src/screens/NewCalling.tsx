@@ -14,6 +14,13 @@ type TaskKey = "roepen" | "ondersteunen" | "aanstellen";
  * Alles wordt als concept op de server bewaard (onvolledig mag); indienen valideert op de server opnieuw en is idempotent.
  * Er is geen koppeling met een ledenregister of LCR: de naam wordt altijd ingevoerd.
  */
+const SOURCE_LABEL: Record<string, string> = {
+  UNIT_STANDAARD: "standaard van de wijk/gemeente",
+  UNIT_VERANTWOORDELIJKE: "verantwoordelijk hogeraadslid van de wijk/gemeente",
+  FUNCTIE_RINGPRESIDENT: "ringpresident",
+  FUNCTIE_ENIGE_BEVOEGDE: "enige bevoegde persoon",
+};
+
 export function NewCalling() {
   const { id: draftIdParam } = useParams();
   const { api, ring } = useAuth();
@@ -111,7 +118,7 @@ export function NewCalling() {
 
   const taskSelect = (task: TaskKey, label: string, restricted: boolean) => {
     const eligible = task === "roepen" ? sug?.eligible.roepen : task === "aanstellen" ? sug?.eligible.aanstellen : undefined;
-    const options = restricted ? (eligible ?? []).map((u) => ({ id: u.id, name: u.name })) : (members.data?.members ?? []).map((m) => ({ id: m.id, name: m.name }));
+    const options = restricted ? (eligible ?? []).map((u) => ({ id: u.id, name: u.basis ? `${u.name} – ${u.basis}` : u.name })) : (members.data?.members ?? []).map((m) => ({ id: m.id, name: m.name }));
     const note = task === "roepen" || task === "aanstellen" ? sug?.notes[task] : null;
     return (
       <div key={task} className="stack">
@@ -122,14 +129,15 @@ export function NewCalling() {
         </select>
         {sug?.[task] && assignees[task] !== sug[task]!.userId && (
           <button type="button" className="btn btn-ghost" onClick={() => applySuggestion(task)}>
-            Voorstel overnemen: {sug[task]!.name} ({sug[task]!.source === "UNIT_STANDAARD" ? "standaard van de wijk/gemeente" : "verantwoordelijk hogeraadslid"})
+            Voorstel overnemen: {sug[task]!.name} ({SOURCE_LABEL[sug[task]!.source]}{sug[task]!.basis ? `; ${sug[task]!.basis}` : ""})
           </button>
         )}
         {note && <span className="muted" role="note">{note}</span>}
         {restricted && (
           <div>
-            <label htmlFor={`ex-${task}`}>Of: bevoegde externe persoon (handmatig)</label>
+            <label htmlFor={`ex-${task}`}>Of: externe uitvoerder zonder Ringtools-account (handmatig)</label>
             <input id={`ex-${task}`} value={external[task as "roepen" | "aanstellen"]} maxLength={120} onChange={(e) => setExternal((x) => ({ ...x, [task]: e.target.value }))} />
+            <span className="muted">Alleen voor een bevoegde persoon buiten deze ring of zonder Ringtools-account. Een lid van deze ring kies je hierboven; alleen bevoegde leden (kerkelijke functie en zo nodig machtiging) staan in de lijst.</span>
           </div>
         )}
       </div>
@@ -169,7 +177,7 @@ export function NewCalling() {
       </div>
       <div className="glass card stack">
         <strong>4. Verantwoordelijken controleren</strong>
-        <span className="muted">Roepen en aanstellen kunnen alleen door aangewezen bevoegde personen worden toegewezen. De steunverlening in de kerkvergadering en de interne ondersteuning door presidium en hoge raad zijn aparte stappen.</span>
+        <span className="muted">Roepen en aanstellen kunnen alleen door bevoegde leden worden toegewezen: de kerkelijke functie bepaalt wat mogelijk is en een aangewezen raadgever of hogeraadslid heeft daarnaast een expliciete machtiging nodig. Een wijkkoppeling is geen machtiging. De steunverlening in de kerkvergadering en de interne ondersteuning door presidium en hoge raad zijn aparte stappen.</span>
         {taskSelect("roepen", "Wie roept de persoon?", true)}
         {taskSelect("ondersteunen", "Wie begeleidt de steunverlening?", false)}
         {taskSelect("aanstellen", "Wie stelt de persoon aan?", true)}

@@ -94,7 +94,7 @@ describe("Nieuw voorstel in vijf stappen", () => {
     fireEvent.click(screen.getByLabelText(/bevoegde leiding heeft de procedure/));
     expect(submit.disabled).toBe(false);
     // bevoegde externe persoon kan handmatig worden geregistreerd
-    fireEvent.change(screen.getByLabelText(/Of: bevoegde externe persoon/, { selector: "#ex-aanstellen" }), { target: { value: "Gebiedszeventiger Extern" } });
+    fireEvent.change(screen.getByLabelText(/Of: externe uitvoerder zonder Ringtools-account/, { selector: "#ex-aanstellen" }), { target: { value: "Gebiedszeventiger Extern" } });
     fireEvent.click(submit);
     await waitFor(() => expect(api.createDraft).toHaveBeenCalledWith("r1", expect.objectContaining({ procedureConfirmed: true, aanstellenExternalName: "Gebiedszeventiger Extern", aanstellenAssigneeId: null })));
   });

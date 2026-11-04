@@ -186,3 +186,10 @@ Alle routes onder `/api/mobile/v1`, bearer-sessie met MFA-gate; webmin krijgt ov
   bewust geen universal link/app link en geen e-maillink (`apple-app-site-association` ongewijzigd).
 
 `POST /callings/:id/group-decision` (fase `PRESIDIUM`): `presentUserIds` (leden van het ringpresidium die het besluit namen) is verplicht; secretaris/administrateur registreren alleen.
+
+## Kerkelijke functies en catalogus (C4.5)
+- Gebruikersbeheer (`/rings/:id/users`, `/memberships/:id`) kent `churchFunctionCode` (functie, los van de Ringtools-rol) en `appointAuthority` (machtiging: alleen `AANGEWEZEN_RAADGEVER` bij eerste/tweede raadgever en `AANGEWEZEN_HOGERAADSLID` bij hogeraadslid; `RINGPRESIDENT` wordt geweigerd: de functie volstaat).
+  Zonder `churchFunctionCode` blijft de bestaande functie behouden.
+- `GET /catalog/callings` (ringstaf en ringbeheerders van de eigen ring) en `GET /admin/catalog/callings?ring=` (webmin): alleen-lezen catalogus met procedure, bevoegdheden, steunverlening, aanstellingsplicht, handboek en controlepunten.
+- Concept-voorstellen: `suggestions.roepen/aanstellen` bevat `source` (`UNIT_STANDAARD`, `UNIT_VERANTWOORDELIJKE`, `FUNCTIE_RINGPRESIDENT`, `FUNCTIE_ENIGE_BEVOEGDE`) en `basis`; `eligible.*` bevat uitsluitend bevoegde leden.
+

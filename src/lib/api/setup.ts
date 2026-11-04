@@ -84,10 +84,20 @@ function standard(e: CatalogEntry) {
   };
 }
 
-/** Doorzoekbare catalogus voor ringstaf: standaardroepingen plus de eigen roepingen van DEZE ring (nooit van andere ringen). */
+/** Doorzoekbare catalogus: standaardroepingen plus de eigen roepingen van DEZE ring (nooit van andere ringen). Voor ringstaf en ringbeheerders van die ring. */
 export async function catalogFor(userId: string, ringId: string, q: string, category: string) {
   const membership = await requireMembershipFor(userId, ringId);
-  if (!isStaff(membership.role)) throw new ApiError(403, "Je hebt hiervoor geen bevoegdheid.", "forbidden");
+  if (!isStaff(membership.role) && !membership.isRingManager) throw new ApiError(403, "Je hebt hiervoor geen bevoegdheid.", "forbidden");
+  return catalogResult(ringId, q, category);
+}
+
+/** Zelfde overzicht voor de webmin (apart pad: de webmin-API en de gebruikers-API blijven gescheiden). */
+export async function catalogForAdmin(ringId: string, q: string, category: string) {
+  if (!(await prisma.ring.findUnique({ where: { id: ringId } }))) throw new ApiError(404, "Niet gevonden.", "not-found");
+  return catalogResult(ringId, q, category);
+}
+
+async function catalogResult(ringId: string, q: string, category: string) {
   const needle = q.trim();
   const own = (await listCustomCallings(ringId))
     .filter((c) => (!category || c.category === category) && (!needle || `${c.name} ${c.category}`.toLowerCase().includes(needle.toLowerCase())))

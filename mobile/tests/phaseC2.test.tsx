@@ -27,7 +27,7 @@ describe("ApiClient: ringinrichting", () => {
     expect(urls).toEqual([
       "https://x/api/rings/r1/units", "https://x/api/rings/r1/setup", "https://x/api/units/u1", "https://x/api/rings/r1/custom-callings",
       "https://x/api/admin/rings/r1/units", "https://x/api/admin/units/u1",
-      "https://x/api/catalog/callings?ring=r1&q=tol%20lk&category=Technologie", "https://x/api/catalog/callings/ringadministrateur/appointers?ring=r1",
+      "https://x/api/admin/catalog/callings?ring=r1&q=tol%20lk&category=Technologie", "https://x/api/catalog/callings/ringadministrateur/appointers?ring=r1",
     ]);
   });
 });

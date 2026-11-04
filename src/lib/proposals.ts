@@ -2,7 +2,7 @@ import type { Calling, CallingDraft, FunctionSource, Prisma } from "@prisma/clie
 import { prisma } from "./prisma";
 import { STAFF_ROLES } from "./rbac";
 import { getCatalogEntry, requiresProcedureConfirmation, isOutsideRingtoolsFunctionName, OUTSIDE_RINGTOOLS, CATALOG_VERSION, type CatalogEntry } from "./catalog/callings";
-import { eligibleAppointers, eligibleForRule, listUnits } from "./ringSetup";
+import { eligibleAppointers, eligibleForRule, explainAuthorityGap, listUnits } from "./ringSetup";
 import { WorkflowError, AuthorizationError, assignTask, createCallingInTx, deliverCreationNotifications } from "./workflow";
 
 /**
@@ -246,12 +246,18 @@ export async function listDrafts(actorId: string, ringId: string) {
   }));
 }
 
-export type Suggestion = { userId: string; name: string; source: "UNIT_STANDAARD" | "UNIT_VERANTWOORDELIJKE" } | null;
+export type Suggestion = { userId: string; name: string; source: "UNIT_STANDAARD" | "UNIT_VERANTWOORDELIJKE" | "FUNCTIE_RINGPRESIDENT" | "FUNCTIE_ENIGE_BEVOEGDE"; basis?: string } | null;
 
 /**
- * Voorgestelde verantwoordelijken uit de wijk-/gemeentekoppeling. Het verantwoordelijke hogeraadslid wordt alleen voor roepen of aanstellen
- * voorgesteld als hij daarvoor expliciet is aangewezen; een wijktoewijzing geeft nooit zelf bevoegdheid. De gebruiker kan altijd een andere
- * bevoegde uitvoerder kiezen.
+ * Voorgestelde verantwoordelijken. Alleen leden die volgens de geverifieerde procedure bevoegd zijn (kerkelijke functie + zo nodig expliciete machtiging)
+ * komen in aanmerking; de rest van de regels staat in `eligibleForRule`. Volgorde van voorkeur:
+ * 1. de standaardverantwoordelijke of het verantwoordelijke hogeraadslid van de wijk/gemeente, maar ALLEEN als die persoon bevoegd is (een wijkkoppeling
+ *    is nooit een machtiging);
+ * 2. de ringpresident, als de regel hem noemt en hij bevoegd is;
+ * 3. de enige bevoegde persoon, als er precies één is.
+ * Zijn er meer bevoegden en geen duidelijke keuze, dan wordt niets voorgesteld en kiest de gebruiker uit de bevoegden. Bij niet-geverifieerde of
+ * bijzondere procedures wordt nooit iemand voorgesteld (menselijke controle nodig); een EXTERNE bevoegde uitvoerder zonder Ringtools-account wordt
+ * altijd handmatig geregistreerd en nooit voorgesteld.
  */
 export async function buildSuggestions(ringId: string, draft: Pick<CallingDraft, "unitId" | "functionSource" | "functionCode">) {
   const unit = draft.unitId ? (await listUnits(ringId)).find((u) => u.id === draft.unitId && u.active) ?? null : null;
@@ -261,30 +267,50 @@ export async function buildSuggestions(ringId: string, draft: Pick<CallingDraft,
   } catch {
     fn = null;
   }
-  const granted = await eligibleIds(ringId, fn, "grantedBy");
-  const appointed = await eligibleIds(ringId, fn, "appointedBy");
-  const names = new Map((await prisma.user.findMany({ where: { id: { in: [...granted, ...appointed] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
-  const pick = (candidates: { id: string; name: string; source: "UNIT_STANDAARD" | "UNIT_VERANTWOORDELIJKE" }[], allowed: Set<string> | null): Suggestion => {
-    for (const c of candidates) if (!allowed || allowed.has(c.id)) return { userId: c.id, name: c.name, source: c.source };
+  const std = fn && fn.source === "STANDAARD";
+  const grantedList = std ? (await eligibleAppointers(ringId, fn!.code, "grantedBy")).appointers : [];
+  const appointedList = std ? (await eligibleAppointers(ringId, fn!.code, "appointedBy")).appointers : [];
+  const granted = new Set(grantedList.map((a) => a.id));
+  const appointed = new Set(appointedList.map((a) => a.id));
+  const pickFrom = (
+    candidates: { id: string; name: string; source: "UNIT_STANDAARD" | "UNIT_VERANTWOORDELIJKE" }[],
+    list: { id: string; name: string; authority: string; basis: string }[] | null
+  ): Suggestion => {
+    for (const c of candidates) {
+      if (!list) return { userId: c.id, name: c.name, source: c.source };
+      const hit = list.find((a) => a.id === c.id);
+      if (hit) return { userId: c.id, name: c.name, source: c.source, basis: hit.basis };
+    }
+    if (!list) return null;
+    const president = list.find((a) => a.authority === "RINGPRESIDENT");
+    if (president) return { userId: president.id, name: president.name, source: "FUNCTIE_RINGPRESIDENT", basis: president.basis };
+    if (list.length === 1) return { userId: list[0].id, name: list[0].name, source: "FUNCTIE_ENIGE_BEVOEGDE", basis: list[0].basis };
     return null;
   };
   const cands = (def: { id: string; name: string } | null | undefined) => [
     ...(def ? [{ ...def, source: "UNIT_STANDAARD" as const }] : []),
     ...(unit?.responsible ? [{ ...unit.responsible, source: "UNIT_VERANTWOORDELIJKE" as const }] : []),
   ];
-  const note = (allowed: Set<string>) =>
-    !fn ? null : fn.source !== "STANDAARD" || fn.entry?.ruleStatus !== "GEVERIFIEERD"
-      ? "Menselijke controle nodig: voor deze functie zijn geen bevoegdheden vastgesteld. Registreer zo nodig een bevoegde externe persoon."
-      : allowed.size === 0 ? "Er is in deze ring niemand aangewezen die dit voor deze functie mag. Wijs eerst een bevoegdheid aan of registreer een externe persoon." : null;
+  const entry = std ? fn!.entry : null;
+  const note = async (allowed: Set<string>, rule: string | null) => {
+    if (!fn) return null;
+    if (fn.source !== "STANDAARD" || fn.entry?.ruleStatus !== "GEVERIFIEERD") {
+      return "Menselijke controle nodig: voor deze functie zijn geen bevoegdheden vastgesteld. Registreer zo nodig een bevoegde externe persoon (zonder Ringtools-account).";
+    }
+    if (allowed.size > 0) return null;
+    const why = await explainAuthorityGap(ringId, rule);
+    return `Er is in deze ring niemand die dit voor deze functie mag. ${why.join(" ")} Leg eerst de kerkelijke functie en zo nodig de machtiging vast, of registreer een bevoegde externe persoon (zonder Ringtools-account).`.trim();
+  };
+  const names = new Map([...grantedList, ...appointedList].map((a) => [a.id, a.name]));
   return {
     unit: unit ? { id: unit.id, name: unit.name, kind: unit.kind, responsibleStatus: unit.responsibleStatus } : null,
-    roepen: pick(cands(unit?.defaults.roepen), granted),
-    ondersteunen: pick(cands(unit?.defaults.ondersteunen), null),
-    aanstellen: pick(cands(unit?.defaults.aanstellen), appointed),
-    notes: { roepen: note(granted), aanstellen: note(appointed) },
+    roepen: pickFrom(cands(unit?.defaults.roepen), std ? grantedList : []),
+    ondersteunen: pickFrom(cands(unit?.defaults.ondersteunen), null),
+    aanstellen: pickFrom(cands(unit?.defaults.aanstellen), std ? appointedList : []),
+    notes: { roepen: await note(granted, entry?.grantedBy ?? null), aanstellen: await note(appointed, entry?.appointedBy ?? null) },
     eligible: {
-      roepen: [...granted].map((id) => ({ id, name: names.get(id) ?? "" })),
-      aanstellen: [...appointed].map((id) => ({ id, name: names.get(id) ?? "" })),
+      roepen: grantedList.map((a) => ({ id: a.id, name: names.get(a.id) ?? a.name, basis: a.basis, churchFunction: a.churchFunction })),
+      aanstellen: appointedList.map((a) => ({ id: a.id, name: names.get(a.id) ?? a.name, basis: a.basis, churchFunction: a.churchFunction })),
     },
   };
 }

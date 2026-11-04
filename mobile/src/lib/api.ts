@@ -2,6 +2,7 @@ import type {
   AdminRing,
   AppointAuthority,
   CatalogResult,
+  ChurchFunctionCode,
   DraftListItem,
   DraftView,
   CustomCalling,
@@ -153,10 +154,10 @@ export class ApiClient {
   ringUsers(ringId: string) {
     return this.request<{ users: ManagedUser[] }>("GET", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/users`);
   }
-  addRingUser(ringId: string, input: { existingUserId?: string; name?: string; email?: string; churchFunction: string; role: string; isRingManager: boolean; appointAuthority?: AppointAuthority }) {
+  addRingUser(ringId: string, input: { existingUserId?: string; name?: string; email?: string; churchFunction: string; churchFunctionCode?: ChurchFunctionCode; role: string; isRingManager: boolean; appointAuthority?: AppointAuthority }) {
     return this.request<{ userId: string; name: string; joinedRounds: number }>("POST", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/users`, input);
   }
-  updateRingUser(membershipId: string, input: { churchFunction: string; role: string; isRingManager: boolean; active: boolean; appointAuthority?: AppointAuthority; name?: string; email?: string }) {
+  updateRingUser(membershipId: string, input: { churchFunction: string; churchFunctionCode?: ChurchFunctionCode; role: string; isRingManager: boolean; active: boolean; appointAuthority?: AppointAuthority; name?: string; email?: string }) {
     return this.request<{ ok: boolean; joinedRounds: number }>("POST", `${this.admin ? "/admin" : ""}/memberships/${encodeURIComponent(membershipId)}`, input);
   }
   dashboard(ringId: string) {
@@ -234,7 +235,6 @@ export class ApiClient {
       absentUserIds?: string[];
       resolveNegative?: boolean;
       resolutionNote?: string;
-      releaseNow?: boolean;
     }
   ) {
     return this.request<{ ok: boolean; alreadyRegistered: boolean }>("POST", `/callings/${encodeURIComponent(id)}/group-decision`, input);
@@ -306,7 +306,7 @@ export class ApiClient {
   }
   /** Doorzoekbare roepingencatalogus (standaard + eigen roepingen van deze ring). */
   catalog(ringId: string, q: string, category = "") {
-    return this.request<CatalogResult>("GET", `/catalog/callings?ring=${encodeURIComponent(ringId)}&q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}`);
+    return this.request<CatalogResult>("GET", `${this.admin ? "/admin" : ""}/catalog/callings?ring=${encodeURIComponent(ringId)}&q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}`);
   }
   appointers(ringId: string, code: string) {
     return this.request<EligibleAppointers>("GET", `/catalog/callings/${encodeURIComponent(code)}/appointers?ring=${encodeURIComponent(ringId)}`);

@@ -231,7 +231,7 @@ function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
   stage: "PRESIDIUM" | "HOGERAAD";
   detail: Detail;
   busy: boolean;
-  onSubmit: (input: { decidedOn: string; agreed: boolean; note?: string; presidingUserId?: string; presentUserIds?: string[]; absentUserIds?: string[]; resolveNegative?: boolean; resolutionNote?: string; releaseNow?: boolean }) => void;
+  onSubmit: (input: { decidedOn: string; agreed: boolean; note?: string; presidingUserId?: string; presentUserIds?: string[]; absentUserIds?: string[]; resolveNegative?: boolean; resolutionNote?: string }) => void;
 }) {
   const round = detail.rounds.find((r) => r.stage === stage);
   const hasNegative = !!round?.participants.some((p) => p.support === false);
@@ -244,7 +244,6 @@ function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
   const [absent, setAbsent] = useState<string[]>([]);
   const [resolveNegative, setResolveNegative] = useState(false);
   const [resolutionNote, setResolutionNote] = useState("");
-  const [releaseNow, setReleaseNow] = useState(false);
   const label = stage === "PRESIDIUM" ? "ringpresidium" : "hoge raad";
   const toggle = (list: string[], set: (v: string[]) => void, id: string) => set(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
@@ -256,7 +255,7 @@ function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
       e.preventDefault();
       onSubmit({
         decidedOn, agreed, note: note || undefined, resolveNegative: hasNegative ? resolveNegative : undefined, resolutionNote: hasNegative ? resolutionNote : undefined,
-        ...(stage === "HOGERAAD" ? { presidingUserId: presiding, presentUserIds: present, absentUserIds: absent } : { presentUserIds: present, releaseNow }),
+        ...(stage === "HOGERAAD" ? { presidingUserId: presiding, presentUserIds: present, absentUserIds: absent } : { presentUserIds: present }),
       });
     }}>
       <strong>Gezamenlijk akkoord {label}</strong>
@@ -293,7 +292,7 @@ function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
         </fieldset>
       )}
       <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /> Het {label} heeft dit voorstel in de vergadering akkoord bevonden</label>
-      {stage === "PRESIDIUM" && <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={releaseNow} onChange={(e) => setReleaseNow(e.target.checked)} /> Direct vrijgeven aan de hoge raad</label>}
+      {stage === "PRESIDIUM" && <span className="muted">Na het vastleggen wacht het voorstel op een aparte, expliciete vrijgave aan de hoge raad.</span>}
       <div className="row"><button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>Annuleren</button><button className="btn btn-primary" disabled={busy || !valid}>Besluit vastleggen</button></div>
     </form>
   );

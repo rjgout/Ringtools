@@ -132,6 +132,7 @@ export async function listUsersFor(auth: ApiAuth, ringId: string) {
       name: m.user.name,
       email: m.user.email,
       churchFunction: m.churchFunction,
+      churchFunctionCode: m.churchFunctionCode,
       role: m.role as Role,
       isRingManager: m.isRingManager,
       appointAuthority: m.appointAuthority,
@@ -173,7 +174,7 @@ export async function createRingFor(auth: ApiAuth, body: Record<string, unknown>
   const parsed = createRingSchema.safeParse(body);
   if (!parsed.success) throw new ApiError(400, parsed.error.issues[0]?.message || "Controleer de ingevulde gegevens.", "validation");
   const { ring, user } = await ringErrors(() =>
-    createRing({ actorId: auth.user.id, ringName: parsed.data.name, existingUserId: parsed.data.existingUserId, name: parsed.data.userName, email: parsed.data.userEmail, churchFunction: parsed.data.churchFunction, role: parsed.data.role })
+    createRing({ actorId: auth.user.id, ringName: parsed.data.name, existingUserId: parsed.data.existingUserId, name: parsed.data.userName, email: parsed.data.userEmail, churchFunction: parsed.data.churchFunction, churchFunctionCode: parsed.data.churchFunctionCode, role: parsed.data.role })
   );
   return { id: ring.id, name: ring.name, firstManager: { userId: user.id, name: user.name } };
 }

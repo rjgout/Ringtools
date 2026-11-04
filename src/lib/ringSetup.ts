@@ -1,7 +1,8 @@
-import type { AppointAuthority, UnitKind } from "@prisma/client";
+import type { UnitKind } from "@prisma/client";
 import { prisma } from "./prisma";
 import { AuthorizationError, RingError, assertCanManageRing } from "./rings";
 import { CATEGORIES, getCatalogEntry, isOutsideRingtoolsFunctionName, OUTSIDE_RINGTOOLS, type AuthorityRule } from "./catalog/callings";
+import { AUTHORITY_BASIS_LABEL, CHURCH_FUNCTION_LABELS, authorityClassOf, type AuthorityClass } from "./churchFunctions";
 
 /**
  * Ringinrichting: wijken/gemeenten (organisatorische instellingen, geen ledenregister), eigen roepingen per ring,
@@ -187,7 +188,8 @@ export async function updateCustomCalling(actorId: string, id: string, input: { 
 
 // ---- Aanstellingsbevoegdheid ----
 
-const ALLOWED: Record<AuthorityRule, AppointAuthority[]> = {
+/** Welke bevoegdheidsklassen (functie + eventueel machtiging) een regel toelaat. */
+const ALLOWED: Record<AuthorityRule, AuthorityClass[]> = {
   RINGPRESIDENT: ["RINGPRESIDENT"],
   RINGPRESIDENT_OF_RAADGEVER: ["RINGPRESIDENT", "AANGEWEZEN_RAADGEVER"],
   RINGPRESIDENT_RAADGEVER_OF_HOGERAADSLID: ["RINGPRESIDENT", "AANGEWEZEN_RAADGEVER", "AANGEWEZEN_HOGERAADSLID"],
@@ -196,10 +198,13 @@ const ALLOWED: Record<AuthorityRule, AppointAuthority[]> = {
   ONBEKEND: [],
 };
 
+export type Appointer = { id: string; name: string; authority: AuthorityClass; basis: string; churchFunction: string };
+
 /**
- * Personen die voor een standaardroeping de aanstelling mogen verrichten: alleen wie door de ringbeheerder expliciet is
- * aangewezen (Ringtools-rol of kerkelijke functie is op zichzelf geen machtiging) én nu actief is. Voor een eigen roeping
- * of een bijzondere procedure is de lijst leeg (handmatige registratie van een bevoegde uitvoerder).
+ * Leden die voor een standaardroeping mogen roepen of aanstellen: een actief lid van déze ring met een kerkelijke functie die de regel toelaat
+ * (ringpresident: de functie volstaat; aangewezen raadgever/hogeraadslid: functie én expliciete machtiging). Een Ringtools-rol, een wijkkoppeling of
+ * vrije tekst is nooit een machtiging. Voor een eigen roeping of een bijzondere/onbekende regel is de lijst leeg (handmatige registratie van een
+ * bevoegde EXTERNE uitvoerder, zonder Ringtools-account).
  */
 export async function eligibleAppointers(ringId: string, catalogCode: string | null, which: "appointedBy" | "grantedBy" = "appointedBy") {
   const entry = catalogCode ? getCatalogEntry(catalogCode) : null;
@@ -207,19 +212,57 @@ export async function eligibleAppointers(ringId: string, catalogCode: string | n
 }
 
 /**
- * Personen die bij een gegeven regel én regelstatus bevoegd zijn. Los van de actuele catalogus, zodat een voorstel kan blijven werken
- * met de regel die bij indienen is vastgelegd (procedureSnapshot). Alleen een geverifieerde regel kent bevoegdheid toe; de personen
- * zelf worden altijd NU opnieuw bepaald (actief lidmaatschap en expliciete aanwijzing in deze ring).
+ * Bevoegde leden bij een gegeven regel én regelstatus. Los van de actuele catalogus, zodat een voorstel kan blijven werken met de regel die bij
+ * indienen is vastgelegd (procedureSnapshot). Alleen een geverifieerde regel kent bevoegdheid toe; de personen worden altijd NU opnieuw bepaald
+ * (actief lidmaatschap, functie, machtiging). Fail-closed: onbekende functie, functie die niet bij de rol past of ontbrekende machtiging = niet bevoegd.
  */
 export async function eligibleForRule(ringId: string, ruleStatus: string | null, rule: string | null) {
   const allowed = ruleStatus === "GEVERIFIEERD" && rule && rule in ALLOWED ? ALLOWED[rule as AuthorityRule] : [];
-  if (allowed.length === 0) return { rule: rule ?? null, appointers: [] as { id: string; name: string; authority: AppointAuthority }[] };
+  if (allowed.length === 0) return { rule: rule ?? null, appointers: [] as Appointer[] };
   const rows = await prisma.ringMembership.findMany({
-    where: { ringId, active: true, user: { active: true }, ring: { active: true }, appointAuthority: { in: allowed } },
+    where: {
+      ringId, active: true, user: { active: true }, ring: { active: true },
+      churchFunctionCode: { in: ["RINGPRESIDENT", "EERSTE_RAADGEVER", "TWEEDE_RAADGEVER", "HOGERAADSLID"] },
+    },
     include: { user: true },
     orderBy: { user: { name: "asc" } },
   });
-  return { rule, appointers: rows.map((m) => ({ id: m.userId, name: m.user.name, authority: m.appointAuthority })) };
+  const appointers: Appointer[] = [];
+  for (const m of rows) {
+    const cls = authorityClassOf(m);
+    if (cls && allowed.includes(cls)) {
+      appointers.push({ id: m.userId, name: m.user.name, authority: cls, basis: AUTHORITY_BASIS_LABEL[cls], churchFunction: CHURCH_FUNCTION_LABELS[m.churchFunctionCode] });
+    }
+  }
+  // Ringpresident eerst (hoogste en meest voor de hand liggende uitvoerder), daarna op naam.
+  const order: Record<AuthorityClass, number> = { RINGPRESIDENT: 0, AANGEWEZEN_RAADGEVER: 1, AANGEWEZEN_HOGERAADSLID: 2 };
+  appointers.sort((a, b) => order[a.authority] - order[b.authority] || a.name.localeCompare(b.name, "nl"));
+  return { rule, appointers };
+}
+
+/**
+ * Waarom is er niemand (of zijn er weinig) bevoegd? Concrete, niet-persoonlijke uitleg voor de ringbeheerder: ontbrekende functie of machtiging
+ * en het aantal leden zonder vastgelegde kerkelijke functie. Geen namen.
+ */
+export async function explainAuthorityGap(ringId: string, rule: string | null): Promise<string[]> {
+  if (!rule || !(rule in ALLOWED)) return [];
+  const allowed = ALLOWED[rule as AuthorityRule];
+  if (allowed.length === 0) return [];
+  const members = await prisma.ringMembership.findMany({ where: { ringId, active: true, user: { active: true }, ring: { active: true } } });
+  const holders = new Set(members.map((m) => authorityClassOf(m)).filter((c): c is AuthorityClass => !!c && allowed.includes(c)));
+  const notes: string[] = [];
+  if (allowed.includes("RINGPRESIDENT") && !members.some((m) => m.churchFunctionCode === "RINGPRESIDENT" && m.role === "RINGPRESIDIUM")) {
+    notes.push("Er is geen ringpresident vastgelegd (kerkelijke functie).");
+  }
+  if (allowed.includes("AANGEWEZEN_RAADGEVER") && !holders.has("AANGEWEZEN_RAADGEVER")) {
+    notes.push("Er is geen raadgever aangewezen: leg de functie eerste/tweede raadgever én de machtiging 'aangewezen raadgever' vast.");
+  }
+  if (allowed.includes("AANGEWEZEN_HOGERAADSLID") && !holders.has("AANGEWEZEN_HOGERAADSLID")) {
+    notes.push("Er is geen hogeraadslid aangewezen: leg de functie hogeraadslid én de machtiging 'aangewezen hogeraadslid' vast.");
+  }
+  const unknown = members.filter((m) => m.churchFunctionCode === "ONBEKEND" && (m.role === "RINGPRESIDIUM" || m.role === "HOGERAAD")).length;
+  if (unknown > 0) notes.push(`${unknown} lid/leden van het ringpresidium of de hoge raad hebben nog geen kerkelijke functie vastgelegd; zij gelden als niet bevoegd.`);
+  return notes;
 }
 
 // ---- Ringinrichting: voortgangsoverzicht ----
@@ -250,6 +293,18 @@ export async function getRingSetup(ringId: string): Promise<{ steps: SetupStep[]
       done: count("RINGPRESIDIUM") > 0 && count("RINGSECRETARIS") > 0 && count("RINGADMINISTRATEUR") > 0,
       detail: `Presidium ${count("RINGPRESIDIUM")} (verwacht 3), secretaris ${count("RINGSECRETARIS")}, administrateur ${count("RINGADMINISTRATEUR")}`,
     },
+    (() => {
+      const active = members.filter((m) => m.role === "RINGPRESIDIUM");
+      const missing = (["RINGPRESIDENT", "EERSTE_RAADGEVER", "TWEEDE_RAADGEVER"] as const).filter((c) => !active.some((m) => m.churchFunctionCode === c)).map((c) => CHURCH_FUNCTION_LABELS[c].toLowerCase());
+      const unknown = members.filter((m) => m.churchFunctionCode === "ONBEKEND" && (m.role === "RINGPRESIDIUM" || m.role === "HOGERAAD")).length;
+      return {
+        key: "functions", label: "Kerkelijke functies van het ringpresidium vastgelegd",
+        done: missing.length === 0 && unknown === 0,
+        detail: missing.length === 0 && unknown === 0
+          ? "Ringpresident, eerste en tweede raadgever zijn vastgelegd."
+          : [missing.length ? `Nog vast te leggen: ${missing.join(", ")}.` : "", unknown ? `${unknown} lid/leden zonder kerkelijke functie gelden als niet bevoegd.` : ""].filter(Boolean).join(" "),
+      };
+    })(),
     {
       key: "hogeraad", label: "Hogeraadsleden toegevoegd", done: hogeraad > 0,
       detail: hogeraad > 0 ? `${hogeraad} van 12 plaatsen bezet; vacatures zijn toegestaan.` : "Zonder hogeraadsleden blijft elk voorstel na het presidium wachten.",

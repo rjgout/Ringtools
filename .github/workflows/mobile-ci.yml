@@ -26,6 +26,7 @@ on:
       - "src/lib/proposals.ts"
       - "src/lib/ontheffingen.ts"
       - "src/lib/ringSetup.ts"
+      - "src/lib/churchFunctions.ts"
       - "src/lib/queries.ts"
       - "src/lib/cron.ts"
       - "src/lib/catalog/**"
@@ -62,6 +63,7 @@ on:
       - "src/lib/proposals.ts"
       - "src/lib/ontheffingen.ts"
       - "src/lib/ringSetup.ts"
+      - "src/lib/churchFunctions.ts"
       - "src/lib/queries.ts"
       - "src/lib/cron.ts"
       - "src/lib/catalog/**"
@@ -118,7 +120,7 @@ jobs:
           tests/sessions.test.ts tests/openlinks.test.ts tests/mfa.test.ts tests/mfaProof.test.ts
           tests/rings.test.ts tests/hardening.test.ts tests/notifications.test.ts
           tests/proposals.test.ts tests/ontheffingen.test.ts tests/release.test.ts tests/catalog.test.ts
-          tests/ringsetup.test.ts tests/management.test.ts tests/workflow.test.ts
+          tests/ringsetup.test.ts tests/management.test.ts tests/workflow.test.ts tests/churchfunctions.test.ts
 
   client:
     name: Client en native configuratie

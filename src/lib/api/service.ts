@@ -348,7 +348,7 @@ export async function listRingMembersFor(userId: string, ringId: string) {
     include: { user: true },
     orderBy: { user: { name: "asc" } },
   });
-  return { members: members.map((m) => ({ id: m.userId, name: m.user.name, role: m.role as Role, churchFunction: m.churchFunction })) };
+  return { members: members.map((m) => ({ id: m.userId, name: m.user.name, role: m.role as Role, churchFunction: m.churchFunction, churchFunctionCode: m.churchFunctionCode })) };
 }
 
 // ---- Acties (autorisatie zit in de lib; hier alleen toegang en vertaling) ----
@@ -431,6 +431,8 @@ export async function groupDecisionFor(userId: string, callingId: string, body: 
   await staffForCalling(userId, callingId);
   const stage = body.stage === "PRESIDIUM" || body.stage === "HOGERAAD" ? body.stage : null;
   if (!stage) throw new ApiError(400, "Geef aan voor welke fase het besluit geldt.", "validation");
+  // Registreren van het presidiumakkoord en vrijgeven aan de hoge raad zijn twee afzonderlijke, expliciete handelingen (POST /callings/:id/release).
+  if (body.releaseNow !== undefined) throw new ApiError(400, "Vrijgeven aan de hoge raad is een aparte handeling; registreer eerst het besluit en geef daarna expliciet vrij.", "validation");
   const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
   const result = await mapErrors(() =>
     registerGroupDecision({
@@ -447,8 +449,6 @@ export async function groupDecisionFor(userId: string, callingId: string, body: 
       resolutionNote: typeof body.resolutionNote === "string" ? body.resolutionNote : undefined,
     })
   );
-  // Optioneel direct vrijgeven na een gezamenlijk presidiumakkoord (dezelfde expliciete, geautoriseerde handeling).
-  if (stage === "PRESIDIUM" && body.releaseNow === true) await mapErrors(() => releaseToHogeraad({ callingId, actorId: userId }));
   return { ok: true, alreadyRegistered: result.alreadyRegistered };
 }
 

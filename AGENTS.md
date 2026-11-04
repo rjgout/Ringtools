@@ -48,6 +48,7 @@ Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet ·
 | Eerste ringbeheerder van een nieuwe ring aanwijzen (webmin) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ |
 | Wijken/gemeenten, hogeraadskoppeling, ringinrichting, roepingencatalogus, eigen roepingen, aanstellingsbevoegdheid | ✅ C2 (toesteltest open) | ✅ C2 (toesteltest open) | — | ✅ (via app-beheer) |
 | Nieuw voorstel via concept (naam → unit → roeping → verantwoordelijken), servercontrole bevoegdheden en eigen roepingen | ✅ C3 (toesteltest open) | ✅ C3 (toesteltest open) | — | — |
+| Gestructureerde kerkelijke functies (ringpresident, eerste/tweede raadgever, …), machtigingen, voorgestelde bevoegde uitvoerders, catalogusoverzicht onder Inrichting | ✅ C4.5 (toesteltest open) | ✅ C4.5 (toesteltest open) | — | ✅ (via app-beheer) |
 | Uitnodigen en activeren van nieuwe gebruikers | 🔧 C | 🔧 C | — | — |
 | Ontheffingen (aparte module; vertrouwelijk, betrokkene heeft geen toegang) | ✅ C4 (toesteltest open) | ✅ C4 (toesteltest open) | — | — |
 | Meldingen in de app (bel) | ✅ | ✅ | ⚠ | — |
@@ -144,6 +145,12 @@ bijwerken van deze tabel en van `docs/MOBILE.md`.
 - **Ontheffing van een hogeraadslid: eerst persoonlijke kennisgeving** (server-side blokkade in de vrijgave), de betrokkene blijft daarna toch uitgesloten. Functies met een procedure buiten Ringtools (ringpresident, raadgevers ringpresidium,
   ringpatriarch, bisschop) zijn nooit als eigen roeping te gebruiken (`isOutsideRingtoolsFunctionName`); raadgevers in een bisschap wel. Lopende ontheffingsdossiers worden nooit automatisch verwijderd (herinnering 30 / beoordeling 90 dagen).
 - **Meldingen na een gelukte opslag zijn herstelbaar** (claim + lease + `skipExisting`), nooit "opslaan en hopen". Achteraf wijzigen volgt de bij indienen vastgelegde procedure (`procedureSnapshot`).
+
+- **Kerkelijke functie ≠ Ringtools-rol ≠ machtiging (C4.5).** De rol (`RingMembership.role`) regelt toegang en gebruikersbeheer. De gestructureerde functie (`churchFunctionCode`, `src/lib/churchFunctions.ts`) bepaalt wat volgens de geverifieerde
+  handboekprocedure mogelijk is; de ringpresident is op grond van zijn functie bevoegd, een aangewezen raadgever/hogeraadslid heeft daarnaast een expliciete machtiging (`appointAuthority`) nodig. Alles wat onzeker is (functie `ONBEKEND`, functie die niet
+  bij de rol past, ontbrekende machtiging) is niet bevoegd (fail-closed); bevoegdheid wordt nooit automatisch toegekend, ook niet bij migratie. Een wijkkoppeling van een hogeraadslid is nooit een machtiging. Bevoegde leden en externe uitvoerders (zonder Ringtools-account)
+  blijven gescheiden. Gebruik uitsluitend `eligibleForRule`/`authorityClassOf` voor bevoegdheidsvragen.
+- **Afbakening:** Ringtools ondersteunt uitsluitend roepingen en ontheffingen. Organisatorische aanwijzingen en taakverdelingen krijgen geen afzonderlijke workflow. Registreren van een presidiumakkoord en vrijgeven aan de hoge raad blijven twee aparte, expliciete handelingen.
 
 ## Design
 

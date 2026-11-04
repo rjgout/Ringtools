@@ -228,6 +228,7 @@ adminRoute("GET", "/admin/rings/:id/setup", async ({ auth, params }) => setup.se
 adminRoute("GET", "/admin/rings/:id/units", async ({ auth, params }) => setup.unitsFor(auth, params.id));
 adminRoute("POST", "/admin/rings/:id/units", async ({ auth, params, body }) => setup.createUnitFor(auth, params.id, body));
 adminRoute("POST", "/admin/units/:id", async ({ auth, params, body }) => setup.updateUnitFor(auth, params.id, body));
+adminRoute("GET", "/admin/catalog/callings", async (ctx) => setup.catalogForAdmin(ringOf(ctx), ctx.query.get("q") || "", ctx.query.get("category") || ""));
 adminRoute("GET", "/admin/rings/:id/custom-callings", async ({ auth, params }) => setup.customCallingsFor(auth, params.id));
 adminRoute("POST", "/admin/rings/:id/custom-callings", async ({ auth, params, body }) => setup.createCustomCallingFor(auth, params.id, body));
 adminRoute("POST", "/admin/custom-callings/:id", async ({ auth, params, body }) => setup.updateCustomCallingFor(auth, params.id, body));

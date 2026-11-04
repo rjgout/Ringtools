@@ -4,6 +4,7 @@ import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
 import { ErrorState, Spinner } from "../components/ui";
+import { CatalogOverview } from "./CatalogOverview";
 
 /** Ringinrichting: voortgang, wijken en gemeenten (met hogeraadskoppeling) en eigen roepingen. Voor ringbeheerder en webmin. */
 export function RingSetup({ ringId }: { ringId: string }) {
@@ -11,6 +12,7 @@ export function RingSetup({ ringId }: { ringId: string }) {
     <div className="stack">
       <SetupChecklist ringId={ringId} />
       <UnitsManager ringId={ringId} />
+      <CatalogOverview ringId={ringId} />
       <CustomCallings ringId={ringId} />
     </div>
   );

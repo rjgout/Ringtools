@@ -1,4 +1,5 @@
-import type { Prisma, Role, User } from "@prisma/client";
+import type { ChurchFunctionCode, Prisma, Role, User } from "@prisma/client";
+import { CHURCH_FUNCTION_LABELS, UNIQUE_FUNCTIONS, authorityFitsFunction, functionFitsRole } from "./churchFunctions";
 import { prisma } from "./prisma";
 import { destroyAllSessionsForUser } from "./auth";
 import { ASSIGNABLE_ROLES } from "./rbac";
@@ -93,22 +94,57 @@ async function resolveUser(
 export type AppointAuthorityValue = "NONE" | "RINGPRESIDENT" | "AANGEWEZEN_RAADGEVER" | "AANGEWEZEN_HOGERAADSLID";
 
 /**
- * Een aanstellingsbevoegdheid is een expliciete aanwijzing en moet passen bij de Ringtools-rol; gedeactiveerde leden
- * krijgen nooit (nieuwe) bevoegdheden. Hoogstens één actieve ringpresident per ring.
+ * Legt kerkelijke functie en machtiging vast (Fase C4.5).
+ * - De functie moet bij de Ringtools-rol passen; een Ringtools-rol op zichzelf geeft nooit kerkelijke bevoegdheid.
+ * - Ringpresident, eerste en tweede raadgever: hoogstens één actieve houder per ring.
+ * - Een machtiging ("aangewezen raadgever"/"aangewezen hogeraadslid") moet bij de functie passen en wordt nooit automatisch toegekend;
+ *   bij een gewijzigde functie of rol vervalt een niet meer passende machtiging (omlaag, nooit omhoog). De oude waarde RINGPRESIDENT bestaat niet
+ *   meer: de functie ringpresident volstaat.
+ * - Gedeactiveerde leden hebben geen machtiging.
  */
-async function resolveAuthority(tx: Db, ringId: string, membershipId: string | null, role: Role, active: boolean, wanted: AppointAuthorityValue | undefined): Promise<AppointAuthorityValue> {
-  const value = wanted ?? "NONE";
-  if (value === "NONE" || !active) return "NONE";
-  const needsPresidium = value === "RINGPRESIDENT" || value === "AANGEWEZEN_RAADGEVER";
-  if (needsPresidium && role !== "RINGPRESIDIUM") throw new RingError("Deze aanwijzing is alleen mogelijk voor een lid van het ringpresidium.");
-  if (value === "AANGEWEZEN_HOGERAADSLID" && role !== "HOGERAAD") throw new RingError("Deze aanwijzing is alleen mogelijk voor een hogeraadslid.");
-  if (value === "RINGPRESIDENT") {
-    const other = await tx.ringMembership.count({
-      where: { ringId, appointAuthority: "RINGPRESIDENT", active: true, user: { active: true }, ...(membershipId ? { NOT: { id: membershipId } } : {}) },
-    });
-    if (other > 0) throw new RingError("Er is in deze ring al een ringpresident aangewezen.");
+async function resolveFunctionAndAuthority(
+  tx: Db,
+  q: {
+    ringId: string;
+    membershipId: string | null;
+    role: Role;
+    active: boolean;
+    wantedFunction?: ChurchFunctionCode;
+    currentFunction?: ChurchFunctionCode;
+    wantedAuthority?: AppointAuthorityValue;
+    currentAuthority?: AppointAuthorityValue;
   }
-  return value;
+): Promise<{ churchFunctionCode: ChurchFunctionCode; appointAuthority: AppointAuthorityValue }> {
+  let code: ChurchFunctionCode = q.wantedFunction ?? q.currentFunction ?? "ONBEKEND";
+  if (!functionFitsRole(code, q.role)) {
+    if (q.wantedFunction) throw new RingError(`De functie ${CHURCH_FUNCTION_LABELS[code].toLowerCase()} past niet bij de gekozen rol binnen Ringtools.`);
+    code = "ONBEKEND"; // overgenomen functie past niet meer bij de nieuwe rol: niet raden, opnieuw vastleggen
+  }
+  if (q.active && UNIQUE_FUNCTIONS.includes(code)) {
+    const other = await tx.ringMembership.count({
+      where: { ringId: q.ringId, churchFunctionCode: code, active: true, user: { active: true }, ...(q.membershipId ? { NOT: { id: q.membershipId } } : {}) },
+    });
+    if (other > 0) throw new RingError(`Er is in deze ring al een actieve ${CHURCH_FUNCTION_LABELS[code].toLowerCase()} vastgelegd.`);
+  }
+
+  let authority: AppointAuthorityValue = "NONE";
+  if (q.active) {
+    if (q.wantedAuthority === "RINGPRESIDENT") {
+      throw new RingError("De aanwijzing 'ringpresident' bestaat niet meer: leg de kerkelijke functie Ringpresident vast; die volstaat.");
+    }
+    const wanted = q.wantedAuthority ?? (q.currentAuthority && q.currentAuthority !== "RINGPRESIDENT" ? q.currentAuthority : "NONE");
+    if (wanted !== "NONE") {
+      if (authorityFitsFunction(wanted, code)) authority = wanted;
+      else if (q.wantedAuthority) {
+        throw new RingError(
+          wanted === "AANGEWEZEN_RAADGEVER"
+            ? "Een raadgever kan alleen worden aangewezen bij de kerkelijke functie eerste of tweede raadgever in het ringpresidium."
+            : "Een hogeraadslid kan alleen worden aangewezen bij de kerkelijke functie hogeraadslid."
+        );
+      } // anders: overgenomen machtiging past niet meer bij de functie → vervalt
+    }
+  }
+  return { churchFunctionCode: code, appointAuthority: authority };
 }
 
 export type NewMemberInput = {
@@ -116,6 +152,8 @@ export type NewMemberInput = {
   name?: string;
   email?: string;
   churchFunction: string;
+  /** Gestructureerde kerkelijke functie; leeg = nog niet vastgelegd (geen bevoegdheden). */
+  churchFunctionCode?: ChurchFunctionCode;
   role: Role;
   appointAuthority?: AppointAuthorityValue;
 };
@@ -135,12 +173,14 @@ export async function createRing(input: { actorId: string; ringName: string } & 
 
     const ring = await tx.ring.create({ data: { name } });
     const { user, isNew } = await resolveUser(tx, { ...input, actor });
+    const fn = await resolveFunctionAndAuthority(tx, { ringId: ring.id, membershipId: null, role: input.role, active: true, wantedFunction: input.churchFunctionCode });
     const membership = await tx.ringMembership.create({
       data: {
         userId: user.id,
         ringId: ring.id,
         role: input.role,
         churchFunction: input.churchFunction.trim(),
+        churchFunctionCode: fn.churchFunctionCode,
         isRingManager: true,
         active: true,
       },
@@ -191,15 +231,19 @@ export async function addMember(input: { actorId: string; ringId: string; isRing
     });
     if (existingMembership) throw new RingError("Deze persoon is al lid van deze ring.");
 
-    const appointAuthority = await resolveAuthority(tx, input.ringId, null, input.role, true, input.appointAuthority);
+    await lockRing(tx, input.ringId);
+    const fn = await resolveFunctionAndAuthority(tx, {
+      ringId: input.ringId, membershipId: null, role: input.role, active: true, wantedFunction: input.churchFunctionCode, wantedAuthority: input.appointAuthority,
+    });
     const membership = await tx.ringMembership.create({
       data: {
         userId: user.id,
         ringId: input.ringId,
         role: input.role,
         churchFunction: input.churchFunction.trim(),
+        churchFunctionCode: fn.churchFunctionCode,
         isRingManager: input.isRingManager,
-        appointAuthority,
+        appointAuthority: fn.appointAuthority,
         active: true,
       },
     });
@@ -224,6 +268,8 @@ export async function updateMember(input: {
   role: Role;
   isRingManager: boolean;
   active: boolean;
+  /** Zonder waarde blijft de bestaande functie behouden (voor zover die nog bij de rol past). */
+  churchFunctionCode?: ChurchFunctionCode;
   appointAuthority?: AppointAuthorityValue;
   name?: string;
   email?: string;
@@ -263,17 +309,20 @@ export async function updateMember(input: {
       });
     }
 
-    // Zonder expliciete waarde blijft een bestaande aanwijzing alleen behouden als die nog bij de rol past en het lid actief is.
-    const keep = before.appointAuthority !== "NONE" && input.role === before.role && input.active ? before.appointAuthority : "NONE";
-    const appointAuthority = await resolveAuthority(tx, before.ringId, before.id, input.role, input.active, input.appointAuthority ?? keep);
+    const fn = await resolveFunctionAndAuthority(tx, {
+      ringId: before.ringId, membershipId: before.id, role: input.role, active: input.active,
+      wantedFunction: input.churchFunctionCode, currentFunction: before.churchFunctionCode,
+      wantedAuthority: input.appointAuthority, currentAuthority: before.appointAuthority,
+    });
     const after = await tx.ringMembership.update({
       where: { id: before.id },
       data: {
         churchFunction: input.churchFunction.trim(),
+        churchFunctionCode: fn.churchFunctionCode,
         role: input.role,
         isRingManager: input.isRingManager,
         active: input.active,
-        appointAuthority,
+        appointAuthority: fn.appointAuthority,
       },
     });
 

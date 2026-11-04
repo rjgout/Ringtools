@@ -51,6 +51,19 @@ enum FunctionSource {
   VRIJE_TEKST
 }
 
+// Gestructureerde kerkelijke functie binnen de ring. Los van de Ringtools-rol (toegang): een rol geeft nooit kerkelijke bevoegdheid. ONBEKEND = nog niet vastgelegd
+// (bijv. bestaande leden); daaraan worden nooit bevoegdheden gekoppeld.
+enum ChurchFunctionCode {
+  ONBEKEND
+  RINGPRESIDENT
+  EERSTE_RAADGEVER
+  TWEEDE_RAADGEVER
+  RINGSECRETARIS
+  RINGADMINISTRATEUR
+  HOGERAADSLID
+  ANDERS
+}
+
 enum UnitKind {
   WIJK
   GEMEENTE
@@ -528,20 +541,22 @@ model Ring {
 // tekst) en heeft geen invloed op rechten; `isRingManager` geeft de
 // administratieve bevoegdheid voor gebruikersbeheer in deze ring.
 model RingMembership {
-  id               String           @id @default(cuid())
-  userId           String
-  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ringId           String
-  ring             Ring             @relation(fields: [ringId], references: [id], onDelete: Cascade)
-  role             Role
-  churchFunction   String           @default("")
-  isRingManager    Boolean          @default(false)
-  // Expliciet aangewezen aanstellingsbevoegdheid in deze ring. Een Ringtools-rol of kerkelijke functie is op
-  // zichzelf geen machtiging; alleen wat hier door de ringbeheerder is vastgelegd telt als aanwijzing.
-  appointAuthority AppointAuthority @default(NONE)
-  active           Boolean          @default(true)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  id                 String             @id @default(cuid())
+  userId             String
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ringId             String
+  ring               Ring               @relation(fields: [ringId], references: [id], onDelete: Cascade)
+  role               Role
+  churchFunction     String             @default("") // omschrijving/toelichting (vrije tekst); bepaalt nooit bevoegdheid
+  // Gestructureerde functie; bepaalt welke bevoegdheden volgens de geverifieerde handboekprocedure mogelijk zijn (src/lib/churchFunctions.ts).
+  churchFunctionCode ChurchFunctionCode @default(ONBEKEND)
+  isRingManager      Boolean            @default(false)
+  // Expliciete machtiging in deze ring (waar het handboek een "aangewezen" raadgever of hogeraadslid vraagt). Een Ringtools-rol of kerkelijke functie is op
+  // zichzelf geen machtiging. De waarde RINGPRESIDENT is VEROUDERD en wordt niet meer toegekend: de functie ringpresident volstaat.
+  appointAuthority   AppointAuthority   @default(NONE)
+  active             Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@unique([userId, ringId])
   @@index([ringId, active, role])

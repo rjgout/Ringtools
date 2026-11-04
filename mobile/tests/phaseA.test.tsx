@@ -90,8 +90,9 @@ describe("C1: vrijgave en gezamenlijk akkoord", () => {
   });
 
   it("legt een gezamenlijk presidiumakkoord vast zonder individuele reacties; bevestiging is verplicht", async () => {
-    const api = renderDetail({ groupDecision: vi.fn(async () => ({ ok: true, alreadyRegistered: false })) }, detail({ canRegisterGroupDecision: { PRESIDIUM: true, HOGERAAD: false } })) as Record<string, ReturnType<typeof vi.fn>>;
+    const api = renderDetail({ groupDecision: vi.fn(async () => ({ ok: true, alreadyRegistered: false })), release: vi.fn() }, detail({ canRegisterGroupDecision: { PRESIDIUM: true, HOGERAAD: false } })) as Record<string, ReturnType<typeof vi.fn>>;
     fireEvent.click(await screen.findByText(/Gezamenlijk akkoord ringpresidium registreren/));
+    expect(screen.queryByLabelText(/Direct vrijgeven/)).toBeNull();
     const submit = screen.getByRole("button", { name: "Besluit vastleggen" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true); // zonder expliciete verklaring kan niets worden vastgelegd
     fireEvent.click(screen.getByLabelText(/heeft dit voorstel in de vergadering akkoord bevonden/));
@@ -104,7 +105,10 @@ describe("C1: vrijgave en gezamenlijk akkoord", () => {
     fireEvent.click(screen.getByLabelText("President"));
     expect(submit.disabled).toBe(false);
     fireEvent.click(submit);
-    await waitFor(() => expect(api.groupDecision).toHaveBeenCalledWith("c1", expect.objectContaining({ stage: "PRESIDIUM", agreed: true, releaseNow: false, resolveNegative: true, presentUserIds: ["p1"] })));
+    await waitFor(() => expect(api.groupDecision).toHaveBeenCalledWith("c1", expect.objectContaining({ stage: "PRESIDIUM", agreed: true, resolveNegative: true, presentUserIds: ["p1"] })));
+    // registreren en vrijgeven zijn twee afzonderlijke handelingen: er is geen optie om direct vrij te geven
+    expect(api.groupDecision.mock.calls[0][1]).not.toHaveProperty("releaseNow");
+    expect(api.release).not.toHaveBeenCalled();
   });
 
   it("hoge raad: vereist een voorzitter uit het ringpresidium en aanwezigen; afwezigen worden apart doorgegeven", async () => {
