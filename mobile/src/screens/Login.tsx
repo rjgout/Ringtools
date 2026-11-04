@@ -3,13 +3,15 @@ import { AdminLogin } from "./AdminLogin";
 import { useAuth } from "../lib/auth";
 import { ApiRequestError } from "../lib/api";
 import { nativeCapabilities, PERSONAL_TEAM_NOTICE } from "../lib/buildProfile";
+import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, passkeysUsable } from "../lib/passkeys";
 
 /** Inloggen met e-mail + 8-cijferige code uit de e-mail. De link in de mail opent deze app direct (universele link). */
 export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: string; onHaveInvitation?: () => void }) {
-  const { api, signIn } = useAuth();
+  const { api, signIn, finishMfa } = useAuth();
   const [email, setEmail] = useState(initialEmail);
   const [code, setCode] = useState("");
-  const [step, setStep] = useState<"email" | "code">("email");
+  const [step, setStep] = useState<"email" | "code" | "passkey">("email");
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -35,9 +37,45 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
     setBusy(true);
     setError(null);
     try {
-      await signIn(email.trim(), code.replace(/\s+/g, ""));
+      const result = await signIn(email.trim(), code.replace(/\s+/g, ""));
+      if (result && "pendingToken" in result) {
+        // Verplichte MFA: nog geen sessie. Eerst de passkey-stap; een pending-login geeft nergens toegang.
+        setPendingToken(result.pendingToken);
+        setStep("passkey");
+        setCode("");
+        setBusy(false);
+        await passkey(result.pendingToken);
+      }
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Er ging iets mis.");
+      setBusy(false);
+    }
+  }
+
+  async function leavePasskey(message: string | null, token: string | null = pendingToken) {
+    setPendingToken(null);
+    setStep("email");
+    setError(message);
+    if (token) await api.cancelMfa(token).catch(() => {}); // de wachtende login wordt direct opgeruimd
+  }
+
+  async function passkey(token: string) {
+    const provider = getPasskeyProvider();
+    if (!provider || !passkeysUsable(true, nativeCapabilities().limited)) {
+      await leavePasskey(PASSKEY_UNAVAILABLE_MESSAGE, token);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const { options } = await api.passkeyOptions(token);
+      const assertion = await provider.authenticate(options);
+      await finishMfa(token, assertion);
+    } catch (err) {
+      if (err instanceof PasskeyCancelledError) setError("Je hebt de verificatie geannuleerd. Probeer het opnieuw of annuleer het inloggen.");
+      else if (err instanceof ApiRequestError && (err.code === "locked" || err.status === 401 && err.code !== "passkey-failed")) await leavePasskey(err.message, token);
+      else setError(err instanceof ApiRequestError ? err.message : "De verificatie is niet gelukt. Probeer het opnieuw.");
+    } finally {
       setBusy(false);
     }
   }
@@ -46,12 +84,17 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
 
   return (
     <main className="page center">
-      <form className="glass card stack" style={{ width: "100%", maxWidth: 420 }} onSubmit={step === "email" ? request : login}>
+      <form className="glass card stack" style={{ width: "100%", maxWidth: 420 }} onSubmit={step === "email" ? request : step === "code" ? login : (e) => { e.preventDefault(); if (pendingToken) void passkey(pendingToken); }}>
         <div>
           <h1>Ringtools</h1>
           <span className="muted">Log in met je e-mailadres. Je ontvangt een code van 8 cijfers.</span>
         </div>
-        {step === "email" ? (
+        {step === "passkey" ? (
+          <div>
+            <strong>Bevestig dat jij het bent</strong>
+            <p className="muted">Voor jouw account is extra verificatie met een passkey nodig. Volg de aanwijzingen van je toestel.</p>
+          </div>
+        ) : step === "email" ? (
           <div>
             <label htmlFor="email">E-mailadres</label>
             <input id="email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" required value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -65,8 +108,11 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
         )}
         {error && <div className="error" role="alert">{error}</div>}
         <button className="btn btn-primary btn-block" disabled={busy || (step === "code" && code.replace(/\s+/g, "").length !== 8)}>
-          {busy ? "Even geduld…" : step === "email" ? "Stuur code" : "Inloggen"}
+          {busy ? "Even geduld…" : step === "email" ? "Stuur code" : step === "passkey" ? "Verifiëren met passkey" : "Inloggen"}
         </button>
+        {step === "passkey" && (
+          <button type="button" className="btn btn-ghost btn-block" onClick={() => void leavePasskey(null)}>Annuleren</button>
+        )}
         {step === "code" && (
           <button type="button" className="btn btn-ghost btn-block" onClick={() => { setStep("email"); setCode(""); setError(null); }}>
             Ander e-mailadres

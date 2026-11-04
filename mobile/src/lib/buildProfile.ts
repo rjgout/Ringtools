@@ -15,7 +15,8 @@ export function getBuildProfile(win: Win = window as unknown as Win): BuildProfi
 
 export function nativeCapabilities(profile: BuildProfile = getBuildProfile()) {
   const limited = profile === "personal-team";
-  return { nativePush: !limited, universalLinks: !limited, limited };
+  // Native passkeys vereisen Associated Domains (`webcredentials:`); die ontbreken in de Personal Team-testbuild.
+  return { nativePush: !limited, universalLinks: !limited, passkeys: !limited, limited };
 }
 
 export const PERSONAL_TEAM_NOTICE =

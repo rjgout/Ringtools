@@ -10,7 +10,10 @@ export function GET() {
   const details = appId
     ? [{ appIDs: [appId], components: [{ "/": "/open/*" }, { "/": "/roepingen/*" }, { "/": "/uitnodiging/*" }] }]
     : [];
-  return new Response(JSON.stringify({ applinks: { details } }), {
+  // `webcredentials` is voorbereiding voor native passkeys (C5.2): pas actief als de app de entitlement `webcredentials:<host>` heeft
+  // (na toesteltest); tot die tijd is het onschadelijk. Zonder APPLE_APP_ID blijft alles leeg.
+  const webcredentials = appId ? { apps: [appId] } : undefined;
+  return new Response(JSON.stringify({ applinks: { details }, ...(webcredentials ? { webcredentials } : {}) }), {
     headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=300" },
   });
 }

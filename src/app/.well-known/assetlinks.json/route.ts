@@ -15,7 +15,8 @@ export function GET() {
       ? []
       : [
           {
-            relation: ["delegate_permission/common.handle_all_urls"],
+            // get_login_creds: voorbereiding voor native passkeys (Credential Manager) op hetzelfde pakket en dezelfde vingerafdruk(ken).
+            relation: ["delegate_permission/common.handle_all_urls", "delegate_permission/common.get_login_creds"],
             target: {
               namespace: "android_app",
               package_name: process.env.ANDROID_PACKAGE || "nl.ringapeldoorn.ringtools",

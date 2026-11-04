@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { App as CapApp } from "@capacitor/app";
-import type { Me, RingInfo } from "@shared/api-types";
+import type { LoginResult, Me, RingInfo } from "@shared/api-types";
 import { ApiClient, ApiRequestError } from "./api";
 import { storage } from "./storage";
 import { API_BASE } from "../config";
 import { isNative, platform } from "./native";
 import { registerForPush } from "./push";
 import { resumeSession } from "./resume";
+import type { PasskeyAssertion } from "./passkeys";
 
 type Status = "loading" | "signedOut" | "signedIn" | "unavailable";
 
@@ -20,7 +21,10 @@ type AuthValue = {
   api: ApiClient;
   /** Webmin is ingelogd (beheergedeelte); er is dan geen ring of voorstel. */
   isAdmin: boolean;
-  signIn: (email: string, code: string) => Promise<void>;
+  /** Geeft `{ pendingToken }` terug als er nog een passkey-verificatie nodig is (verplichte MFA); dan bestaat er nog géén sessie. */
+  signIn: (email: string, code: string) => Promise<{ pendingToken: string } | void>;
+  /** Rondt een pending-login af na een geslaagde passkey-ceremonie; pas hierna bestaat er een sessie. */
+  finishMfa: (pendingToken: string, assertion: PasskeyAssertion) => Promise<void>;
   /** Webmin stap 1 (wachtwoord): geeft een wachtend token dat alleen voor stap 2 geldt. */
   adminStart: (username: string, password: string) => Promise<string>;
   /** Webmin stap 2 (TOTP of herstelcode): pas hierna bestaat er een sessie. */
@@ -171,6 +175,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(
     async (email: string, code: string) => {
       const result = await api.login(email, code, platform === "web" ? "Browser" : platform === "ios" ? "iPhone/iPad" : "Android");
+      // Verplichte MFA: nog geen sessie; de aanroeper doorloopt de passkey-stap en rondt af met finishMfa().
+      if ("mfaRequired" in result && result.mfaRequired) return { pendingToken: result.pendingToken };
+      const full = result as LoginResult;
+      tokenRef.current = full.token;
+      await storage.setToken(full.token);
+      await applyMe({ user: full.user, rings: full.rings, pendingCount: full.pendingCount });
+      setStatus("signedIn");
+    },
+    [api, applyMe]
+  );
+
+  const finishMfa = useCallback(
+    async (pendingToken: string, assertion: PasskeyAssertion) => {
+      const result = await api.passkeyVerify(pendingToken, assertion);
       tokenRef.current = result.token;
       await storage.setToken(result.token);
       await applyMe({ user: result.user, rings: result.rings, pendingCount: result.pendingCount });
@@ -234,8 +252,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const ring = me?.rings.find((r) => r.id === ringId) ?? null;
   const value = useMemo<AuthValue>(
-    () => ({ status, startupError, retryStartup, me, ring, api, isAdmin, signIn, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
-    [status, startupError, retryStartup, me, ring, api, isAdmin, signIn, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
+    () => ({ status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
+    [status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

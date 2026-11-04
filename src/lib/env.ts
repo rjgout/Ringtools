@@ -38,6 +38,21 @@ export const env = {
   get appBaseUrl() {
     return (process.env.APP_BASE_URL || "http://localhost:2809").replace(/\/+$/, "");
   },
+  /**
+   * Native passkeys in de app (C5.2). Standaard UIT: pas aanzetten na verificatie op fysieke toestellen met
+   * geverifieerde Associated Domains (iOS, `webcredentials:`) en Digital Asset Links (Android, `get_login_creds`).
+   * Uit = een account met passkey-verificatie kan niet via de app inloggen (veilige melding, geen omzeiling).
+   */
+  get nativePasskeysEnabled() {
+    return process.env.NATIVE_PASSKEYS_ENABLED === "true";
+  },
+  /** SHA-256-vingerafdrukken van het app-ondertekeningscertificaat (hex, met dubbele punten), ook gebruikt voor de Digital Asset Links. */
+  get androidCertFingerprints() {
+    return (process.env.ANDROID_SHA256_FINGERPRINTS || "")
+      .split(",")
+      .map((f) => f.trim())
+      .filter(Boolean);
+  },
   get cookieSecure() {
     return (process.env.COOKIE_SECURE ?? "true") === "true";
   },

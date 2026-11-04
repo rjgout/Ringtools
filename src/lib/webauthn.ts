@@ -27,6 +27,29 @@ function getExpectedOrigin(): string {
   return env.appBaseUrl;
 }
 
+/**
+ * Android-origin van een app-passkey: `android:apk-key-hash:<base64url van de SHA-256 van het ondertekeningscertificaat>`.
+ * Alleen geldige 32-byte-vingerafdrukken uit de configuratie tellen mee; er is geen wildcard en niets wordt afgeleid van wat de client opgeeft.
+ */
+export function androidOriginsFromFingerprints(fingerprints: string[]): string[] {
+  const origins: string[] = [];
+  for (const fp of fingerprints) {
+    const hex = fp.replace(/:/g, "");
+    if (!/^[0-9a-fA-F]{64}$/.test(hex)) continue;
+    origins.push(`android:apk-key-hash:${Buffer.from(hex, "hex").toString("base64url")}`);
+  }
+  return origins;
+}
+
+/**
+ * Toegestane origins voor het verifiëren van een assertion. De webapp accepteert uitsluitend de eigen website-origin;
+ * alleen de native route voegt de expliciet geconfigureerde Android-app-origins toe. (Op iOS is de origin van een app-passkey
+ * gelijk aan `https://<RP ID>`, dus gelijk aan de website-origin.) Elke andere origin wordt geweigerd.
+ */
+export function allowedOrigins(native: boolean): string[] {
+  return native ? [getExpectedOrigin(), ...androidOriginsFromFingerprints(env.androidCertFingerprints)] : [getExpectedOrigin()];
+}
+
 async function storeChallenge(userId: string, challenge: string): Promise<void> {
   await prisma.webAuthnChallenge.upsert({
     where: { userId },
@@ -130,7 +153,8 @@ export async function startPasskeyAuthentication(userId: string) {
 
 export async function verifyPasskeyAuthentication(
   userId: string,
-  response: AuthenticationResponseJSON
+  response: AuthenticationResponseJSON,
+  opts: { native?: boolean } = {}
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const challenge = await takeChallenge(userId);
   if (!challenge) return { ok: false, reason: "Verificatie verlopen, probeer het opnieuw." };
@@ -145,7 +169,7 @@ export async function verifyPasskeyAuthentication(
     const result = await verifyAuthenticationResponse({
       response,
       expectedChallenge: challenge,
-      expectedOrigin: getExpectedOrigin(),
+      expectedOrigin: allowedOrigins(!!opts.native),
       expectedRPID: getRpId(),
       requireUserVerification: true,
       advancedFIDOConfig: { userVerification: "required" },

@@ -1,3 +1,4 @@
+import type { PasskeyAssertion, PasskeyRequestOptions } from "./passkeys";
 import type {
   AdminRing,
   AppointAuthority,
@@ -17,6 +18,7 @@ import type {
   Dashboard,
   DeviceInfo,
   LoginResult,
+  PendingMfaLogin,
   ManagedUser,
   Me,
   OntheffingConceptInput,
@@ -109,8 +111,18 @@ export class ApiClient {
   requestCode(email: string) {
     return this.request<{ ok: boolean; message: string }>("POST", "/auth/request-code", { email }, null);
   }
+  /** Geeft een volledige sessie, of — bij verplichte MFA met native passkeys — een pending-login zonder rechten. */
   login(email: string, code: string, deviceName: string) {
-    return this.request<LoginResult>("POST", "/auth/login", { email, code, deviceName }, null);
+    return this.request<LoginResult | PendingMfaLogin>("POST", "/auth/login", { email, code, deviceName }, null);
+  }
+  passkeyOptions(pendingToken: string) {
+    return this.request<{ options: PasskeyRequestOptions }>("POST", "/auth/mfa/passkey/options", {}, pendingToken);
+  }
+  passkeyVerify(pendingToken: string, response: PasskeyAssertion) {
+    return this.request<LoginResult>("POST", "/auth/mfa/passkey/verify", { response }, pendingToken);
+  }
+  cancelMfa(pendingToken: string) {
+    return this.request<{ ok: boolean }>("POST", "/auth/mfa/cancel", {}, pendingToken);
   }
   refresh() {
     return this.request<{ rotated: boolean; token?: string; expiresAt?: string }>("POST", this.admin ? "/admin/auth/refresh" : "/auth/refresh", {});

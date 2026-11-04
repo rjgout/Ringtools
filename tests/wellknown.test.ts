@@ -10,7 +10,7 @@ afterEach(() => {
 
 describe("Universal Links / App Links (.well-known)", () => {
   it("zonder configuratie zijn de bestanden leeg: er wordt geen team-ID of vingerafdruk verzonnen", async () => {
-    expect(await aasa().json()).toEqual({ applinks: { details: [] } });
+    expect(await aasa().json()).toEqual({ applinks: { details: [] } }); // ook geen webcredentials
     expect(await assetlinks().json()).toEqual([]);
   });
   it("met configuratie verwijzen ze alleen naar /open/*, /roepingen/* en /uitnodiging/*", async () => {
@@ -21,7 +21,8 @@ describe("Universal Links / App Links (.well-known)", () => {
     expect(apple.applinks.details[0].components).toEqual([{ "/": "/open/*" }, { "/": "/roepingen/*" }, { "/": "/uitnodiging/*" }]);
     const android = await assetlinks().json();
     expect(android[0].target).toEqual({ namespace: "android_app", package_name: "nl.ringapeldoorn.ringtools", sha256_cert_fingerprints: ["AA:BB", "CC:DD"] });
-    expect(android[0].relation).toEqual(["delegate_permission/common.handle_all_urls"]);
+    expect(android[0].relation).toEqual(["delegate_permission/common.handle_all_urls", "delegate_permission/common.get_login_creds"]);
+    expect(apple.webcredentials).toEqual({ apps: ["ABCDE12345.nl.ringapeldoorn.ringtools"] });
   });
   it("beide antwoorden zijn JSON", () => {
     expect(aasa().headers.get("Content-Type")).toBe("application/json");

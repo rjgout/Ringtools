@@ -1,38 +1,56 @@
-# Native passkeys en MFA in de Capacitor-app – onderzoek en plan
+# Native passkeys en MFA in de Capacitor-app
 
-**Status: niet geïmplementeerd.** Bewuste keuze: een passkey-ceremonie in een native app is alleen betrouwbaar te valideren op echte iOS- en
-Android-toestellen met geverifieerde Associated Domains / Digital Asset Links. Dat kan hier niet volledig worden getest; een half geteste
-MFA-implementatie is onverantwoord. Tot die tijd geldt:
+**Status (C5.2): server, API, clientarchitectuur en automatische tests zijn gebouwd; de native passkey-ceremonie is bewust NOG NIET aan een plug-in gekoppeld
+en de functie staat standaard UIT.** Een passkey-ceremonie is alleen betrouwbaar te valideren op echte iOS- en Android-toestellen met geverifieerde
+Associated Domains / Digital Asset Links. Wat daarvoor nodig is staat onderaan ("Wat nog moet gebeuren vóór activering"). Er is op geen enkel fysiek toestel getest.
 
-- De bestaande server-side MFA-eisen blijven onverkort van kracht. `POST /api/mobile/v1/auth/login` weigert het beheerdersaccount en accounts
-  met ingeschakelde passkey-verificatie (`403 mfa-not-supported`), **na** het verbruiken van de code, zonder sessie of token uit te geven.
-- Een sessie zonder bewezen tweede factor (`mfaAt = null`) is als bearer onbruikbaar (`401`); het beheerdersaccount krijgt `403` op de app-API.
-  Dit wordt getest in `tests/api.test.ts` ("MFA is via de mobiele API niet te omzeilen…").
-- De app toont: *"Inloggen met een passkey wordt in de app nog niet ondersteund. Log voorlopig in via de webapp; je beveiliging blijft ongewijzigd."*
-  **Er wordt nergens geadviseerd MFA uit te schakelen** (AGENTS.md verbiedt dat).
+## Beveiligingsuitgangspunten (onveranderd)
+- Een account met verplichte MFA krijgt **nooit** een volledige sessie op de e-mailcode alleen. Het beheerdersaccount (webmin) blijft apart op wachtwoord + TOTP en gebruikt geen passkeys in de app.
+- Een sessie zonder bewezen tweede factor (`mfaAt = null`) is op elke gewone route onbruikbaar (`401`); het beheerdersaccount krijgt `403` op de gebruikers-API.
+- De app adviseert nergens MFA uit te schakelen (AGENTS.md). Ontbrekende ondersteuning geeft altijd de veilige melding: *"Log voorlopig in via de webapp; je beveiliging blijft ongewijzigd."*
 
-## Onderzoek (te verifiëren bij de start van de implementatie)
-| Optie | Opmerking |
-|---|---|
-| `@capgo/capacitor-passkey` (major volgt Capacitor, 8.x) | Shimt `navigator.credentials.create/get` naar iOS `ASAuthorization` en Android Credential Manager. Op Android is de `origin` in `clientDataJSON` gebonden aan de app-handtekening (`android:apk-key-hash:…`), niet aan de website. |
-| `capacitor-webauthn` 8.x | Eigen API (`startRegistration`/`startAuthentication`); iOS 16+, Android 9+ (API 28+). |
-| Capawesome Passkeys | Ondersteunt Android/iOS/web; Capacitor-8-compatibiliteit niet bevestigd. |
-Alle drie zijn externe plug-ins: beoordeel onderhoud, licentie en supply-chain-risico vóór gebruik, en pin versies.
+## Gebouwde stroom (achter de functievlag `NATIVE_PASSKEYS_ENABLED=true`, standaard `false`)
+1. `POST /auth/login` (e-mailcode, eenmalig, rate-limited). Voor een account met `mfaEnabled`:
+   - vlag uit → ongewijzigd `403 mfa-not-supported` (code verbruikt, geen sessie);
+   - vlag aan, geen passkey geregistreerd → `403 mfa-enrollment-required` (registreren blijft webapp-only: dat vereist een recente MFA-verificatie);
+   - vlag aan, passkey aanwezig → `200 { mfaRequired: true, method: "passkey", pendingToken, expiresAt }`: een **pending-login** (sessie met `mfaAt = null`, 10 min). Per gebruiker bestaat maximaal één wachtende app-login; wachtende weblogins blijven onaangeroerd.
+2. `POST /auth/mfa/passkey/options` (Bearer = pendingToken) → WebAuthn-opties; challenge 5 min, eenmalig, per gebruiker; ≤10 aanvragen per 15 min.
+3. De app voert de native passkey-ceremonie uit (`mobile/src/lib/passkeys.ts`, interface `PasskeyProvider`).
+4. `POST /auth/mfa/passkey/verify` `{ response }` → de server verifieert met `@simplewebauthn/server`: RP ID, toegestane origins, challenge, `userVerification: required`, handtekening en tellerregressie.
+   Alleen bij succes: pending-sessie vervalt, **nieuw** token (sessierotatie, geen sessiefixatie), `mfaAt` = nu, auditregel `MFA_VERIFIED`. Een passkey van een ander account wordt geweigerd.
+5. `POST /auth/mfa/cancel` ruimt een pending-login direct op (geannuleerde ceremonie; idempotent).
+6. Herverificatie voor gevoelige beheeracties van een ingelogde MFA-gebruiker: `POST /auth/reauth/passkey/options|verify` (roteert de sessie).
+7. Misbruikbeperking: ≥5 mislukte verificaties binnen 15 min → pending-login verwijderd en het account 15 min vergrendeld voor nieuwe app-logins (in-memory, één serverinstantie; TOTP van de webmin heeft zijn eigen persistente lockout).
+8. `/meta` meldt `nativePasskeys` zodat de app weet of de server de functie aan heeft.
 
-## Vereiste server- en platformwijzigingen
-1. **RP ID** blijft de registreerbare domeinnaam van `APP_BASE_URL` (nu `ringapeldoorn.nl`); de app gebruikt dezelfde RP ID zodat bestaande passkeys uit de webapp ook in de app werken.
-2. **iOS – Associated Domains:** naast `applinks:` ook `webcredentials:ringapeldoorn.nl` in `App.entitlements`; `apple-app-site-association` krijgt `"webcredentials": { "apps": ["<TEAM-ID>.<bundle-id>"] }` (nu alleen `applinks`).
-3. **Android – Digital Asset Links:** `assetlinks.json` krijgt naast `delegate_permission/common.handle_all_urls` ook `delegate_permission/common.get_login_creds` voor hetzelfde pakket en dezelfde vingerafdruk(ken).
-4. **Server – toegestane origins:** `src/lib/webauthn.ts` accepteert nu alleen `APP_BASE_URL` als `expectedOrigin`. Voor native moet een **expliciete allowlist** komen: `https://<host>` (iOS) en `android:apk-key-hash:<base64url van de SHA-256 van het app-ondertekeningscertificaat>` (Android, uit `ANDROID_SHA256_FINGERPRINTS`). Geen wildcard; elke andere origin blijft geweigerd.
-5. **Mobiele auth-flow (nieuw, MFA-compatibel):** `POST /auth/login` geeft voor een MFA-account **geen** token maar een kortlevende, enkelvoudig bruikbare *pending-login* (server-side sessie met `mfaAt = null`, alleen geldig voor `/auth/mfa/*`). Daarna `POST /auth/mfa/passkey/options` → native ceremonie → `POST /auth/mfa/passkey/verify`, dat pas bij een geldige assertion `promoteSessionToMfaVerified` uitvoert en dan het bearer-token uitgeeft. Hergebruik `verifyPasskeyAuthentication` en de bestaande challenge-opslag (5 min, enkelvoudig, per gebruiker). Een pending-sessie mag nooit andere routes bereiken (de huidige `authenticate()` blokkeert dat al).
-6. **Passkey registreren in de app** blijft webapp-only totdat de bovenstaande flow bewezen is (registratie vereist een recente MFA-verificatie).
-7. **Beheerdersaccount (webmin)** blijft webapp-only (TOTP).
+### Toegestane origins (`src/lib/webauthn.ts`, `allowedOrigins`)
+- **Webapp:** uitsluitend `APP_BASE_URL` (bijv. `https://ringapeldoorn.nl`). RP ID = hostnaam daarvan.
+- **Native route:** `APP_BASE_URL` (iOS-app-passkeys hebben origin `https://<RP ID>`) **plus** per vingerafdruk in `ANDROID_SHA256_FINGERPRINTS` de origin `android:apk-key-hash:<base64url(SHA-256)>`. Geen wildcard; ongeldige vingerafdrukken worden genegeerd; zonder configuratie is er geen Android-origin. Een Android-origin wordt in de webapp-verificatie nooit geaccepteerd.
+- `/.well-known/apple-app-site-association` krijgt (alleen met `APPLE_APP_ID`) `webcredentials.apps`; `assetlinks.json` krijgt (alleen met vingerafdrukken) ook `delegate_permission/common.get_login_creds`. Zonder configuratie blijven beide leeg: er wordt niets verzonnen.
 
-## Benodigde tests (alle moeten slagen vóór release)
-- Unit/integratie (CI, geen toestel): pending-login kan geen enkele andere route bereiken; verify zonder geldige assertion geeft geen token; hergebruikte of verlopen challenge faalt; verkeerde `origin`/RP ID faalt; allowlist accepteert precies de geconfigureerde web-/iOS-/Android-origins; teller-regressie faalt; MFA-account kan nooit een token krijgen via de code-login; rate limits; `mfaAt` wordt alleen na verify gezet.
-- Contract: `shared/api-types.ts` uitgebreid + contracttest.
-- Native (handmatig, fysiek toestel): passkey aanmaken in de webapp en inloggen in de iOS-app; idem Android (Google Password Manager / andere provider); gedrag zonder biometrie/schermvergrendeling; gedrag na herinstallatie; Associated Domains/Asset Links geverifieerd (`adb shell pm get-app-links`, Apple AASA-validator); geannuleerde ceremonie; meerdere passkeys.
-- Beveiligingsreview van de nieuwe routes (ringisolatie raakt dit niet, maar identiteitsflow wel).
+### Client (`mobile/src`)
+- `lib/passkeys.ts`: `PasskeyProvider`-interface, registratiepunt (`registerPasskeyProvider`) en `passkeysUsable(serverEnabled, limitedBuild)`. **Er is geen provider geregistreerd.**
+- `lib/buildProfile.ts`: `passkeys` is `false` in het profiel `personal-team` (de gratis Apple Personal Team heeft geen Associated Domains en dus geen `webcredentials`).
+- `Login.tsx`: bij `pendingToken` volgt de passkey-stap; zonder provider/zonder beschikbaarheid wordt de pending-login opgeruimd en de veilige melding getoond; geannuleerd → opnieuw proberen of annuleren; fout/vergrendeling netjes getoond.
+- Sessietokens staan uitsluitend in Keychain/Keystore (`lib/storage.ts`); een pendingToken blijft alleen in het geheugen.
 
-## Besluit
-Implementeer pas als (a) een gekozen plug-in op beide platformen is geverifieerd op fysieke toestellen, (b) de bovenstaande server-tests groen zijn en (c) de eigenaar de definitieve app-ID's, Team-ID en vingerafdrukken heeft aangeleverd.
+## Beoordeling plug-ins voor Capacitor 8 (gecontroleerd via het npm-register; niets geïnstalleerd)
+| Pakket | Versie / laatst bijgewerkt | Licentie | Opmerking |
+|---|---|---|---|
+| `@capgo/capacitor-passkey` | 8.5.8 · 2026-10-26 (aangemaakt 2026-04) | MPL-2.0 | Peer `@capacitor/core >=8`; geen runtime-dependencies, geen install-scripts; shimt `navigator.credentials.create/get` naar iOS `ASAuthorization` en Android Credential Manager. Twee maintainers (Capgo). **Voorkeur**, na toesteltest. |
+| `@capawesome/capacitor-passkeys` | 0.1.2 · 2026-09-02 | MIT | Jong (0.x), peer `>=8`, geen dependencies/install-scripts; Capawesome-team. Alternatief; API nog niet stabiel. |
+| `capacitor-webauthn` | 8.0.0 · 2026-03-24 | MIT | Eén maintainer, GitLab; iOS 16+/Android 9+. Minste voorkeur. |
+Bij de keuze: versie vastpinnen (geen `^`), lockfile reviewen, `npm audit`, en de broncode van de native delen (Swift/Kotlin) doorlopen vóór opname. Android-origin hangt af van de app-handtekening, niet van de website — zie de vingerafdrukken hierboven.
+
+## Wat nog moet gebeuren vóór activering (externe configuratie en toesteltests)
+1. **Eigenaar levert aan:** definitieve app-ID, Apple Team-ID (`APPLE_APP_ID = <TEAM-ID>.<bundle-id>`), en de SHA-256-vingerafdruk(ken) van het Android-**release**-ondertekeningscertificaat (Play Console → App-integriteit; ook de Play-app-signing-sleutel) in `ANDROID_SHA256_FINGERPRINTS`.
+2. **Apple Developer (betaald programma):** capability *Associated Domains* met `webcredentials:ringapeldoorn.nl` naast `applinks:`. Pas dan `ios/App/App/App.entitlements` aan (productie-entitlements blijven verder ongewijzigd); **niet** in `Debug-PersonalTeam`. Draai `npm run check:native-config` en `scripts/verify-ios-configs.sh`.
+3. **Plug-in kiezen en koppelen:** adapter die `PasskeyProvider` implementeert en zich registreert (alleen in builds met `passkeys`-capability), `cap sync`, iOS-simulator- en Android-debug-build.
+4. **Server:** `NATIVE_PASSKEYS_ENABLED=true` pas ná de toesteltests; verhoog daarbij `MIN_APP_VERSION` (het antwoord van `/auth/login` verandert voor MFA-accounts van `403` naar `200 { mfaRequired }`; oudere appversies kennen dat niet).
+5. **Toesteltests (handmatig, nog niet gedaan):** passkey aanmaken in de webapp en inloggen in de iOS-app; idem Android (Google Password Manager of andere provider); geannuleerde ceremonie; geen biometrie/schermvergrendeling; herinstallatie; meerdere passkeys; verlopen pending-login; `adb shell pm get-app-links` / Apple AASA-validator; Associated Domains/Asset Links geverifieerd.
+6. Passkeys **registreren** in de app blijft webapp-only totdat bovenstaande bewezen is.
+
+## Tests (CI, geen toestel) — `tests/nativeMfa.test.ts` (echte WebAuthn-verificatie met een software-authenticator, geen mocks)
+Vlag uit; geen passkey; pending-login werkt nergens als sessie (o.a. `/me`, ringroutes, ontheffingen, admin); eenmalige code; geldige assertion (rotatie, teller, audit); ontbrekende/verkeerde/hergebruikte challenge; replay; verkeerde origin en RP ID;
+Android-origin alleen native en alleen geconfigureerd; ontbrekende user verification; tellerregressie; verkeerd ceremonietype; passkey van ander account; misvormde assertion; annuleren; verlopen pending-login; gedeactiveerd account; webmin/web-pending/niet-MFA op de native route;
+vergrendeling na mislukte pogingen; rate limiting; herverificatie met passkey. Client: `mobile/tests/passkeys.test.tsx`.

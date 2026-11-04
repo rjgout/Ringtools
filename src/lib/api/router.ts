@@ -12,6 +12,8 @@ import * as setup from "./setup";
 import * as drafts from "./drafts";
 import * as ontheffingen from "./ontheffingen";
 import * as invitations from "./invitations";
+import * as nativeMfa from "./nativeMfa";
+import { env } from "../env";
 
 /** Verhoog bij een niet-achterwaarts-compatibele wijziging; de app toont dan een update-melding. */
 export const API_VERSION = 1;
@@ -63,11 +65,9 @@ publicRoute("POST", "/auth/login", async ({ body }) => {
   if (!user) throw invalid;
   if (user.role === "ADMIN") throw new ApiError(403, "Het beheerdersaccount gebruikt de webapp.", "admin-web-only");
   if (mfaRequired(user)) {
-    throw new ApiError(
-      403,
-      "Voor jouw account is passkey-verificatie ingeschakeld. Inloggen met een passkey wordt in de app nog niet ondersteund. Log voorlopig in via de webapp; je beveiliging blijft ongewijzigd.",
-      "mfa-not-supported"
-    );
+    // Verplichte MFA: nooit een volledige sessie op de code alleen. Met native passkeys (functievlag) volgt een beperkte pending-login;
+    // zonder de vlag de oude, veilige weigering. De code is in beide gevallen al verbruikt.
+    return nativeMfa.beginMfaLogin(user);
   }
   const device = str(body.deviceName).slice(0, 60).replace(/[^\p{L}\p{N} ._-]/gu, "");
   const session = await createVerifiedSession(user.id, `Ringtools-app${device ? ` (${device})` : ""}`);
@@ -90,7 +90,7 @@ publicRoute("POST", "/invitations/preview", async ({ request, body }) => invitat
 publicRoute("POST", "/invitations/activate", async ({ request, body }) => invitations.activateInvitationApi(body, clientKeyOf(request)));
 
 // Versie en capaciteiten van de API; de app controleert hiermee of ze nog compatibel is.
-publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION }));
+publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION, nativePasskeys: env.nativePasskeysEnabled }));
 
 // Het pushtoken is een geheim van het toestel; wie het kent mag het afmelden. Zo kan de app het
 // ook afmelden als de sessie al is verlopen of ingetrokken (401).
@@ -106,6 +106,21 @@ publicRoute("GET", "/open/:token", async ({ params }) => {
 });
 
 // ---- Sessie ----
+
+// Native passkeys (C5.2): de pending-login staat in de Authorization-header en werkt uitsluitend op deze drie routes.
+const pendingTokenOf = (request: Request) => {
+  const token = /^Bearer\s+([A-Za-z0-9_-]{20,200})$/.exec(request.headers.get("authorization") || "")?.[1];
+  if (!token) throw new ApiError(401, "Je inlogsessie is verlopen. Log opnieuw in.", "unauthenticated");
+  return token;
+};
+publicRoute("POST", "/auth/mfa/passkey/options", async ({ request }) => nativeMfa.loginPasskeyOptions(pendingTokenOf(request)));
+publicRoute("POST", "/auth/mfa/passkey/verify", async ({ request, body }) => {
+  const result = await nativeMfa.loginPasskeyVerify(pendingTokenOf(request), body);
+  return { token: result.token, expiresAt: result.expiresAt, ...(await svc.getMe(result.userId)) };
+});
+publicRoute("POST", "/auth/mfa/cancel", async ({ request }) => nativeMfa.cancelPendingLogin(pendingTokenOf(request)));
+authedRoute("POST", "/auth/reauth/passkey/options", async ({ auth }) => nativeMfa.reauthPasskeyOptions(auth));
+authedRoute("POST", "/auth/reauth/passkey/verify", async ({ auth, body }) => nativeMfa.reauthPasskeyVerify(auth, body));
 
 authedRoute("POST", "/auth/refresh", async ({ auth }) => {
   const result = await rotateSessionIfDue(auth.token);

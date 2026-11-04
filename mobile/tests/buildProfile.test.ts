@@ -6,10 +6,10 @@ describe("buildprofiel", () => {
     for (const win of [{}, { __RINGTOOLS_BUILD__: {} }, { __RINGTOOLS_BUILD__: { profile: "standard" } }, { __RINGTOOLS_BUILD__: { profile: 42 } }, { __RINGTOOLS_BUILD__: { profile: "PERSONAL-TEAM" } }]) {
       expect(getBuildProfile(win)).toBe("standard");
     }
-    expect(nativeCapabilities("standard")).toEqual({ nativePush: true, universalLinks: true, limited: false });
+    expect(nativeCapabilities("standard")).toEqual({ nativePush: true, universalLinks: true, passkeys: true, limited: false });
   });
   it("'personal-team' schakelt native push en universele links uit", () => {
     expect(getBuildProfile({ __RINGTOOLS_BUILD__: { profile: "personal-team" } })).toBe("personal-team");
-    expect(nativeCapabilities("personal-team")).toEqual({ nativePush: false, universalLinks: false, limited: true });
+    expect(nativeCapabilities("personal-team")).toEqual({ nativePush: false, universalLinks: false, passkeys: false, limited: true });
   });
 });
