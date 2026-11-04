@@ -55,6 +55,8 @@ ok(personalId && personalId !== idDefault, "PersonalTeam.xcconfig: gebruik een a
 ok(!/^(aps-environment|applinks)/m.test(personalXc), "PersonalTeam.xcconfig mag geen push/associated-domains-configuratie bevatten.");
 const scheme = read("ios/App/App.xcodeproj/xcshareddata/xcschemes/App-PersonalTeam.xcscheme");
 ok(/<LaunchAction\s+buildConfiguration = "Debug-PersonalTeam"/.test(scheme) && /<ArchiveAction\s+buildConfiguration = "Release"/.test(scheme), "Scheme App-PersonalTeam: Run moet Debug-PersonalTeam en Archive moet Release gebruiken.");
+const stdScheme = read("ios/App/App.xcodeproj/xcshareddata/xcschemes/App.xcscheme");
+ok(/<LaunchAction\s+buildConfiguration = "Debug"/.test(stdScheme) && /<ArchiveAction\s+buildConfiguration = "Release"/.test(stdScheme) && !/Debug-PersonalTeam/.test(stdScheme), "Scheme App moet Debug (Run) en Release (Archive) gebruiken en mag niets met PersonalTeam te maken hebben.");
 ok(/Local\.xcconfig/.test(read(".gitignore")), "mobile/.gitignore moet ios/Local.xcconfig negeren.");
 ok(/profile:"standard"/.test(read("public/ringtools-build.js")), "public/ringtools-build.js moet het standaardprofiel zetten.");
 ok(/script src="\.\/ringtools-build\.js"/.test(read("index.html")), "index.html moet ringtools-build.js laden.");
