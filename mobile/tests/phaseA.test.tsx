@@ -99,9 +99,12 @@ describe("C1: vrijgave en gezamenlijk akkoord", () => {
     expect(submit.disabled).toBe(true);
     fireEvent.click(screen.getByLabelText(/negatieve reactie is in de vergadering afgehandeld/));
     fireEvent.change(screen.getByLabelText(/Hoe is dit afgehandeld/), { target: { value: "Zorg besproken en weggenomen." } });
+    // het besluit is van de presidiumleden: zonder aangegeven deelnemers (een secretaris legt alleen vast) blijft vastleggen geblokkeerd
+    expect(submit.disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText("President"));
     expect(submit.disabled).toBe(false);
     fireEvent.click(submit);
-    await waitFor(() => expect(api.groupDecision).toHaveBeenCalledWith("c1", expect.objectContaining({ stage: "PRESIDIUM", agreed: true, releaseNow: false, resolveNegative: true })));
+    await waitFor(() => expect(api.groupDecision).toHaveBeenCalledWith("c1", expect.objectContaining({ stage: "PRESIDIUM", agreed: true, releaseNow: false, resolveNegative: true, presentUserIds: ["p1"] })));
   });
 
   it("hoge raad: vereist een voorzitter uit het ringpresidium en aanwezigen; afwezigen worden apart doorgegeven", async () => {

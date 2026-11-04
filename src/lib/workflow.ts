@@ -536,6 +536,24 @@ export async function registerGroupDecision(input: GroupDecisionInput): Promise<
       if ([...presentUserIds, ...absentUserIds].some((id) => !eligibleIds.has(id))) {
         throw new WorkflowError("Aanwezigen en afwezigen moeten deelnemers van de hogeraadsronde van dit voorstel zijn.");
       }
+    } else {
+      // Een gezamenlijk presidiumbesluit is het besluit van de presidiumleden zelf. De registrerende staf (ook een secretaris of administrateur)
+      // legt uitsluitend vast wat is besloten: minstens één actief presidiumlid moet daadwerkelijk aan het besluit hebben deelgenomen en wordt vastgelegd.
+      const members = await tx.ringMembership.findMany({
+        where: { ringId: calling.ringId, role: "RINGPRESIDIUM", active: true, user: { active: true } },
+        select: { userId: true },
+      });
+      const available = members.map((m) => m.userId);
+      if (available.length === 0) {
+        throw new WorkflowError("Er is geen actief lid van het ringpresidium dat dit besluit kan hebben genomen. Een gezamenlijk presidiumbesluit kan dan niet worden vastgelegd.");
+      }
+      presentUserIds = [...new Set(input.presentUserIds ?? [])];
+      if (presentUserIds.length === 0) {
+        throw new WorkflowError("Geef aan welke leden van het ringpresidium het besluit hebben genomen. Een secretaris of administrateur legt alleen een werkelijk genomen besluit vast en neemt het niet zelf.");
+      }
+      if (presentUserIds.some((id) => !available.includes(id))) {
+        throw new WorkflowError("De leden die het besluit hebben genomen moeten actieve leden van het ringpresidium van deze ring zijn.");
+      }
     }
 
     const negatives = await tx.vote.count({ where: { callingId: calling.id, stage: input.stage, support: false } });

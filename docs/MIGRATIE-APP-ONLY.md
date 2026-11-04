@@ -60,7 +60,7 @@ coördineren; **LCR blijft de officiële bron**, Ringtools houdt geen blijvend p
   meldingen. Idempotent en race-vrij (rij-lock): exact één ronde, één audit-regel (`CallingAudit`), één uitnodiging per persoon.
 - **Gezamenlijk akkoord** (`registerGroupDecision`, `POST /callings/:id/group-decision`) voor presidium én hoge raad. Het is een vastlegging van een
   daadwerkelijk genomen besluit (`GroupDecision`: datum, registrant, tijdstip, expliciete verklaring, toelichting). Er worden **nooit** reacties namens
-  anderen aangemaakt; secretaris/administrateur registreren namens het presidium en tellen niet als ondersteuner. Hoge raad: verplichte presiderende
+  anderen aangemaakt; secretaris/administrateur registreren alleen een werkelijk genomen besluit en tellen niet als ondersteuner: het presidiumbesluit vereist minstens één actief presidiumlid dat deelnam en dat wordt vastgelegd (zie "C4-correcties"). Hoge raad: verplichte presiderende
   persoon uit het ringpresidium, minstens één aanwezige, aanwezigen/afwezigen moeten deelnemers van de ronde zijn, afwezig ≠ ondersteunend. Er is
   bewust géén quorum- of meerderheidsregel. Bestaande negatieve reacties blijven bewaard; registreren vereist een expliciete, gemotiveerde afhandeling.
 - **Datamodel (additief, migratie `20261107100000_c1_workflow_vrijgave`):** enum-waarde `PRESIDIUM_APPROVED`, enum `DecisionMethod`, kolommen op
@@ -162,21 +162,24 @@ Zelfstandige module (`src/lib/ontheffingen.ts`, `src/lib/api/ontheffingen.ts`, a
   `releaseOntheffingToHogeraad` de vrijgave server-side zolang `informedAt` ontbreekt (`releaseBlockers`, dezelfde controle in de weergave `blockers` van de app). Niet-van-toepassing-raadgevers en andere functies hebben geen extra blokkade.
 - **Gekoppeld hogeraadslid blijft uitgesloten** van dossier, deelnemerslijsten, aantallen, meldingen, push en deeplinks, ook ná de kennisgeving (getest).
 - **Gezamenlijk presidiumbesluit**: alleen mogelijk met minstens één actief, niet-betrokken presidiumlid; de registrerende staf (ook secretaris/administrateur) moet de presidiumleden noemen die het besluit namen (`presentUserIds`,
-  gevalideerd, opgeslagen). Een secretaris legt dus vast wat besloten is en neemt het niet zelf. Let op: voor roepingsvoorstellen (C1, `registerGroupDecision`) is deze aanscherping nog niet doorgevoerd.
+  gevalideerd, opgeslagen). Een secretaris legt dus vast wat besloten is en neemt het niet zelf.
+  **Dezelfde regel geldt nu ook voor roepingsvoorstellen (C1, `registerGroupDecision`, fase PRESIDIUM)**: `presentUserIds` is verplicht (actieve leden van het ringpresidium van déze ring), wordt opgeslagen in `GroupDecision.presentUserIds`
+  en zonder actief presidiumlid kan geen gezamenlijk presidiumbesluit worden vastgelegd. De hogeraadsfase is ongewijzigd. Beide vormen van ondersteuning blijven bestaan: individuele reacties in de app én het gezamenlijk besluit.
 - **Dankbetuiging**: `OntheffingPerson.thanksOffered` (ja/nee, verplicht bij de bekendmaking) i.p.v. een tijdstip van daadwerkelijk uitgesproken dank.
 - **Openstaande dossiers**: `lastActivityAt` (inhoudelijke activiteit). Na 30 dagen zonder activiteit een generieke herinnering aan het ringpresidium (eenmalig), na 90 dagen een markering "beoordeling nodig" (+ melding, zichtbaar in lijst, dossier en aantallen);
   alleen een expliciete beoordeling door ringstaf (`POST /ontheffingen/:id/review` = aanhouden, of verwijderen) lost dat op. **Lopende dossiers worden nooit automatisch verwijderd** zolang er geen vastgesteld bewaarbeleid is. Alleen verwerkte dossiers
   (30 dagen na verwerking) en niet-ingediende concepten (30 dagen na laatste wijziging, zoals bij roepingsconcepten) worden automatisch opgeruimd.
 - **E-mail centraal uitgesloten**: `notify()` negeert `buildEmail` zodra `ontheffingId` is meegegeven of het type met `CONFIDENTIAL_` begint, ongeacht de aanroeper (getest).
-- **Migratie** `20261112100000_c4b_correcties` (additief + opschoning van een nog ongebruikt veld): meldingstype `CONFIDENTIAL_REMINDER`, kolommen `lastActivityAt/reminderSentAt/reviewFlaggedAt` op `Ontheffing`, `OntheffingPerson.thanksOffered`
-  (vervangt het ongebruikte `thankedAt`, waarde wordt overgenomen).
+- **Migratie** `20261112100000_c4b_correcties` is **strikt additief**: meldingstype `CONFIDENTIAL_REMINDER`, kolommen `lastActivityAt/reminderSentAt/reviewFlaggedAt` op `Ontheffing` en `OntheffingPerson.thanksOffered`
+  (waarde uit `thankedAt` overgenomen). `thankedAt` blijft bestaan als verouderd, ongebruikt veld en wordt pas in een latere, aparte migratie opgeruimd. De C4-migraties zijn nergens buiten de testomgeving toegepast: `main` bevat ze niet
+  en de image (dus `migrate deploy` op de NAS) wordt alleen vanaf `main` gebouwd; ze zijn getest op een verse database (volledige keten, geen schema-afwijking, geen `DROP`/`DELETE`/`TRUNCATE`).
 
 ### Open vragen voor de eigenaar (niet zelf beslist)
 1. **Deelname van een betrokken hogeraadslid na kennisgeving.** Hoe neemt de betrokkene daarna deel aan de eigen behandeling, of wordt hij daarvan uitgesloten? Er is geen kerkelijke regel verzonnen: een gekoppeld account blijft
    voorlopig *altijd* uitgesloten en zonder toegang (veiligste uitgangspunt). Het register van de kennisgeving (`informedAt`) staat klaar, maar geeft geen toegang.
 2. ~~Persoonlijk informeren vóór vrijgave bij een hogeraadslid~~ — door de eigenaar vastgesteld en geïmplementeerd.
 3. ~~Dankbetuiging~~ — vastgesteld: registreren of gelegenheid is geboden; verwerken vereist de bekendmaking.
-4. Wat als het hele ringpresidium betrokkene is (bijv. ontheffing van alle drie)? Er blijven dan geen presidiumdeelnemers over; alleen een gezamenlijk besluit door secretaris/administrateur kan dan worden vastgelegd.
+4. Wat als het hele ringpresidium betrokkene is (bijv. ontheffing van alle drie)? Er blijven dan geen presidiumdeelnemers over. Ringtools legt dan **geen** presidiumbesluit vast: ook een secretaris of administrateur kan het niet zelfstandig als presidiumbesluit vaststellen (en een individuele ronde heeft geen deelnemers, dus geen goedkeuring). Hoe zo'n geval wél moet verlopen is een open vraag voor de eigenaar; er is geen oplossing verzonnen.
 5. Definitief bewaarbeleid voor lopende dossiers (nu: herinnering na 30 dagen, beoordeling na 90 dagen, nooit automatisch verwijderen).
 6. Geldt de wijk/gemeente van herkomst ook voor ontheffingen van ringfuncties zonder wijkbinding?
 

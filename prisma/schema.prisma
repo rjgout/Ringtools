@@ -774,6 +774,9 @@ model OntheffingPerson {
   announcedById String?
   // Bij de bekendmaking vastgelegd: is gelegenheid tot dankbetuiging geboden? (niet: is er daadwerkelijk dank uitgesproken). Leeg tot de bekendmaking.
   thanksOffered Boolean?
+  // VEROUDERD en niet meer gebruikt door de code (vervangen door thanksOffered). Bewust niet verwijderd zodat migraties strikt additief blijven;
+  // wordt in een latere, aparte migratie opgeruimd zodra vaststaat dat nergens meer gegevens in staan.
+  thankedAt     DateTime?
   processedAt   DateTime?
   processedById String?
   createdAt     DateTime  @default(now())

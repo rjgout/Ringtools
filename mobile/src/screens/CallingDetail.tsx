@@ -250,18 +250,24 @@ function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
 
   if (!open) return <button className="btn btn-ghost" onClick={() => setOpen(true)}>Gezamenlijk akkoord {label} registreren (vergadering)</button>;
   const members = round?.participants ?? [];
-  const valid = agreed && decidedOn && (!hasNegative || (resolveNegative && resolutionNote.trim().length >= 10)) && (stage === "PRESIDIUM" || (presiding && present.length > 0));
+  const valid = agreed && decidedOn && (!hasNegative || (resolveNegative && resolutionNote.trim().length >= 10)) && present.length > 0 && (stage === "PRESIDIUM" || !!presiding);
   return (
     <form className="glass card stack" aria-label={`Gezamenlijk akkoord ${label}`} onSubmit={(e) => {
       e.preventDefault();
       onSubmit({
         decidedOn, agreed, note: note || undefined, resolveNegative: hasNegative ? resolveNegative : undefined, resolutionNote: hasNegative ? resolutionNote : undefined,
-        ...(stage === "HOGERAAD" ? { presidingUserId: presiding, presentUserIds: present, absentUserIds: absent } : { releaseNow }),
+        ...(stage === "HOGERAAD" ? { presidingUserId: presiding, presentUserIds: present, absentUserIds: absent } : { presentUserIds: present, releaseNow }),
       });
     }}>
       <strong>Gezamenlijk akkoord {label}</strong>
       <span className="muted">Registreer alleen een besluit dat daadwerkelijk in een vergadering is genomen. Er worden geen reacties namens anderen vastgelegd; afwezigheid geldt nooit als ondersteuning.</span>
       <div><label htmlFor={`gd-date-${stage}`}>Datum van het besluit</label><input id={`gd-date-${stage}`} type="date" value={decidedOn} onChange={(e) => setDecidedOn(e.target.value)} required /></div>
+      {stage === "PRESIDIUM" && (
+        <fieldset className="stack"><legend>Leden van het ringpresidium die het besluit hebben genomen</legend>
+          {detail.assignableUsers.filter((u) => u.role === "RINGPRESIDIUM").map((u) => <label key={u.id} className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={present.includes(u.id)} onChange={() => toggle(present, setPresent, u.id)} /> {u.name}</label>)}
+          <span className="muted">Een secretaris of administrateur legt alleen vast wat het presidium heeft besloten en neemt dit besluit niet zelf.</span>
+        </fieldset>
+      )}
       {stage === "HOGERAAD" && (
         <>
           <div>

@@ -1,4 +1,4 @@
--- C4-correcties. De ontheffingstabellen zijn nog niet in gebruik genomen; gegevens blijven desondanks behouden.
+-- C4-correcties. Strikt additief: er wordt niets verwijderd of overschreven.
 -- AlterEnum
 ALTER TYPE "NotificationType" ADD VALUE 'CONFIDENTIAL_REMINDER';
 
@@ -9,6 +9,6 @@ ADD COLUMN     "reviewFlaggedAt" TIMESTAMP(3);
 UPDATE "Ontheffing" SET "lastActivityAt" = "updatedAt";
 
 -- Dankbetuiging: vastleggen of de gelegenheid is geboden (niet of er daadwerkelijk dank is uitgesproken).
+-- De bestaande kolom "thankedAt" blijft ongewijzigd bestaan (verouderd, niet meer gebruikt); de waarde wordt overgenomen.
 ALTER TABLE "OntheffingPerson" ADD COLUMN "thanksOffered" BOOLEAN;
 UPDATE "OntheffingPerson" SET "thanksOffered" = ("thankedAt" IS NOT NULL) WHERE "announcedAt" IS NOT NULL;
-ALTER TABLE "OntheffingPerson" DROP COLUMN "thankedAt";

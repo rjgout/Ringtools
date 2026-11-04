@@ -512,7 +512,7 @@ describe("C1-workflow blijft intact na indienen", () => {
     const empty = await setup();
     await prisma.ringMembership.updateMany({ where: { ringId: empty.ring.id, role: "HOGERAAD" }, data: { active: false } });
     const b = (await submit((await draft(empty, base(empty))).body.id, empty.token)).body.id as string;
-    await registerGroupDecision({ callingId: b, actorId: empty.manager.id, stage: "PRESIDIUM", decidedOn: new Date().toISOString().slice(0, 10), agreed: true });
+    await registerGroupDecision({ callingId: b, actorId: empty.manager.id, stage: "PRESIDIUM", decidedOn: new Date().toISOString().slice(0, 10), agreed: true, presentUserIds: [empty.president.id] });
     expect((await prisma.calling.findUniqueOrThrow({ where: { id: b } })).status).toBe("PRESIDIUM_APPROVED");
     await expect(releaseToHogeraad({ callingId: b, actorId: empty.manager.id })).rejects.toThrow(/geen actieve hogeraadsleden/);
     expect((await prisma.calling.findUniqueOrThrow({ where: { id: b } })).status).toBe("PRESIDIUM_APPROVED");

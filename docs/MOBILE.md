@@ -185,3 +185,4 @@ Alle routes onder `/api/mobile/v1`, bearer-sessie met MFA-gate; webmin krijgt ov
 - Dashboard bevat `ontheffingen: { needsMyVote, open }` met dezelfde zichtbaarheid; meldingen dragen `ontheffingId` (geen `callingId`) en zijn generiek. Deeplink: alleen het interne pad `/ontheffingen/<id>` (pushtik in de app),
   bewust geen universal link/app link en geen e-maillink (`apple-app-site-association` ongewijzigd).
 
+`POST /callings/:id/group-decision` (fase `PRESIDIUM`): `presentUserIds` (leden van het ringpresidium die het besluit namen) is verplicht; secretaris/administrateur registreren alleen.
