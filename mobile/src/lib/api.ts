@@ -1,4 +1,15 @@
-import type { AppNotification, CallingDetail, CallingItem, Dashboard, Me } from "./types";
+import type {
+  ApiMeta,
+  AppNotification,
+  CallingDetail,
+  CallingItem,
+  Dashboard,
+  DeviceInfo,
+  LoginResult,
+  Me,
+  SessionInfo,
+  TaskKey,
+} from "@shared/api-types";
 
 export class ApiRequestError extends Error {
   constructor(
@@ -8,17 +19,20 @@ export class ApiRequestError extends Error {
   ) {
     super(message);
   }
+  get isNetwork() {
+    return this.status === 0;
+  }
 }
 
 export type ApiClientOptions = {
   baseUrl: string;
   getToken: () => string | null;
-  /** Wordt aangeroepen als de server 401 teruggeeft (sessie verlopen of ingetrokken). */
+  /** Aangeroepen bij 401 (sessie verlopen, ingetrokken of gebruiker gedeactiveerd). */
   onUnauthorized?: () => void;
   fetchImpl?: typeof fetch;
 };
 
-/** Dunne client voor de JSON-API van Ringtools (/api/v1). Alle teksten van de server zijn al Nederlands. */
+/** Dunne client voor /api/mobile/v1. Het sessietoken gaat alleen in de Authorization-header, nooit in een URL. */
 export class ApiClient {
   constructor(private opts: ApiClientOptions) {}
 
@@ -26,7 +40,7 @@ export class ApiClient {
     const token = tokenOverride === undefined ? this.opts.getToken() : tokenOverride;
     let res: Response;
     try {
-      res = await (this.opts.fetchImpl ?? fetch)(`${this.opts.baseUrl}/api/v1${path}`, {
+      res = await (this.opts.fetchImpl ?? fetch)(`${this.opts.baseUrl}${path}`, {
         method,
         headers: {
           Accept: "application/json",
@@ -51,18 +65,17 @@ export class ApiClient {
     return data as T;
   }
 
+  meta() {
+    return this.request<ApiMeta>("GET", "/meta", undefined, null);
+  }
   requestCode(email: string) {
     return this.request<{ ok: boolean; message: string }>("POST", "/auth/request-code", { email }, null);
   }
   login(email: string, code: string, deviceName: string) {
-    return this.request<Me & { token: string; expiresAt: string }>("POST", "/auth/login", { email, code, deviceName }, null);
+    return this.request<LoginResult>("POST", "/auth/login", { email, code, deviceName }, null);
   }
   refresh() {
     return this.request<{ rotated: boolean; token?: string; expiresAt?: string }>("POST", "/auth/refresh", {});
-  }
-  /** Meldt een push-token af zonder sessie (het token zelf is het geheim); werkt dus ook na een 401. */
-  unregisterDevice(token: string) {
-    return this.request<{ ok: boolean }>("POST", "/devices/unregister", { token }, null);
   }
   logout(pushToken?: string) {
     return this.request<{ ok: boolean }>("POST", "/auth/logout", { pushToken });
@@ -79,46 +92,38 @@ export class ApiClient {
   calling(id: string) {
     return this.request<CallingDetail>("GET", `/callings/${encodeURIComponent(id)}`);
   }
-  createCalling(ringId: string, personName: string, functionTitle: string) {
-    return this.request<{ id: string }>("POST", `/callings?ring=${encodeURIComponent(ringId)}`, { personName, functionTitle });
-  }
   vote(id: string, support: boolean) {
     return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/vote`, { support });
   }
-  remind(id: string, userId?: string) {
-    return this.request<{ sent: number; skippedRecent: number }>("POST", `/callings/${encodeURIComponent(id)}/remind`, { userId });
-  }
-  reinvite(id: string, userId: string) {
-    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/reinvite`, { userId });
-  }
-  removeParticipant(id: string, userId: string) {
-    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/remove-participant`, { userId });
-  }
-  deleteCalling(id: string) {
-    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/delete`, { confirmed: true });
-  }
-  process(id: string) {
-    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/process`, {});
-  }
-  assignTask(id: string, task: string, assigneeId: string | null) {
-    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/tasks/${task.toLowerCase()}/assign`, { assigneeId });
-  }
-  completeTask(id: string, task: string, ondersteunenContext?: string) {
-    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/tasks/${task.toLowerCase()}/complete`, {
-      doneAt: new Date().toISOString(),
-      ondersteunenContext,
-    });
+  completeTask(id: string, task: TaskKey) {
+    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/tasks/${task.toLowerCase()}/complete`, {});
   }
   notifications(ringId: string) {
-    return this.request<{ unreadCount: number; notifications: AppNotification[] }>("GET", `/notifications?ring=${encodeURIComponent(ringId)}`);
+    return this.request<{ notifications: AppNotification[]; unreadCount: number }>("GET", `/notifications?ring=${encodeURIComponent(ringId)}`);
   }
-  markRead(ringId: string, id?: string) {
+  markNotificationsRead(ringId: string, id?: string) {
     return this.request<{ ok: boolean }>("POST", "/notifications/read", { ringId, id });
   }
-  registerDevice(token: string, platform: "ios" | "android") {
-    return this.request<{ ok: boolean }>("POST", "/devices", { token, platform });
-  }
-  resolveOpenLink(token: string) {
+  openLink(token: string) {
     return this.request<{ valid: boolean; callingId?: string }>("GET", `/open/${encodeURIComponent(token)}`, undefined, null);
+  }
+  registerDevice(token: string, platform: "ios" | "android", deviceId: string) {
+    return this.request<{ ok: boolean }>("POST", "/devices", { token, platform, deviceId });
+  }
+  devices() {
+    return this.request<{ devices: DeviceInfo[] }>("GET", "/devices");
+  }
+  setDeviceActive(id: string, active: boolean) {
+    return this.request<{ ok: boolean }>("POST", `/devices/${encodeURIComponent(id)}/active`, { active });
+  }
+  /** Meldt een pushtoken af zonder sessie (het token zelf is het geheim); werkt dus ook na een 401. */
+  unregisterDeviceToken(token: string) {
+    return this.request<{ ok: boolean }>("POST", "/devices/unregister", { token }, null);
+  }
+  sessions() {
+    return this.request<{ sessions: SessionInfo[] }>("GET", "/sessions");
+  }
+  revokeSession(id: string) {
+    return this.request<{ ok: boolean }>("POST", `/sessions/${encodeURIComponent(id)}/revoke`, {});
   }
 }

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/crypto";
 import { createMagicLinkToken, createVerifiedSession, SESSION_ROTATE_INTERVAL_MS } from "@/lib/auth";
 import { resetDatabase, createTestUser, createTestRing, createCalling } from "./setup";
+import type { Me, Dashboard, CallingItem, CallingDetail, ApiMeta, ApiErrorBody } from "@shared/api-types";
 
 const sendMailMock = vi.fn();
 vi.mock("@/lib/mailer", async (original) => ({
@@ -19,14 +20,14 @@ beforeEach(async () => {
 });
 
 async function call(method: string, path: string, opts: { token?: string; body?: unknown } = {}) {
-  const url = new URL(`http://localhost/api/v1${path}`);
+  const url = new URL(`http://localhost/api/mobile/v1${path}`);
   const res = await handleApi(
     new Request(url, {
       method,
       headers: { ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}), "Content-Type": "application/json" },
       body: method === "GET" ? undefined : JSON.stringify(opts.body ?? {}),
     }),
-    url.pathname.replace("/api/v1/", "").split("/").filter(Boolean)
+    url.pathname.replace("/api/mobile/v1/", "").split("/").filter(Boolean)
   );
   return { status: res.status, body: (await res.json()) as Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
@@ -229,20 +230,59 @@ describe("API: meldingen, apparaten en koppelingen", () => {
     expect((await call("GET", `/notifications?ring=${ring.id}`, { token: await login(users[1].id) })).body.unreadCount).toBe(1);
   });
 
-  it("apparaattokens: alleen geldige Expo-tokens, verhuizen bij overname, verwijderen bij uitloggen", async () => {
+  it("apparaattokens: alleen geldige tokens, verhuizen bij overname, tokenrotatie, verwijderen bij uitloggen", async () => {
     const { users } = await ringWith("HOGERAAD", "HOGERAAD");
     const t1 = await login(users[0].id);
     const t2 = await login(users[1].id);
-    const device = "ExponentPushToken[abcdefghijklmnopqrstuv]";
+    const device = "dGVzdC1mY20tdG9rZW4tMTIzNDU2Nzg5MDpBUEE5MWJF";
 
-    expect((await call("POST", "/devices", { token: t1, body: { token: "https://evil.example", platform: "ios" } })).status).toBe(400);
+    expect((await call("POST", "/devices", { token: t1, body: { token: "https://evil.example/x", platform: "ios" } })).status).toBe(400);
     expect((await call("POST", "/devices", { token: t1, body: { token: device, platform: "windows" } })).status).toBe(400);
-    expect((await call("POST", "/devices", { token: t1, body: { token: device, platform: "ios" } })).status).toBe(200);
-    expect((await call("POST", "/devices", { token: t2, body: { token: device, platform: "ios" } })).status).toBe(200);
-    expect((await prisma.devicePushToken.findUniqueOrThrow({ where: { token: device } })).userId).toBe(users[1].id);
+    expect((await call("POST", "/devices", { token: t1, body: { token: device, platform: "android", deviceId: "x" } })).status).toBe(400);
+    expect((await call("POST", "/devices", { token: t1, body: { token: device, platform: "android", deviceId: "install-0001" } })).status).toBe(200);
+    expect((await prisma.devicePushToken.findUniqueOrThrow({ where: { token: device } })).provider).toBe("fcm");
 
-    await call("POST", "/auth/logout", { token: t2, body: { pushToken: device } });
+    // Tokenrotatie voor dezelfde installatie vervangt het oude token.
+    const rotated = "ROTATED-fcm-token-abcdefghijklmnop12345";
+    await call("POST", "/devices", { token: t1, body: { token: rotated, platform: "android", deviceId: "install-0001" } });
+    expect(await prisma.devicePushToken.count({ where: { userId: users[0].id } })).toBe(1);
+
+    // Een token hoort bij één gebruiker: overname op hetzelfde apparaat verhuist het.
+    expect((await call("POST", "/devices", { token: t2, body: { token: rotated, platform: "android" } })).status).toBe(200);
+    expect((await prisma.devicePushToken.findUniqueOrThrow({ where: { token: rotated } })).userId).toBe(users[1].id);
+
+    // Eigen apparaten bekijken en pushmeldingen per apparaat uitzetten; andermans apparaat is onvindbaar.
+    const mine = (await call("GET", "/devices", { token: t2 })).body.devices as { id: string; active: boolean }[];
+    expect(mine).toHaveLength(1);
+    expect((await call("POST", `/devices/${mine[0].id}/active`, { token: t1, body: { active: false } })).status).toBe(404);
+    expect((await call("POST", `/devices/${mine[0].id}/active`, { token: t2, body: { active: false } })).status).toBe(200);
+    expect((await prisma.devicePushToken.findUniqueOrThrow({ where: { token: rotated } })).active).toBe(false);
+
+    await call("POST", "/auth/logout", { token: t2, body: { pushToken: rotated } });
     expect(await prisma.devicePushToken.count()).toBe(0);
+  });
+
+  it("sessies: eigen apparaten bekijken en op afstand intrekken, nooit die van een ander", async () => {
+    const { users } = await ringWith("HOGERAAD", "HOGERAAD");
+    const t1 = await login(users[0].id);
+    const t1b = await login(users[0].id);
+    const other = await login(users[1].id);
+    const list = (await call("GET", "/sessions", { token: t1 })).body.sessions as { id: string; current: boolean }[];
+    expect(list).toHaveLength(2);
+    expect(list.filter((s) => s.current)).toHaveLength(1);
+    const foreign = (await call("GET", "/sessions", { token: other })).body.sessions[0].id as string;
+    await call("POST", `/sessions/${foreign}/revoke`, { token: t1 }); // andermans sessie: geen effect
+    expect((await call("GET", "/me", { token: other })).status).toBe(200);
+    const target = list.find((s) => !s.current)!;
+    await call("POST", `/sessions/${target.id}/revoke`, { token: t1 });
+    expect((await call("GET", "/me", { token: t1 })).status).toBe(200);
+    expect((await call("GET", "/me", { token: t1b })).status).toBe(401);
+  });
+
+  it("meta geeft de API-versie zonder login", async () => {
+    const meta = await call("GET", "/meta");
+    expect(meta.status).toBe(200);
+    expect(meta.body.apiVersion).toBe(1);
   });
 
   it("de koppeling uit een e-mail wordt zonder login gevalideerd en toont alleen het voorstel-id", async () => {
@@ -260,34 +300,23 @@ describe("API: meldingen, apparaten en koppelingen", () => {
   });
 });
 
-describe("Pushmeldingen naar de native app (Expo Push)", () => {
-  it("stuurt generieke tekst en een intern pad, en ruimt ongeldige tokens op", async () => {
-    const { sendPushToUser } = await import("@/lib/push");
-    const { users } = await ringWith("HOGERAAD");
-    const good = "ExponentPushToken[goodgoodgoodgood]";
-    const stale = "ExponentPushToken[stalestalestale1]";
-    await prisma.devicePushToken.createMany({
-      data: [
-        { userId: users[0].id, token: good, platform: "ios" },
-        { userId: users[0].id, token: stale, platform: "android" },
-      ],
-    });
-    const fetchMock = vi.fn(async () =>
-      Response.json({ data: [{ status: "ok" }, { status: "error", details: { error: "DeviceNotRegistered" } }] })
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    try {
-      const delivered = await sendPushToUser(users[0].id, { title: "Nieuw voorstel", body: "Er staat een voorstel klaar.", url: "https://evil.example/x" });
-      expect(delivered).toBe(1);
-      const messages = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body);
-      expect(messages).toHaveLength(2);
-      expect(messages[0].to).toBe(good);
-      expect(messages[0].data).toEqual({ url: "/dashboard" }); // externe URL wordt nooit doorgegeven
-      expect(JSON.stringify(messages)).not.toContain(users[0].email);
-      expect(await prisma.devicePushToken.count({ where: { token: stale } })).toBe(0);
-      expect(await prisma.devicePushToken.count({ where: { token: good } })).toBe(1);
-    } finally {
-      vi.unstubAllGlobals();
-    }
+describe("API-contract (gedeelde types in shared/api-types.ts)", () => {
+  it("de antwoorden van de server voldoen aan de gedeelde types", async () => {
+    const { ring, users } = await ringWith("RINGPRESIDIUM", "HOGERAAD");
+    const calling = await createCalling({ ringId: ring.id, personName: "Jan", functionTitle: "F", createdById: users[0].id });
+    const token = await login(users[0].id);
+
+    const me: Me = (await call("GET", "/me", { token })).body as Me;
+    expect(me.rings[0]).toMatchObject({ id: ring.id, role: "RINGPRESIDIUM" });
+    const dashboard: Dashboard = (await call("GET", `/dashboard?ring=${ring.id}`, { token })).body as Dashboard;
+    expect(dashboard.ring.id).toBe(ring.id);
+    const list = (await call("GET", `/callings?ring=${ring.id}`, { token })).body.callings as CallingItem[];
+    expect(list[0].id).toBe(calling.id);
+    const detail: CallingDetail = (await call("GET", `/callings/${calling.id}`, { token })).body as CallingDetail;
+    expect(detail.rounds.length).toBeGreaterThan(0);
+    const meta: ApiMeta = (await call("GET", "/meta")).body as ApiMeta;
+    expect(meta.apiVersion).toBeGreaterThan(0);
+    const err: ApiErrorBody = (await call("GET", "/me")).body as ApiErrorBody;
+    expect(err.code).toBe("unauthenticated");
   });
 });

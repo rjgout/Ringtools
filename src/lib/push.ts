@@ -1,4 +1,5 @@
 import { isAllowedPushEndpoint } from "./pushEndpoint";
+import { sendApns, sendFcm } from "./nativePush";
 import webpush from "web-push";
 import { prisma } from "./prisma";
 import { env } from "./env";
@@ -35,61 +36,42 @@ export type PushPayload = {
   tag?: string;
 };
 
-const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+const WEB_PUSH_TIMEOUT_MS = 10_000;
 
-/**
- * Stuurt via de Expo Push-dienst naar de native iOS/Android-app (APNs/FCM-sleutels
- * staan bij Expo/EAS, niet op deze server). Bevat net als de webpush alleen generieke
- * tekst en een intern pad. Tokens die Expo als ongeldig meldt, worden opgeruimd.
- */
-async function sendExpoPush(tokens: { id: string; token: string }[], payload: PushPayload & { url: string }): Promise<number> {
-  if (tokens.length === 0) return 0;
-  const headers: Record<string, string> = { Accept: "application/json", "Content-Type": "application/json" };
-  if (process.env.EXPO_ACCESS_TOKEN) headers.Authorization = `Bearer ${process.env.EXPO_ACCESS_TOKEN}`;
-
-  try {
-    const res = await fetch(EXPO_PUSH_URL, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(
-        tokens.map((t) => ({
-          to: t.token,
-          title: payload.title,
-          body: payload.body,
-          data: { url: payload.url },
-          sound: "default",
-          channelId: "default",
-          ...(payload.tag ? { collapseId: payload.tag } : {}),
-        }))
-      ),
-    });
-    if (!res.ok) {
-      console.error(`[push] Expo Push antwoordde met status ${res.status}.`);
-      return 0;
-    }
-    const body = (await res.json()) as { data?: { status: string; details?: { error?: string } }[] };
-    let delivered = 0;
-    await Promise.all(
-      (body.data ?? []).map(async (ticket, i) => {
-        if (ticket.status === "ok") delivered += 1;
-        else if (ticket.details?.error === "DeviceNotRegistered") {
-          await prisma.devicePushToken.delete({ where: { id: tokens[i].id } }).catch(() => {});
-        }
-      })
-    );
-    return delivered;
-  } catch (err) {
-    console.error("[push] Versturen via Expo Push mislukt:", err);
-    return 0;
-  }
+/** Verstuurt naar de actieve native apparaten via APNs/FCM; ongeldige tokens worden opgeruimd. */
+async function sendNativePush(devices: { id: string; token: string; provider: string }[], payload: PushPayload & { url: string }): Promise<number> {
+  let delivered = 0;
+  await Promise.all(
+    devices.map(async (d) => {
+      try {
+        const result = d.provider === "apns" ? await sendApns(d.token, payload) : await sendFcm(d.token, payload);
+        if (result === "ok") delivered += 1;
+        else if (result === "invalid-token") await prisma.devicePushToken.delete({ where: { id: d.id } }).catch(() => {});
+      } catch (err) {
+        console.error(`[push] Versturen naar een ${d.provider}-apparaat mislukt:`, err);
+      }
+    })
+  );
+  return delivered;
 }
 
-const WEB_PUSH_TIMEOUT_MS = 10_000;
+/**
+ * Een telefoon met de native app EN een geïnstalleerde PWA/browser-abonnement van hetzelfde
+ * platform zou dezelfde melding twee keer tonen. Web-abonnementen van een mobiel platform
+ * waarvoor de gebruiker een actief native apparaat heeft, worden daarom overgeslagen.
+ * Desktopbrowsers en het andere mobiele platform blijven Web Push ontvangen.
+ */
+export function webSubscriptionCoveredByNative(userAgent: string | null, nativePlatforms: Set<string>): boolean {
+  const ua = userAgent ?? "";
+  if (/iPhone|iPad|iPod/i.test(ua)) return nativePlatforms.has("ios");
+  if (/Android/i.test(ua)) return nativePlatforms.has("android");
+  return false;
+}
 
 /**
  * Stuurt een pushnotificatie naar alle geregistreerde apparaten van een gebruiker:
- * webbrowsers/PWA (Web Push) en de native app (Expo Push). Verlopen/ongeldige
- * registraties (HTTP 404/410 resp. DeviceNotRegistered) worden automatisch opgeruimd.
+ * webbrowsers/PWA (Web Push) en de native app (APNs/FCM). Verlopen/ongeldige
+ * registraties worden automatisch opgeruimd.
  * Een mislukte verzending gooit nooit een fout naar de aanroeper: push mag de rest
  * van de workflow nooit blokkeren. Geeft het aantal geslaagde afleveringen terug.
  */
@@ -102,15 +84,18 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
 
   // Alleen interne doelpaden: een push kan nooit naar een externe site verwijzen.
   const safe = { ...payload, url: safeInternalPath(payload.url) ?? "/dashboard" };
-  let delivered = await sendExpoPush(user.devicePushTokens, safe);
+  const activeDevices = user.devicePushTokens.filter((d) => d.active && (d.provider === "apns" ? env.apns : env.fcm));
+  let delivered = await sendNativePush(activeDevices, safe);
+  const nativePlatforms = new Set(activeDevices.map((d) => d.platform));
 
-  if (!isPushConfigured() || user.pushSubscriptions.length === 0) return delivered;
+  const webSubs = user.pushSubscriptions.filter((s) => !webSubscriptionCoveredByNative(s.userAgent, nativePlatforms));
+  if (!isPushConfigured() || webSubs.length === 0) return delivered;
   ensureConfigured();
 
   const body = JSON.stringify(safe);
 
   await Promise.all(
-    user.pushSubscriptions.map(async (sub) => {
+    webSubs.map(async (sub) => {
       // Bestaande rijen met een niet-toegestaan endpoint worden nooit aangeroepen en opgeruimd.
       if (!isAllowedPushEndpoint(sub.endpoint)) {
         await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});

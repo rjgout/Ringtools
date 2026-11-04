@@ -7,6 +7,10 @@ import { authenticate, type ApiAuth } from "./auth";
 import { ApiError, jsonResponse, errorResponse, readJson, str } from "./http";
 import * as svc from "./service";
 
+/** Verhoog bij een niet-achterwaarts-compatibele wijziging; de app toont dan een update-melding. */
+export const API_VERSION = 1;
+export const MIN_APP_VERSION = "1.0.0";
+
 type Ctx = { request: Request; params: Record<string, string>; query: URLSearchParams; body: Record<string, unknown>; auth: ApiAuth | null };
 type Handler = (ctx: Ctx & { auth: ApiAuth }) => Promise<unknown>;
 type PublicHandler = (ctx: Ctx) => Promise<unknown>;
@@ -59,7 +63,10 @@ publicRoute("POST", "/auth/login", async ({ body }) => {
   return { token: session.rawToken, expiresAt: session.expiresAt.toISOString(), ...(await svc.getMe(user.id)) };
 });
 
-// Het Expo-token is een geheim van het toestel; wie het kent mag het afmelden. Zo kan de app het
+// Versie en capaciteiten van de API; de app controleert hiermee of ze nog compatibel is.
+publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION }));
+
+// Het pushtoken is een geheim van het toestel; wie het kent mag het afmelden. Zo kan de app het
 // ook afmelden als de sessie al is verlopen of ingetrokken (401).
 publicRoute("POST", "/devices/unregister", async ({ body }) => {
   const token = str(body.token);
@@ -122,7 +129,14 @@ authedRoute("POST", "/callings/:id/tasks/:task/complete", async ({ auth, params,
 
 authedRoute("GET", "/notifications", async (ctx) => svc.listNotificationsFor(ctx.auth.user.id, ringOf(ctx)));
 authedRoute("POST", "/notifications/read", async (ctx) => svc.markNotificationsRead(ctx.auth.user.id, ringOf(ctx), str(ctx.body.id) || null));
-authedRoute("POST", "/devices", async ({ auth, body }) => svc.registerDevice(auth.user.id, str(body.token), str(body.platform)));
+authedRoute("POST", "/devices", async ({ auth, body }) => svc.registerDevice(auth.user.id, str(body.token), str(body.platform), str(body.deviceId) || undefined));
+authedRoute("GET", "/devices", async ({ auth }) => svc.listDevices(auth.user.id));
+authedRoute("POST", "/devices/:id/active", async ({ auth, params, body }) => svc.setDeviceActive(auth.user.id, params.id, body.active === true));
+
+// ---- Sessies (apparaten waarop dit account is ingelogd) ----
+
+authedRoute("GET", "/sessions", async ({ auth }) => svc.listMySessions(auth.user.id, auth.token));
+authedRoute("POST", "/sessions/:id/revoke", async ({ auth, params }) => svc.revokeMySession(auth.user.id, params.id));
 authedRoute("POST", "/devices/remove", async ({ auth, body }) => svc.unregisterDevice(auth.user.id, str(body.token)));
 
 function match(route: Route, method: string, segments: string[]): Record<string, string> | null {
@@ -136,7 +150,7 @@ function match(route: Route, method: string, segments: string[]): Record<string,
   return params;
 }
 
-/** Eén ingang voor de hele JSON-API (/api/v1/...). Alle fouten komen als JSON terug. */
+/** Eén ingang voor de hele JSON-API (/api/mobile/v1/...). Alle fouten komen als JSON terug. */
 export async function handleApi(request: Request, segments: string[]): Promise<Response> {
   try {
     const url = new URL(request.url);

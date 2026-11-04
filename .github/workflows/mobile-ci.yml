@@ -1,35 +1,92 @@
 name: Mobiele app (controle)
 
+# Valideert de Capacitor-app zonder signing-referenties en zonder te publiceren:
+# client (typecheck, tests, build), native configuratie, Android debug-build en iOS simulator-build.
 on:
   push:
-    paths: ["mobile/**", ".github/workflows/mobile-ci.yml"]
+    paths: ["mobile/**", "shared/**", ".github/workflows/mobile-ci.yml"]
   pull_request:
-    paths: ["mobile/**"]
-  workflow_dispatch: {}
+    paths: ["mobile/**", "shared/**", ".github/workflows/mobile-ci.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  check:
+  client:
+    name: Client en native configuratie
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: mobile
-    env:
-      EXPO_PUBLIC_API_URL: https://ringtools.example.nl
-      CI: "1"
     steps:
-      - name: Code uitchecken
-        uses: actions/checkout@v4
-      - name: Node.js opzetten
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: mobile/package-lock.json
-      - name: Dependencies installeren
-        run: npm ci
-      - name: Typecontrole
-        run: npx tsc --noEmit
-      - name: Tests
-        run: npx vitest run
-      - name: Bundel bouwen (Android en iOS, zonder native build)
-        run: npx expo export --platform android --platform ios --output-dir dist
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Native configuratie controleren (identiteit, links, privacy, geen geheimen)
+        run: npm run check:native-config
+      - name: Capacitor-configuratie controleren
+        run: npx cap doctor || true
+
+  android:
+    name: Android debug-build (zonder signing)
+    runs-on: ubuntu-latest
+    needs: client
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npx cap sync android
+      - name: Debug-APK bouwen
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ringtools-android-debug
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+
+  ios:
+    name: iOS simulator-build (zonder signing)
+    runs-on: macos-latest
+    needs: client
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync ios
+      - name: Bouwen voor de simulator
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build

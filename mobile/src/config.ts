@@ -1,0 +1,15 @@
+/** Build-time configuratie. Alles hier is publiek; geheimen horen nooit in de app. */
+const raw = (import.meta.env.VITE_API_URL as string | undefined) ?? "https://ringapeldoorn.nl";
+
+export const API_URL = raw.replace(/\/+$/, "");
+export const API_HOST = new URL(API_URL).host;
+export const API_BASE = `${API_URL}/api/mobile/v1`;
+/** In de browser-dev-server proxyt Vite /api naar de backend; native gebruikt de volledige URL. */
+export const IS_DEV_BROWSER = import.meta.env.DEV;
+export const APP_VERSION = "1.0.0";
+/** API-versie waarvoor deze client is gebouwd (server: API_VERSION in src/lib/api/router.ts). */
+export const SUPPORTED_API_VERSION = 1;
+
+if (!API_URL.startsWith("https://") && !IS_DEV_BROWSER) {
+  throw new Error("VITE_API_URL moet een https-URL zijn.");
+}

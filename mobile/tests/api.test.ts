@@ -1,61 +1,42 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiClient, ApiRequestError } from "@/lib/api";
+import { ApiClient, ApiRequestError } from "../src/lib/api";
 
-function client(responses: { status: number; body?: unknown }[], token: string | null = "tok-abcdefghijklmnopqrstuvwxyz") {
-  const calls: { url: string; init: RequestInit }[] = [];
-  const onUnauthorized = vi.fn();
-  const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-    calls.push({ url: String(url), init: init ?? {} });
-    const next = responses.shift() ?? { status: 200, body: {} };
-    return new Response(next.body === undefined ? null : JSON.stringify(next.body), { status: next.status });
-  }) as unknown as typeof fetch;
-  return { api: new ApiClient({ baseUrl: "https://ringtools.example.nl", getToken: () => token, onUnauthorized, fetchImpl }), calls, onUnauthorized };
+function client(fetchImpl: typeof fetch, token: string | null = "tok-123", onUnauthorized = vi.fn()) {
+  return { api: new ApiClient({ baseUrl: "https://ringapeldoorn.nl/api/mobile/v1", getToken: () => token, fetchImpl, onUnauthorized }), onUnauthorized };
 }
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 describe("ApiClient", () => {
-  it("stuurt het Bearer-token mee en gebruikt de /api/v1-basis", async () => {
-    const { api, calls } = client([{ status: 200, body: { callings: [] } }]);
-    await api.callings("ring 1", "gepauzeerd");
-    expect(calls[0].url).toBe("https://ringtools.example.nl/api/v1/callings?ring=ring%201&filter=gepauzeerd");
-    expect((calls[0].init.headers as Record<string, string>).Authorization).toBe("Bearer tok-abcdefghijklmnopqrstuvwxyz");
+  it("stuurt het token alleen in de Authorization-header en nooit in de URL", async () => {
+    const fetchImpl = vi.fn(async () => json({ ok: true }));
+    const { api } = client(fetchImpl as unknown as typeof fetch);
+    await api.calling("abc/def");
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://ringapeldoorn.nl/api/mobile/v1/callings/abc%2Fdef");
+    expect(url).not.toContain("tok-123");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok-123");
   });
-
-  it("stuurt bij inloggen en code aanvragen géén token mee", async () => {
-    const { api, calls } = client([{ status: 200, body: { ok: true, message: "x" } }, { status: 200, body: { token: "t" } }]);
+  it("stuurt bij login en open-link geen token mee", async () => {
+    const fetchImpl = vi.fn(async () => json({ valid: true }));
+    const { api } = client(fetchImpl as unknown as typeof fetch);
+    await api.openLink("t".repeat(20));
     await api.requestCode("a@b.nl");
-    await api.login("a@b.nl", "12345678", "iPhone");
-    for (const c of calls) expect((c.init.headers as Record<string, string>).Authorization).toBeUndefined();
-    expect(JSON.parse(calls[1].init.body as string)).toEqual({ email: "a@b.nl", code: "12345678", deviceName: "iPhone" });
+    for (const call of fetchImpl.mock.calls) expect(((call[1] as RequestInit).headers as Record<string, string>).Authorization).toBeUndefined();
   });
-
-  it("geeft de Nederlandse servermelding en code door als fout", async () => {
-    const { api } = client([{ status: 403, body: { error: "Je hebt hiervoor geen bevoegdheid.", code: "forbidden" } }]);
-    await expect(api.vote("abc", true)).rejects.toMatchObject({ status: 403, message: "Je hebt hiervoor geen bevoegdheid.", code: "forbidden" });
-  });
-
-  it("meldt een verlopen sessie (401) zodat de app kan uitloggen", async () => {
-    const { api, onUnauthorized } = client([{ status: 401, body: { error: "Je bent niet ingelogd.", code: "unauthenticated" } }]);
-    await expect(api.me()).rejects.toBeInstanceOf(ApiRequestError);
+  it("meldt 401 als sessie verlopen en geeft de servertekst door", async () => {
+    const { api, onUnauthorized } = client((async () => json({ error: "Je sessie is verlopen.", code: "unauthenticated" }, 401)) as unknown as typeof fetch);
+    await expect(api.me()).rejects.toMatchObject({ status: 401, message: "Je sessie is verlopen.", code: "unauthenticated" });
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
-
-  it("een 401 bij inloggen (foute code) logt niemand uit", async () => {
-    const { api, onUnauthorized } = client([{ status: 401, body: { error: "Deze code is onjuist of verlopen.", code: "invalid-code" } }]);
-    await expect(api.login("a@b.nl", "00000000", "x")).rejects.toMatchObject({ code: "invalid-code" });
+  it("401 zonder token (bijv. foute inlogcode) triggert geen uitlog", async () => {
+    const { api, onUnauthorized } = client((async () => json({ error: "Onjuist", code: "invalid-code" }, 401)) as unknown as typeof fetch, null);
+    await expect(api.login("a@b.nl", "12345678", "iPhone")).rejects.toBeInstanceOf(ApiRequestError);
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
-
-  it("vertaalt een netwerkfout naar een begrijpelijke melding", async () => {
-    const fetchImpl = vi.fn(async () => {
-      throw new TypeError("Network request failed");
-    }) as unknown as typeof fetch;
-    const api = new ApiClient({ baseUrl: "https://x.nl", getToken: () => "t", fetchImpl });
-    await expect(api.me()).rejects.toMatchObject({ status: 0, code: "network" });
-  });
-
-  it("verwijderen stuurt altijd de bevestiging mee", async () => {
-    const { api, calls } = client([{ status: 200, body: { ok: true } }]);
-    await api.deleteCalling("abc");
-    expect(JSON.parse(calls[0].init.body as string)).toEqual({ confirmed: true });
+  it("vertaalt netwerkfouten naar een duidelijke offline-fout", async () => {
+    const { api } = client((async () => { throw new TypeError("Failed to fetch"); }) as unknown as typeof fetch);
+    const err = await api.me().catch((e) => e as ApiRequestError);
+    expect(err.isNetwork).toBe(true);
+    expect(err.message).toMatch(/Geen verbinding/);
   });
 });

@@ -110,8 +110,8 @@ describe("Zwakke bootstrap-geheimen", () => {
 describe("Push-token afmelden zonder sessie", () => {
   it("verwijdert het token op basis van het token zelf", async () => {
     const user = await createTestUser("HOGERAAD", "Gebruiker");
-    const token = "ExponentPushToken[abcdefghijklmnop1234]";
-    await prisma.devicePushToken.create({ data: { userId: user.id, token, platform: "ios" } });
+    const token = "dGVzdC1mY20tdG9rZW4tMTIzNDU2Nzg5MDpBUEE5MWJF";
+    await prisma.devicePushToken.create({ data: { userId: user.id, token, platform: "android" } });
     await unregisterDeviceToken(token);
     expect(await prisma.devicePushToken.count()).toBe(0);
   });

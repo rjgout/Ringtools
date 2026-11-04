@@ -1,36 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { parseTarget, routeFor } from "@/lib/links";
+import { parseTarget, routeFor } from "../src/lib/links";
 
-describe("parseTarget (links en pushmeldingen)", () => {
-  it("herkent een voorstel, ook als volledige https-URL of app-schema", () => {
-    expect(parseTarget("/roepingen/cmvf57i8y008j7dc5")).toEqual({ kind: "calling", id: "cmvf57i8y008j7dc5" });
-    expect(parseTarget("https://ringtools.example.nl/roepingen/cmvf57i8y008j7dc5?x=1#y")).toEqual({ kind: "calling", id: "cmvf57i8y008j7dc5" });
-    expect(parseTarget("ringtools://roepingen/cmvf57i8y008j7dc5")).toEqual({ kind: "calling", id: "cmvf57i8y008j7dc5" });
+const HOST = "ringapeldoorn.nl";
+const ID = "cm0abcdefghijklmnop";
+
+describe("parseTarget (universele links, app-links en pushmeldingen)", () => {
+  it("herkent een voorstel en een e-maillink op de eigen host", () => {
+    expect(parseTarget(`https://${HOST}/roepingen/${ID}`, HOST)).toEqual({ kind: "calling", id: ID });
+    expect(parseTarget(`https://${HOST.toUpperCase()}/open/${ID}?x=1#y`, HOST)).toEqual({ kind: "open", token: ID });
   });
-
-  it("herkent een e-maillink", () => {
-    expect(parseTarget("https://ringtools.example.nl/open/AbC_123-xyzAbC_123-xyz")).toEqual({ kind: "open", token: "AbC_123-xyzAbC_123-xyz" });
-    expect(routeFor({ kind: "open", token: "abcdefghijkl" })).toBe("/open/abcdefghijkl");
-    expect(routeFor({ kind: "calling", id: "abcdefghijkl" })).toBe("/roepingen/abcdefghijkl");
+  it("herkent een intern pad uit een pushmelding", () => {
+    expect(parseTarget(`/roepingen/${ID}`, HOST)).toEqual({ kind: "calling", id: ID });
   });
-
-  it("negeert onbekende, externe en onveilige doelen", () => {
+  it("weigert een andere host, ander schema en lookalikes (geen open redirect)", () => {
     for (const bad of [
-      null,
-      undefined,
-      "",
-      "/dashboard",
-      "/roepingen/",
-      "/roepingen/a/b",
-      "/roepingen/kort",
-      "//evil.example/roepingen/abcdefghij",
-      "/\\evil.example",
-      "javascript:alert(1)",
-      "http://insecure.example/roepingen/abcdefghij",
-      "ftp://x/open/abcdefghij",
-      "/open/../../etc",
-    ]) {
-      expect(parseTarget(bad as string | null | undefined)).toBeNull();
-    }
+      `https://evil.example/roepingen/${ID}`,
+      `https://${HOST}.evil.example/roepingen/${ID}`,
+      `https://evil.example/@${HOST}/open/${ID}`,
+      `http://${HOST}/open/${ID}`,
+      `javascript://${HOST}/open/${ID}`,
+      `ringtools://open/${ID}`,
+      `//evil.example/roepingen/${ID}`,
+      `/\\evil.example/roepingen/${ID}`,
+    ]) expect(parseTarget(bad, HOST), bad).toBeNull();
+  });
+  it("weigert onbekende paden, te korte ID's en ongeldige invoer", () => {
+    for (const bad of ["/dashboard", "/roepingen/", "/roepingen/kort", `/roepingen/${ID}/extra`, `/open/${ID}/x`, "", "   "]) expect(parseTarget(bad, HOST), bad).toBeNull();
+    expect(parseTarget(null, HOST)).toBeNull();
+    expect(parseTarget(undefined, HOST)).toBeNull();
+  });
+  it("routeFor geeft een interne route", () => {
+    expect(routeFor({ kind: "calling", id: ID })).toBe(`/roepingen/${ID}`);
+    expect(routeFor({ kind: "open", token: ID })).toBe(`/open/${ID}`);
   });
 });

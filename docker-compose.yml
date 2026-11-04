@@ -38,6 +38,17 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:beheer@ringapeldoorn.nl}
+      # Native pushmeldingen (optioneel; leeg = uit). Zie docs/MOBILE.md.
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+      APNS_KEY_P8: ${APNS_KEY_P8:-}
+      APNS_KEY_ID: ${APNS_KEY_ID:-}
+      APNS_TEAM_ID: ${APNS_TEAM_ID:-}
+      APNS_BUNDLE_ID: ${APNS_BUNDLE_ID:-}
+      APNS_PRODUCTION: ${APNS_PRODUCTION:-true}
+      # Universele links / app-links (optioneel; leeg = de .well-known-bestanden zijn leeg)
+      APPLE_APP_ID: ${APPLE_APP_ID:-}
+      ANDROID_SHA256_FINGERPRINTS: ${ANDROID_SHA256_FINGERPRINTS:-}
+      ANDROID_PACKAGE: ${ANDROID_PACKAGE:-nl.ringapeldoorn.ringtools}
       PORT: 2809
     ports:
       - "2809:2809"

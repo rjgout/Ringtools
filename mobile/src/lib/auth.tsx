@@ -1,26 +1,24 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Platform } from "react-native";
-import Constants from "expo-constants";
-import * as Device from "expo-device";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { App as CapApp } from "@capacitor/app";
+import type { Me, RingInfo } from "@shared/api-types";
 import { ApiClient, ApiRequestError } from "./api";
 import { storage } from "./storage";
-import { registerForPush, setBadge } from "./push";
-import type { Me } from "./types";
-
-export const API_URL = ((Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ?? "").replace(/\/+$/, "");
+import { API_BASE } from "../config";
+import { isNative, platform } from "./native";
+import { registerForPush } from "./push";
 
 type Status = "loading" | "signedOut" | "signedIn";
 
 type AuthValue = {
   status: Status;
   me: Me | null;
-  ringId: string | null;
+  ring: RingInfo | null;
   api: ApiClient;
   signIn: (email: string, code: string) => Promise<void>;
   signOut: () => Promise<void>;
   reloadMe: () => Promise<void>;
   selectRing: (id: string) => Promise<void>;
-  enablePush: () => ReturnType<typeof registerForPush>;
+  enablePush: () => Promise<{ ok: boolean; message: string }>;
 };
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -36,24 +34,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<Status>("loading");
   const [me, setMe] = useState<Me | null>(null);
   const [ringId, setRingId] = useState<string | null>(null);
-
   const flushRef = useRef<() => Promise<void>>(async () => {});
 
   const clearSession = useCallback(async () => {
-    // Onthoud het push-token tot de server het heeft afgemeld (ook bij 401 of geen verbinding).
+    // Onthoud het pushtoken tot de server het heeft afgemeld (ook bij 401 of zonder verbinding).
     const pushToken = await storage.getPushToken();
     if (pushToken) await storage.setPendingUnregister(pushToken);
     tokenRef.current = null;
     setMe(null);
     setRingId(null);
     setStatus("signedOut");
-    await storage.clear();
-    await setBadge(0);
+    await storage.clearSession();
     void flushRef.current();
   }, []);
 
   const api = useMemo(
-    () => new ApiClient({ baseUrl: API_URL, getToken: () => tokenRef.current, onUnauthorized: () => void clearSession() }),
+    () => new ApiClient({ baseUrl: API_BASE, getToken: () => tokenRef.current, onUnauthorized: () => void clearSession() }),
     [clearSession]
   );
 
@@ -62,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const pending = await storage.getPendingUnregister();
       if (!pending) return;
       try {
-        await api.unregisterDevice(pending);
+        await api.unregisterDeviceToken(pending);
         await storage.clearPendingUnregister();
       } catch {
         /* geen verbinding: bij de volgende start of terugkeer opnieuw proberen */
@@ -77,7 +73,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const chosen = next.rings.find((r) => r.id === saved) ?? next.rings[0] ?? null;
     setRingId(chosen?.id ?? null);
     if (chosen) await storage.setRing(chosen.id);
-    await setBadge(next.pendingCount);
   }, []);
 
   // Opstarten: bestaande sessie hervatten.
@@ -90,17 +85,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await applyMe(await api.me());
         setStatus("signedIn");
       } catch (err) {
-        // Geen verbinding: sessie bewaren en offline-vriendelijk blijven falen; ongeldig: uitloggen (gebeurt via onUnauthorized).
-        if (err instanceof ApiRequestError && err.status === 0) setStatus("signedOut");
+        // 401 wordt door onUnauthorized afgehandeld. Zonder verbinding de sessie bewaren en de app tonen.
+        if (err instanceof ApiRequestError && err.isNetwork) {
+          setStatus("signedIn");
+        }
       }
     })();
   }, [api, applyMe]);
 
-  // Bij terugkeren naar de app: sessie verlengen en zo nodig het token vernieuwen.
+  // Terug naar de voorgrond: sessie verlengen en zo nodig het token vernieuwen.
   useEffect(() => {
-    const sub = AppState.addEventListener("change", async (state) => {
-      if (state === "active") void flushRef.current();
-      if (state !== "active" || !tokenRef.current) return;
+    const onActive = async () => {
+      void flushRef.current();
+      if (!tokenRef.current) return;
       try {
         const result = await api.refresh();
         if (result.rotated && result.token) {
@@ -111,13 +108,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch {
         /* 401 wordt door onUnauthorized afgehandeld; netwerkfouten negeren */
       }
-    });
-    return () => sub.remove();
+    };
+    if (isNative) {
+      const sub = CapApp.addListener("appStateChange", (s) => s.isActive && void onActive());
+      return () => void sub.then((h) => h.remove());
+    }
+    const handler = () => document.visibilityState === "visible" && void onActive();
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
   }, [api, applyMe]);
 
   const signIn = useCallback(
     async (email: string, code: string) => {
-      const result = await api.login(email, code, Device.deviceName ?? Platform.OS);
+      const result = await api.login(email, code, platform === "web" ? "Browser" : platform === "ios" ? "iPhone/iPad" : "Android");
       tokenRef.current = result.token;
       await storage.setToken(result.token);
       await applyMe({ user: result.user, rings: result.rings, pendingCount: result.pendingCount });
@@ -131,7 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await api.logout(pushToken);
     } catch {
-      /* server niet bereikbaar: lokaal toch uitloggen */
+      /* server niet bereikbaar: lokaal toch uitloggen; het pushtoken wordt later afgemeld */
     }
     await clearSession();
   }, [api, clearSession]);
@@ -141,15 +144,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [api, applyMe]);
 
   const selectRing = useCallback(async (id: string) => {
+    // Alleen een keuze voor de weergave: de server controleert bij elk verzoek opnieuw het lidmaatschap.
     setRingId(id);
     await storage.setRing(id);
   }, []);
 
   const enablePush = useCallback(() => registerForPush(api), [api]);
 
+  const ring = me?.rings.find((r) => r.id === ringId) ?? null;
   const value = useMemo<AuthValue>(
-    () => ({ status, me, ringId, api, signIn, signOut, reloadMe, selectRing, enablePush }),
-    [status, me, ringId, api, signIn, signOut, reloadMe, selectRing, enablePush]
+    () => ({ status, me, ring, api, signIn, signOut, reloadMe, selectRing, enablePush }),
+    [status, me, ring, api, signIn, signOut, reloadMe, selectRing, enablePush]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

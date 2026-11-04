@@ -28,6 +28,8 @@ import {
 } from "../workflow";
 import { createCallingSchema } from "../validation";
 import { ApiError } from "./http";
+import { hashToken } from "../crypto";
+import { listSessionsForUser, destroySessionById } from "../auth";
 
 /** Vertaalt domeinfouten naar nette API-fouten; onbekende fouten blijven een 500. */
 export async function mapErrors<T>(fn: () => Promise<T>): Promise<T> {
@@ -398,27 +400,66 @@ export async function markNotificationsRead(userId: string, ringId: string, id: 
   return { ok: true };
 }
 
-const EXPO_TOKEN = /^(Expo|Exponent)PushToken\[[A-Za-z0-9_-]{10,}\]$/;
+/** APNs-tokens zijn hex, FCM-tokens bevatten letters, cijfers en : _ - . Lengte ruim begrensd. */
+const DEVICE_TOKEN = /^[A-Za-z0-9_:.\-=]{20,4096}$/;
+const DEVICE_ID = /^[A-Za-z0-9_-]{8,64}$/;
 
-export async function registerDevice(userId: string, token: string, platform: string) {
-  if (!EXPO_TOKEN.test(token) || (platform !== "ios" && platform !== "android")) {
+export async function registerDevice(userId: string, token: string, platform: string, deviceId?: string) {
+  if (!DEVICE_TOKEN.test(token) || (platform !== "ios" && platform !== "android")) {
     throw new ApiError(400, "Ongeldig apparaattoken.", "validation");
   }
-  // Een token hoort bij één gebruiker: bij overname door een andere gebruiker op hetzelfde apparaat verhuist het.
-  await prisma.devicePushToken.upsert({
-    where: { token },
-    update: { userId, platform, lastSeenAt: new Date() },
-    create: { userId, token, platform },
+  if (deviceId && !DEVICE_ID.test(deviceId)) throw new ApiError(400, "Ongeldig apparaat-ID.", "validation");
+  const provider = platform === "ios" ? "apns" : "fcm";
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    // Tokenrotatie: een nieuw token voor dezelfde installatie vervangt het oude.
+    if (deviceId) await tx.devicePushToken.deleteMany({ where: { userId, deviceId, NOT: { token } } });
+    // Een token hoort bij één gebruiker: bij overname door een andere gebruiker op hetzelfde apparaat verhuist het.
+    await tx.devicePushToken.upsert({
+      where: { token },
+      update: { userId, platform, provider, deviceId: deviceId ?? null, active: true, lastSeenAt: now },
+      create: { userId, token, platform, provider, deviceId: deviceId ?? null, lastSeenAt: now },
+    });
   });
   return { ok: true };
 }
 
+export async function listDevices(userId: string) {
+  const rows = await prisma.devicePushToken.findMany({ where: { userId }, orderBy: { lastSeenAt: "desc" } });
+  return { devices: rows.map((d) => ({ id: d.id, platform: d.platform, active: d.active, lastSeenAt: d.lastSeenAt.toISOString() })) };
+}
+
+export async function setDeviceActive(userId: string, id: string, active: boolean) {
+  const result = await prisma.devicePushToken.updateMany({ where: { id, userId }, data: { active } });
+  if (result.count === 0) throw new ApiError(404, "Apparaat niet gevonden.", "not-found");
+  return { ok: true };
+}
+
 export async function unregisterDeviceToken(token: string) {
-  if (EXPO_TOKEN.test(token)) await prisma.devicePushToken.deleteMany({ where: { token } });
+  if (DEVICE_TOKEN.test(token)) await prisma.devicePushToken.deleteMany({ where: { token } });
   return { ok: true };
 }
 
 export async function unregisterDevice(userId: string, token: string) {
   await prisma.devicePushToken.deleteMany({ where: { userId, token } });
+  return { ok: true };
+}
+
+export async function listMySessions(userId: string, currentToken: string) {
+  const currentHash = hashToken(currentToken);
+  const sessions = await listSessionsForUser(userId);
+  return {
+    sessions: sessions.map((s) => ({
+      id: s.id,
+      device: s.userAgent ?? "Onbekend apparaat",
+      createdAt: s.createdAt.toISOString(),
+      lastSeenAt: s.lastSeenAt.toISOString(),
+      current: s.tokenHash === currentHash,
+    })),
+  };
+}
+
+export async function revokeMySession(userId: string, sessionId: string) {
+  await destroySessionById(userId, sessionId);
   return { ok: true };
 }

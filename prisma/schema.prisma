@@ -376,18 +376,23 @@ model PushSubscription {
   @@index([userId])
 }
 
-// Pushtoken van de native iOS/Android-app (Expo Push). Eén token per installatie;
-// bij uitloggen of een ongeldig token (DeviceNotRegistered) wordt de rij verwijderd.
+// Pushtoken van de native iOS/Android-app (Capacitor): APNs-token (ios) of FCM-token (android).
+// Eén token per installatie; bij uitloggen, een ongeldig token of uitschakelen door de gebruiker
+// wordt de rij verwijderd of op inactief gezet. lastSeenAt = laatste succesvolle registratie.
 model DevicePushToken {
   id         String   @id @default(cuid())
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   token      String   @unique
   platform   String // "ios" | "android"
+  provider   String   @default("fcm") // "apns" | "fcm"
+  deviceId   String? // stabiele installatie-ID van de app (voor tokenrotatie), nooit een hardware-ID
+  active     Boolean  @default(true)
   createdAt  DateTime @default(now())
   lastSeenAt DateTime @default(now())
 
   @@index([userId])
+  @@index([userId, deviceId])
 }
 
 // Interne meldingen voor het notificatiecentrum (de bel rechtsboven). Wordt
