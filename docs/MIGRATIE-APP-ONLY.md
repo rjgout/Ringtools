@@ -191,6 +191,12 @@ Afgebakend: Ringtools ondersteunt uitsluitend roepingen en ontheffingen; organis
   aanstellingsplicht, handboek, controlepunten en waarschuwingen; onderscheidt **geverifieerde regels**, **algemene ringprocedure – regels nog te beoordelen** en **buiten Ringtools** (en eigen roepingen). Alleen lezen; een bestaand dossier behoudt de vastgelegde procedure. Alleen functietitels en regels, geen personen/LCR-gegevens.
 - **Kleine correctie**: het gezamenlijk presidiumbesluit bij roepingsvoorstellen kent geen "direct vrijgeven" meer (API weigert `releaseNow`); registreren en vrijgeven zijn twee aparte, expliciete handelingen.
 
+### CI-status van commit `762575f` (C4.5)
+- **Geslaagd:** dispatch-run `41879871986` op `762575f` — alle vier de jobs groen, inclusief een uitgevoerde iOS-simulatorbuild en `verify-ios-configs.sh`.
+- **Niet volledig groen:** de latere push-run op `main` (`41884854396`, zelfde commit) was **niet** volledig groen. Backend, client/native-configuratie, Android en de Docker-build (`41884854406`) slaagden; de iOS-simulatorjob faalde eerst
+  door een SwiftPM-fout ("Could not resolve package dependencies": cachemap van `capacitor-swift-pm` ontbrak op de runner) en de herstart werd na 15 minuten geannuleerd omdat er geen macOS-runner beschikbaar kwam. Dit is een runner-/infrastructuurprobleem, geen bevinding in de code;
+  er is bewust geen derde poging gedaan. Voor `main` is dus geen eigen geslaagde iOS-run beschikbaar; het iOS-bewijs berust op de dispatch-run hierboven.
+
 ### Open vragen voor de eigenaar (niet zelf beslist)
 1. **Deelname van een betrokken hogeraadslid na kennisgeving.** Hoe neemt de betrokkene daarna deel aan de eigen behandeling, of wordt hij daarvan uitgesloten? Er is geen kerkelijke regel verzonnen: een gekoppeld account blijft
    voorlopig *altijd* uitgesloten en zonder toegang (veiligste uitgangspunt). Het register van de kennisgeving (`informedAt`) staat klaar, maar geeft geen toegang.
@@ -200,3 +206,13 @@ Afgebakend: Ringtools ondersteunt uitsluitend roepingen en ontheffingen; organis
 5. Definitief bewaarbeleid voor lopende dossiers (nu: herinnering na 30 dagen, beoordeling na 90 dagen, nooit automatisch verwijderen).
 6. Geldt de wijk/gemeente van herkomst ook voor ontheffingen van ringfuncties zonder wijkbinding?
 
+7. **Bevoegde uitvoerder bij niet-geverifieerde roepingen (functioneel openstaand punt, nog niet gebouwd).**
+   - *Huidige situatie:* bij roepingen met een nog niet-geverifieerde bevoegdheidsprocedure (`TE_BEOORDELEN`, bijzonder, eigen roeping) kunnen geen personen uit de eigen ring worden geselecteerd om te roepen of aan te stellen; er kan alleen een externe uitvoerder worden ingevoerd
+     (`eligibleForRule` levert voor niet-`GEVERIFIEERD`e regels niemand). Dat is niet wenselijk wanneer bijvoorbeeld de ringpresident zelf de handeling uitvoert.
+   - *Uitgangspunten voor de toekomstige verbetering:*
+     - Geen automatische toekenning van onbevestigde bevoegdheden.
+     - De bevoegde leiding controleert de toepasselijke procedure expliciet en bevestigt die (de verplichte procedurecontrole blijft).
+     - Een daadwerkelijk bevoegde interne persoon kan daarna als interne uitvoerder worden geregistreerd, met vastlegging van de gecontroleerde grondslag.
+     - Een intern ringlid mag niet ten onrechte als externe persoon worden ingevoerd.
+     - De bestaande server-side beveiliging (ringisolatie, vastgelegde procedure) en de audittrail blijven behouden.
+   - *Status:* niet ontworpen of geïmplementeerd; er worden geen bevoegdheden verzonnen. Pas oppakken na de iPhone-acceptatietest van C4 en C4.5 en op expliciete opdracht van de eigenaar.
