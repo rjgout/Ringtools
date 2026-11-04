@@ -25,6 +25,8 @@ const config: ExpoConfig = {
   android: {
     package: "nl.ringapeldoorn.ringtools",
     adaptiveIcon: { foregroundImage: "./assets/adaptive-icon.png", backgroundColor: "#0b1220" },
+    // Voor pushmeldingen op Android (FCM): bestand uit Firebase; in EAS als bestand-variabele GOOGLE_SERVICES_JSON.
+    ...(process.env.GOOGLE_SERVICES_JSON ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON } : {}),
     intentFilters: [
       {
         action: "VIEW",

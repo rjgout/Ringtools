@@ -21,6 +21,37 @@ Niet in de app (bewust, via de webapp): ringen aanmaken, gebruikers beheren, het
 beveiligingsinstellingen. Gebruikers met **passkey-verificatie ingeschakeld** kunnen nog niet in de app inloggen (passkeys in de app zijn nog niet gebouwd);
 zij zetten die verificatie uit via Profiel → Beveiliging in de webapp of gebruiken de webapp.
 
+## Bouwen op je MacBook (snelste route)
+
+De builds draaien standaard in de **EAS-cloud** van Expo: je Mac hoeft daarvoor alleen Node.js te hebben (geen Xcode of Android Studio nodig).
+
+**Eenmalig**
+1. Installeer [Homebrew](https://brew.sh) en daarna Node: `brew install node@22`.
+2. Een gratis account op [expo.dev](https://expo.dev); voor de store-versie ook een Apple Developer-account en een Google Play-ontwikkelaarsaccount.
+3. Haal de code op en draai het installatiescript (het controleert alles, logt je in bij Expo, maakt het EAS-project en zet de variabelen in EAS):
+   ```bash
+   git clone https://github.com/rjgout/Ringtools.git && cd Ringtools/mobile
+   cp .env.example .env        # zet EXPO_PUBLIC_API_URL op de https-URL van je Ringtools-server
+   ./scripts/mac-setup.sh
+   ```
+
+**Bouwen** (telkens als de app zelf verandert)
+```bash
+./scripts/build.sh preview ios          # testversie voor je iPhone (via TestFlight/ad hoc; EAS vraagt bij de eerste keer om je Apple-login en regelt certificaten en push-sleutel)
+./scripts/build.sh preview android      # APK: downloaden en direct op een Android-toestel installeren
+./scripts/build.sh production all --submit   # store-versie bouwen én indienen (TestFlight / Google Play)
+./scripts/build.sh production ios --local    # alternatief: op deze Mac bouwen (vereist Xcode); voor Android --local: Android SDK + JDK 17
+```
+De voortgang en de downloadlinks staan op expo.dev → je project → *Builds*. Het script voert vooraf de typecontrole en de tests uit.
+
+**Na de eerste build nog te doen** (de uitleg staat in "Eenmalig instellen" hieronder):
+- *App Store Connect*: maak de app aan met bundle-ID `nl.ringapeldoorn.ringtools` vóór de eerste `--submit`.
+- *Google Play*: maak de app aan (`nl.ringapeldoorn.ringtools`); de eerste upload doe je handmatig via de Play Console (door Google vereist), daarna werkt `--submit`.
+- *Pushmeldingen Android*: Firebase-project + `google-services.json`; zet dat bestand in EAS als bestand-variabele `GOOGLE_SERVICES_JSON` (`npx eas-cli env:create --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --environment production --environment preview --visibility secret`).
+- *Universele links*: zet `APPLE_APP_ID` en `ANDROID_SHA256_FINGERPRINTS` op de server (stap 5 hieronder).
+
+Problemen? `npm run doctor` controleert de projectinstellingen; `npx eas-cli build:list` toont de laatste builds.
+
 ## Eenmalig instellen (jij, met je Apple- en Google-account)
 
 1. **Expo-account en project**: maak een gratis account op expo.dev, en in deze map:
