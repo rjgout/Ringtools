@@ -1,0 +1,5 @@
+// Kopieer naar ios/Local.xcconfig (staat in .gitignore). Wordt alleen door de configuratie Debug-PersonalTeam gelezen.
+// Je Team-ID vind je in Xcode → Settings → Accounts → je Personal Team, of via developer.apple.com → Membership.
+// Normaal hoef je dit NIET in te vullen: kies je team gewoon in Xcode (Signing & Capabilities).
+// DEVELOPMENT_TEAM = ABCDE12345
+// PRODUCT_BUNDLE_IDENTIFIER = nl.ringapeldoorn.ringtools.dev

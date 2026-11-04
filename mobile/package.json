@@ -17,7 +17,9 @@
     "build:android:debug": "npm run cap:sync && cd android && ./gradlew assembleDebug",
     "build:android:aab": "npm run cap:sync && cd android && ./gradlew bundleRelease",
     "build:ios:simulator": "npm run cap:sync && xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
-    "check:native-config": "node scripts/check-native-config.mjs"
+    "check:native-config": "node scripts/check-native-config.mjs",
+    "build:ios:simulator:personal": "npm run cap:sync && xcodebuild -project ios/App/App.xcodeproj -scheme App-PersonalTeam -configuration Debug-PersonalTeam -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+    "verify:ios-configs": "npm run build && npx cap sync ios && ./scripts/verify-ios-configs.sh"
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "^8.0.1",

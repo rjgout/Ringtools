@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../lib/auth";
 import { ApiRequestError } from "../lib/api";
+import { nativeCapabilities, PERSONAL_TEAM_NOTICE } from "../lib/buildProfile";
 
 /** Inloggen met e-mail + 8-cijferige code uit de e-mail. De link in de mail opent deze app direct (universele link). */
 export function Login() {
@@ -67,6 +68,7 @@ export function Login() {
             Ander e-mailadres
           </button>
         )}
+        {nativeCapabilities().limited && <p role="note" className="muted">{PERSONAL_TEAM_NOTICE}</p>}
         <p className="muted">Het beheerdersaccount (webmin) en accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd.</p>
       </form>
     </main>

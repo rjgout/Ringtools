@@ -1,0 +1,20 @@
+// Build-configuratie "Debug-PersonalTeam": alleen voor het installeren op je EIGEN iPhone met een gratis Apple Personal Team.
+//
+// Een Personal Team ondersteunt GEEN Push Notifications en GEEN Associated Domains. Deze configuratie gebruikt daarom
+// geen entitlements-bestand (CODE_SIGN_ENTITLEMENTS leeg). De Debug- en Release-configuraties blijven App/App.entitlements
+// gebruiken (aps-environment + applinks) voor TestFlight en de App Store. Capacitor-sync raakt dit bestand niet aan.
+//
+// Gevolg in deze testbuild: GEEN native push en GEEN Universal Links. Inloggen (code), ingelogd blijven, voorstellen
+// bekijken en ondersteuning uitbrengen werken gewoon.
+#include "debug.xcconfig"
+
+RINGTOOLS_BUILD_PROFILE = personal-team
+CODE_SIGN_ENTITLEMENTS =
+CODE_SIGN_STYLE = Automatic
+
+// Aparte bundle-ID zodat de productie-ID (nl.ringapeldoorn.ringtools) niet door een gratis Personal Team wordt
+// "geclaimd" (een bundle-ID kan maar bij één Apple-team horen). Wil je toch de productie-ID gebruiken: zie Local.xcconfig.
+PRODUCT_BUNDLE_IDENTIFIER = nl.ringapeldoorn.ringtools.dev
+
+// Optionele lokale overrides (staat in .gitignore): DEVELOPMENT_TEAM = <je Team-ID>, PRODUCT_BUNDLE_IDENTIFIER = ...
+#include? "Local.xcconfig"

@@ -30,3 +30,6 @@ google-services.json
 GoogleService-Info.plist
 keystore.properties
 ExportOptions.plist
+
+# Lokale iOS-instellingen (Team-ID enz.)
+ios/Local.xcconfig

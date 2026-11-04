@@ -184,3 +184,5 @@ jobs:
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build
+      - name: iOS-configuraties controleren (productie-entitlements én Personal Team-testconfiguratie)
+        run: ./scripts/verify-ios-configs.sh

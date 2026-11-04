@@ -82,6 +82,11 @@ ontwikkeld zonder uitdrukkelijke, vastgelegde reden (bijvoorbeeld: beheerfunctie
 - **App Store- en TestFlight-configuraties worden afzonderlijk gevalideerd.** TestFlight en de App Store gebruiken productie-APNs
   (`APNS_PRODUCTION=true`, `aps-environment=production` in de IPA); sandbox is alleen voor rechtstreekse Xcode-builds. Valideer
   development, TestFlight en store-release apart; pushsleutels staan alleen op de server, nooit in GitHub.
+- **iOS-testconfiguratie voor een gratis Personal Team** (`Debug-PersonalTeam`, scheme `App-PersonalTeam`, `ios/PersonalTeam.xcconfig`) is
+  een aparte configuratie zonder entitlements. Haal Push/Associated Domains **nooit** uit `Debug`/`Release` of `App/App.entitlements`
+  voor deze test, en gebruik de Personal Team-configuratie nooit voor TestFlight/App Store. Code die push/links gebruikt moet het
+  buildprofiel (`lib/buildProfile.ts`) respecteren en zonder die capabilities nooit crashen of blijven hangen. Wijzigingen aan het
+  iOS-project of de entitlements: draai `npm run check:native-config` en `scripts/verify-ios-configs.sh` (CI doet dat op macOS).
 - Elke uitzondering in opstartcode moet in een eindtoestand eindigen (uitgelogd, ingelogd of "niet beschikbaar + opnieuw proberen"),
   nooit in een eeuwig laadscherm (zie `lib/resume.ts`); netwerkverzoeken hebben een time-out.
 

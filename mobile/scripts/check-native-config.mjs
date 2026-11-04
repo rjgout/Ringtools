@@ -23,7 +23,7 @@ const appIdAndroid = /applicationId "([^"]+)"/.exec(gradle)?.[1];
 const pbx = read("ios/App/App.xcodeproj/project.pbxproj");
 const appIdsIos = [...pbx.matchAll(/PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/g)].map((m) => m[1]);
 ok(idDefault && appIdAndroid === idDefault, `applicationId (${appIdAndroid}) ≠ appId in capacitor.config.ts (${idDefault}).`);
-ok(appIdsIos.length > 0 && appIdsIos.every((i) => i === idDefault), `iOS bundle-ID's (${appIdsIos.join(", ")}) ≠ ${idDefault}.`);
+ok(appIdsIos.length === 2 && appIdsIos.every((i) => i === idDefault), `iOS bundle-ID's (${appIdsIos.join(", ")}) ≠ ${idDefault}.`);
 
 // 3. Link-domein gelijk in Android, iOS en de client-standaard.
 const manifest = read("android/app/src/main/AndroidManifest.xml");
@@ -38,6 +38,26 @@ ok(/android:usesCleartextTraffic="false"/.test(manifest), "AndroidManifest: clea
 ok(/<key>aps-environment<\/key>/.test(read("ios/App/App/App.entitlements")), "iOS-entitlements: aps-environment ontbreekt.");
 ok(/CODE_SIGN_ENTITLEMENTS = App\/App.entitlements;/.test(pbx), "iOS-project: CODE_SIGN_ENTITLEMENTS ontbreekt.");
 ok(/<key>ITSAppUsesNonExemptEncryption<\/key>/.test(read("ios/App/App/Info.plist")), "Info.plist: ITSAppUsesNonExemptEncryption ontbreekt.");
+
+// 3b. Personal Team-testconfiguratie (iOS): zonder Push/Associated Domains, productie-entitlements onaangetast.
+const cfgBlocks = [...pbx.matchAll(/\t\t[0-9A-F]{24} \/\* ([^*]+) \*\/ = \{\n\t\t\tisa = XCBuildConfiguration;([\s\S]*?)\n\t\t\};/g)].map((m) => ({ name: m[1].trim(), body: m[2] }));
+const targetBlocks = cfgBlocks.filter((b) => /INFOPLIST_FILE = App\/Info.plist/.test(b.body));
+const byName = (n) => targetBlocks.find((b) => b.name === n);
+ok(byName("Debug") && byName("Release") && byName("Debug-PersonalTeam"), "iOS-project: configuraties Debug, Release en Debug-PersonalTeam ontbreken.");
+for (const n of ["Debug", "Release"]) ok(byName(n) && /CODE_SIGN_ENTITLEMENTS = App\/App.entitlements;/.test(byName(n).body), `iOS-configuratie ${n} moet de productie-entitlements (App/App.entitlements) behouden.`);
+ok(byName("Debug-PersonalTeam") && !/CODE_SIGN_ENTITLEMENTS/.test(byName("Debug-PersonalTeam").body), "Debug-PersonalTeam mag in het project geen CODE_SIGN_ENTITLEMENTS zetten (het xcconfig maakt het leeg).");
+ok(/XCConfigurationList[\s\S]*Debug-PersonalTeam/.test(pbx) && (pbx.match(/\/\* Debug-PersonalTeam \*\/,/g) || []).length === 2, "Debug-PersonalTeam moet in de configuratielijsten van project én target staan.");
+const personalXc = read("ios/PersonalTeam.xcconfig");
+ok(/^CODE_SIGN_ENTITLEMENTS =\s*$/m.test(personalXc), "PersonalTeam.xcconfig: CODE_SIGN_ENTITLEMENTS moet leeg zijn.");
+ok(/^RINGTOOLS_BUILD_PROFILE = personal-team$/m.test(personalXc), "PersonalTeam.xcconfig: RINGTOOLS_BUILD_PROFILE = personal-team ontbreekt.");
+const personalId = /^PRODUCT_BUNDLE_IDENTIFIER = (\S+)$/m.exec(personalXc)?.[1];
+ok(personalId && personalId !== idDefault, "PersonalTeam.xcconfig: gebruik een afwijkende bundle-ID zodat de productie-ID niet door een Personal Team wordt geclaimd.");
+ok(!/^(aps-environment|applinks)/m.test(personalXc), "PersonalTeam.xcconfig mag geen push/associated-domains-configuratie bevatten.");
+const scheme = read("ios/App/App.xcodeproj/xcshareddata/xcschemes/App-PersonalTeam.xcscheme");
+ok(/<LaunchAction\s+buildConfiguration = "Debug-PersonalTeam"/.test(scheme) && /<ArchiveAction\s+buildConfiguration = "Release"/.test(scheme), "Scheme App-PersonalTeam: Run moet Debug-PersonalTeam en Archive moet Release gebruiken.");
+ok(/Local\.xcconfig/.test(read(".gitignore")), "mobile/.gitignore moet ios/Local.xcconfig negeren.");
+ok(/profile:"standard"/.test(read("public/ringtools-build.js")), "public/ringtools-build.js moet het standaardprofiel zetten.");
+ok(/script src="\.\/ringtools-build\.js"/.test(read("index.html")), "index.html moet ringtools-build.js laden.");
 
 // 4. Content-Security-Policy aanwezig, geen inline scripts toegestaan.
 const html = read("index.html");

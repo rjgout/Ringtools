@@ -3,6 +3,7 @@ import type { PluginListenerHandle } from "@capacitor/core";
 import type { ApiClient } from "./api";
 import { storage } from "./storage";
 import { isNative, platform } from "./native";
+import { nativeCapabilities } from "./buildProfile";
 
 /**
  * Wacht tot de OS-registratie een pushtoken oplevert. Beheert UITSLUITEND de listeners die deze functie zelf
@@ -47,10 +48,17 @@ export async function obtainPushToken(timeoutMs = 15_000): Promise<string | null
  */
 export async function registerForPush(api: ApiClient): Promise<{ ok: boolean; message: string }> {
   if (!isNative) return { ok: false, message: "Pushmeldingen zijn alleen beschikbaar in de app op je telefoon of tablet." };
+  // Testbuild met een gratis Apple Personal Team: de capability ontbreekt, dus nooit proberen te registreren.
+  if (!nativeCapabilities().nativePush) return { ok: false, message: "Pushmeldingen zijn niet beschikbaar in deze testbuild (gratis Apple Personal Team)." };
 
-  let permission = await PushNotifications.checkPermissions();
-  if (permission.receive === "prompt" || permission.receive === "prompt-with-rationale") {
-    permission = await PushNotifications.requestPermissions();
+  let permission;
+  try {
+    permission = await PushNotifications.checkPermissions();
+    if (permission.receive === "prompt" || permission.receive === "prompt-with-rationale") {
+      permission = await PushNotifications.requestPermissions();
+    }
+  } catch {
+    return { ok: false, message: "Pushmeldingen zijn op dit toestel niet beschikbaar." };
   }
   if (permission.receive !== "granted") {
     return { ok: false, message: "Meldingen zijn niet toegestaan. Zet ze aan in de instellingen van je toestel." };

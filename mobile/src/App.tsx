@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import { API_HOST } from "./config";
 import { isNative, onBackButton, onNetworkChange, setupNativeChrome } from "./lib/native";
 import { installDeepLinkHandlers } from "./lib/deeplinks";
+import { nativeCapabilities } from "./lib/buildProfile";
 import { ErrorState, Spinner, TabBar } from "./components/ui";
 import { Login } from "./screens/Login";
 import { Home } from "./screens/Home";
@@ -29,7 +30,11 @@ function DeepLinks({ onTarget }: { onTarget: (route: string) => void }) {
       {
         getLaunchUrl: () => CapApp.getLaunchUrl(),
         onUrlOpen: (cb) => CapApp.addListener("appUrlOpen", cb),
-        onPushTap: (cb) => PushNotifications.addListener("pushNotificationActionPerformed", cb as never),
+        // In de Personal Team-testbuild is native push niet beschikbaar: geen plugin-listener registreren.
+        onPushTap: (cb) =>
+          nativeCapabilities().nativePush
+            ? PushNotifications.addListener("pushNotificationActionPerformed", cb as never)
+            : Promise.resolve({ remove: async () => {} }),
       },
       API_HOST,
       (route) => ref.current(route)

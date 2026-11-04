@@ -72,6 +72,56 @@ Het domein voor links wijzig je met `RINGTOOLS_APP_HOST=jouwdomein.nl node scrip
 > Wat zonder signing-referenties kan: web-/clientbuild, tests, `check:native-config`, Android **debug-APK**,
 > iOS **simulatorbuild**. Wat signing vereist: iOS-archive/IPA, Android release-AAB (upload-keystore), TestFlight/Play-upload.
 
+## iPhone-test met een gratis Apple Personal Team (zonder betaald account)
+
+Een gratis **Personal Team** ondersteunt de capabilities *Push Notifications* en *Associated Domains* niet; Xcode weigert dan te
+bouwen met "Personal development teams do not support the Associated Domains and Push Notifications capabilities". Daarom is er een
+**aparte buildconfiguratie** voor je eigen iPhone. De productieconfiguratie (voor TestFlight/App Store) blijft ongewijzigd.
+
+| | `Debug` / `Release` (productie-entitlements) | **`Debug-PersonalTeam`** (scheme *App-PersonalTeam*) |
+|---|---|---|
+| Entitlements | `App/App.entitlements` (aps-environment + Associated Domains) | **geen** (`CODE_SIGN_ENTITLEMENTS` leeg) |
+| Native push | ja (met APNs-sleutels op de server) | **niet beschikbaar** |
+| Universal Links (links uit e-mail openen de app) | ja (met AASA op de server) | **niet beschikbaar** – een link in een e-mail opent de browser/webapp |
+| Inloggen met code, ingelogd blijven, voorstellen bekijken, ondersteuning uitbrengen | ja | **ja** (zelfde client, API, sessies en MFA-regels) |
+| Bundle-ID | `nl.ringapeldoorn.ringtools` | `nl.ringapeldoorn.ringtools.dev` (zie hieronder) |
+
+Hoe het is opgebouwd (en waarom een `cap sync` het niet ongedaan maakt): de configuratie staat in `ios/PersonalTeam.xcconfig`, in het
+Xcode-project (`Debug-PersonalTeam`) en in het gedeelde scheme `App-PersonalTeam`. `cap sync` overschrijft alleen
+`ios/App/App/public`, `capacitor.config.json`, `config.xml` en `CapApp-SPM`. Een Xcode-buildfase ("Ringtools buildprofiel") zet in de app-bundel
+`public/ringtools-build.js` met profiel `personal-team`; de client leest dat en toont een duidelijke melding, en roept de pushplugin dan
+nooit aan (dus geen crash of hang). `npm run check:native-config` en, op macOS, `./scripts/verify-ios-configs.sh` (draait ook in CI) bewijzen dat
+Debug/Release de productie-entitlements houden en `Debug-PersonalTeam` er geen heeft (effectieve entitlements en binary).
+
+**Bundle-ID:** een gratis team geeft een bundle-ID vast aan dat team; een ID kan maar bij één Apple-team horen. Om te voorkomen dat je
+productie-ID `nl.ringapeldoorn.ringtools` aan je Personal Team "vastzit" wanneer je later een betaald account neemt, gebruikt deze
+testconfiguratie `nl.ringapeldoorn.ringtools.dev`. Liever toch de productie-ID? Zet `PRODUCT_BUNDLE_IDENTIFIER = nl.ringapeldoorn.ringtools` in
+`ios/Local.xcconfig` (zie `ios/Local.xcconfig.example`; het bestand staat in `.gitignore`).
+
+### Stappen (op je Mac)
+1. Eenmalig: `brew install node@22`, Xcode installeren en openen, in Xcode → Settings → Accounts je Apple ID toevoegen (er verschijnt *Personal Team*).
+2. Terminal:
+   ```bash
+   git clone https://github.com/rjgout/Ringtools.git && cd Ringtools/mobile    # of: git pull in je bestaande kopie
+   cp .env.example .env          # zet VITE_API_URL op de https-URL van JOUW Ringtools-server (APP_BASE_URL)
+   npm ci
+   npm run build && npx cap sync ios
+   npx cap open ios
+   ```
+   Draai `npm run build && npx cap sync ios` opnieuw na elke wijziging aan de client of de `.env`.
+3. In Xcode: klik bovenin op het **scheme** (naast de Run-knop) en kies **App-PersonalTeam** (niet *App*).
+4. Sluit je iPhone aan met een kabel, ontgrendel hem en kies **Trust**. Kies je iPhone in de **destination**-lijst naast het scheme. Zet op de iPhone *Instellingen → Privacy en beveiliging → Ontwikkelaarsmodus* aan en herstart indien gevraagd.
+5. Klik links op het blauwe **App**-project → target **App** → tab **Signing & Capabilities**. Kies bovenaan de configuratie **Debug-PersonalTeam**, vink *Automatically manage signing* aan en kies als **Team** *Raphael Gout (Personal Team)*. Er mogen hier **geen** capabilities *Push Notifications* of *Associated Domains* staan (klik anders op het kruisje). Xcode schrijft je Team-ID in het project; **commit die wijziging niet**.
+   - Alternatief zonder het project te wijzigen: zet `DEVELOPMENT_TEAM = <Team-ID>` in `ios/Local.xcconfig`.
+6. Controleer in **Build Settings** (zoek *Code Signing Entitlements*) dat de waarde voor **Debug-PersonalTeam** leeg is.
+7. Klik **Run** (▶︎, of ⌘R). Xcode bouwt en installeert op je iPhone.
+8. Eerste keer: iPhone → *Instellingen → Algemeen → VPN en apparaatbeheer* → je Apple ID/ontwikkelaar → **Vertrouw**. Start de app opnieuw.
+9. Een gratis Personal Team geeft apps **7 dagen** geldigheid; daarna opnieuw ▶︎ vanuit Xcode.
+
+In de app zie je op het inlogscherm en onder *Profiel* de melding dat native push en Universal Links in deze testbuild niet beschikbaar zijn. Test: inloggen met e-mail + code uit de mail, de app sluiten en openen (nog ingelogd), voorstellen bekijken, ondersteuning uitbrengen. Links in e-mails openen de webapp in Safari.
+
+> Simulatorbuild voor de Personal Team-configuratie: `npm run build:ios:simulator:personal`. Voor echte push/Universal Links en TestFlight is een betaald Apple Developer Program nodig (zie "Signing, TestFlight en Google Play Internal Testing").
+
 ## Universal Links (iOS) en App Links (Android)
 
 Eisen: e-maillinks (`https://<host>/open/<token>`, `/roepingen/<id>`) openen de geïnstalleerde app; zonder app werkt dezelfde
