@@ -22,6 +22,7 @@ import { AdminHome } from "./screens/admin/AdminHome";
 import { UserManager } from "./screens/UserManager";
 import { RingSetup } from "./screens/RingSetup";
 import { OpenLink } from "./screens/OpenLink";
+import { Activate } from "./screens/Activate";
 
 /**
  * Universele links/app-links en pushmeldingen: koude start, draaiende app en hervatten vanuit de achtergrond.
@@ -51,12 +52,15 @@ function DeepLinks({ onTarget }: { onTarget: (route: string) => void }) {
 }
 
 function Shell() {
-  const { status, api, ring, me, startupError, retryStartup, signOut, isAdmin } = useAuth();
+  const { status, api, ring, me, startupError, retryStartup, signOut, isAdmin, reloadMe } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [online, setOnline] = useState(true);
   const [unread, setUnread] = useState(0);
   const pendingRoute = useRef<string | null>(null);
+  // Uitnodiging activeren werkt zonder sessie: een token uit een link, of handmatige invoer (token ontbreekt).
+  const [activation, setActivation] = useState<{ token?: string } | null>(null);
+  const [loginEmail, setLoginEmail] = useState("");
 
   useEffect(() => void setupNativeChrome(), []);
   useEffect(() => void onNetworkChange(setOnline).then((off) => off), []);
@@ -64,6 +68,11 @@ function Shell() {
 
   const goTo = useCallback(
     (route: string) => {
+      const invite = /^\/uitnodiging\/([^/]+)$/.exec(route);
+      if (invite) {
+        setActivation({ token: invite[1] });
+        return;
+      }
       // Zonder sessie: onthoud de bestemming en ga na het inloggen verder (het token blijft alleen in het geheugen).
       if (status !== "signedIn") pendingRoute.current = route;
       else navigate(route);
@@ -86,6 +95,22 @@ function Shell() {
 
   // DeepLinks staat in elke toestand gemonteerd, zodat een koude start via link of pushmelding niet verloren gaat.
   if (status === "loading") return (<><DeepLinks onTarget={goTo} /><main className="page center"><Spinner /></main></>);
+  if (activation && status !== "unavailable") {
+    return (
+      <>
+        <DeepLinks onTarget={goTo} />
+        <Activate
+          token={activation.token}
+          onCancel={() => setActivation(null)}
+          onFinished={(email) => {
+            setActivation(null);
+            if (status === "signedOut") setLoginEmail(email);
+            else void reloadMe(); // al ingelogd (bijvoorbeeld een extra ring): ringlijst verversen
+          }}
+        />
+      </>
+    );
+  }
   if (status === "unavailable" && startupError) {
     return (
       <>
@@ -99,7 +124,7 @@ function Shell() {
       </>
     );
   }
-  if (status === "signedOut") return (<><DeepLinks onTarget={goTo} /><Login /></>);
+  if (status === "signedOut") return (<><DeepLinks onTarget={goTo} /><Login key={loginEmail} initialEmail={loginEmail} onHaveInvitation={() => setActivation({})} /></>);
 
   // Webmin: uitsluitend het beheergedeelte (geen ringen, voorstellen of meldingen).
   if (isAdmin) return (<div className="shell"><DeepLinks onTarget={goTo} /><AdminHome /></div>);

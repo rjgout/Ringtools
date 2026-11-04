@@ -4,7 +4,7 @@
  * onbekende paden, open redirects — levert null op en wordt genegeerd. Het token van een
  * e-maillink wordt nooit gelogd en verlaat de app alleen richting de eigen backend.
  */
-export type Target = { kind: "calling"; id: string } | { kind: "ontheffing"; id: string } | { kind: "open"; token: string };
+export type Target = { kind: "calling"; id: string } | { kind: "ontheffing"; id: string } | { kind: "open"; token: string } | { kind: "invite"; token: string };
 
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
 
@@ -26,6 +26,9 @@ export function parseTarget(input: string | null | undefined, ownHost: string): 
   // Alleen intern (pushmelding binnen de app); ontheffingen hebben bewust geen universele link en geen e-maillink.
   const ontheffing = /^\/ontheffingen\/([^/]+)\/?$/.exec(clean);
   if (ontheffing && ID.test(ontheffing[1])) return { kind: "ontheffing", id: ontheffing[1] };
+  // Uitnodiging uit de e-mail: werkt zonder sessie; het token gaat alleen naar de eigen backend.
+  const invite = /^\/uitnodiging\/([^/]+)\/?$/.exec(clean);
+  if (invite && ID.test(invite[1])) return { kind: "invite", token: invite[1] };
   const open = /^\/open\/([^/]+)\/?$/.exec(clean);
   if (open && ID.test(open[1])) return { kind: "open", token: open[1] };
   return null;
@@ -35,5 +38,6 @@ export function parseTarget(input: string | null | undefined, ownHost: string): 
 export function routeFor(target: Target): string {
   if (target.kind === "calling") return `/roepingen/${target.id}`;
   if (target.kind === "ontheffing") return `/ontheffingen/${target.id}`;
+  if (target.kind === "invite") return `/uitnodiging/${target.token}`;
   return `/open/${target.token}`;
 }

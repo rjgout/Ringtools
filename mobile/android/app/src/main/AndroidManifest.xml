@@ -20,7 +20,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Verified App Links: e-maillinks (/open/<token>) en voorstellen (/roepingen/<id>) openen de app.
+            <!-- Verified App Links: e-maillinks (/open/<token>), uitnodigingen (/uitnodiging/<token>) en voorstellen (/roepingen/<id>) openen de app.
                  Host: zie scripts/configure-native.mjs (RINGTOOLS_APP_HOST). Verificatie vereist /.well-known/assetlinks.json
                  op de server met de SHA-256-vingerafdruk van het app-ondertekeningscertificaat. -->
             <intent-filter android:autoVerify="true">
@@ -29,6 +29,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="ringapeldoorn.nl" android:pathPrefix="/open/" />
                 <data android:scheme="https" android:host="ringapeldoorn.nl" android:pathPrefix="/roepingen/" />
+                <data android:scheme="https" android:host="ringapeldoorn.nl" android:pathPrefix="/uitnodiging/" />
             </intent-filter>
         </activity>
 

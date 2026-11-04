@@ -7,6 +7,9 @@ import type {
   DraftView,
   CustomCalling,
   EligibleAppointers,
+  InvitationActivation,
+  InvitationItem,
+  InvitationPreview,
   ApiMeta,
   AppNotification,
   CallingDetail,
@@ -159,6 +162,26 @@ export class ApiClient {
   }
   updateRingUser(membershipId: string, input: { churchFunction: string; churchFunctionCode?: ChurchFunctionCode; role: string; isRingManager: boolean; active: boolean; appointAuthority?: AppointAuthority; name?: string; email?: string }) {
     return this.request<{ ok: boolean; joinedRounds: number }>("POST", `${this.admin ? "/admin" : ""}/memberships/${encodeURIComponent(membershipId)}`, input);
+  }
+  // ---- Uitnodigingen (ringbeheerder: eigen ring; webmin: via /admin) ----
+  ringInvitations(ringId: string) {
+    return this.request<{ invitations: InvitationItem[] }>("GET", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/invitations`);
+  }
+  createInvitation(ringId: string, input: { name: string; email: string; role: string; churchFunction?: string; churchFunctionCode?: ChurchFunctionCode; isRingManager: boolean }) {
+    return this.request<{ id: string; sent: boolean }>("POST", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/invitations`, input);
+  }
+  resendInvitation(id: string) {
+    return this.request<{ id: string; sent: boolean }>("POST", `${this.admin ? "/admin" : ""}/invitations/${encodeURIComponent(id)}/resend`, {});
+  }
+  revokeInvitation(id: string) {
+    return this.request<{ ok: boolean }>("POST", `${this.admin ? "/admin" : ""}/invitations/${encodeURIComponent(id)}/revoke`, {});
+  }
+  /** Ontvanger: controleren en activeren; het token staat in de body (nooit in de URL) en er is geen sessie nodig. */
+  previewInvitation(token: string) {
+    return this.request<InvitationPreview>("POST", "/invitations/preview", { token }, null);
+  }
+  activateInvitation(input: { token: string } | { email: string; code: string }) {
+    return this.request<InvitationActivation>("POST", "/invitations/activate", input, null);
   }
   dashboard(ringId: string) {
     return this.request<Dashboard>("GET", `/dashboard?ring=${encodeURIComponent(ringId)}`);

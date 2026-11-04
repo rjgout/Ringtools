@@ -32,7 +32,7 @@ const iosHosts = [...read("ios/App/App/App.entitlements").matchAll(/applinks:([^
 ok(androidHosts.length === 1, `Android App Links: precies één host verwacht, gevonden: ${androidHosts.join(", ")}.`);
 ok(iosHosts.length === 1 && iosHosts[0] === androidHosts[0], `iOS-host (${iosHosts}) ≠ Android-host (${androidHosts}).`);
 ok(/android:autoVerify="true"/.test(manifest), "AndroidManifest: autoVerify ontbreekt.");
-ok(/android:pathPrefix="\/open\/"/.test(manifest) && /android:pathPrefix="\/roepingen\/"/.test(manifest), "AndroidManifest: paden /open/ en /roepingen/ ontbreken.");
+ok(/android:pathPrefix="\/open\/"/.test(manifest) && /android:pathPrefix="\/roepingen\/"/.test(manifest) && /android:pathPrefix="\/uitnodiging\/"/.test(manifest), "AndroidManifest: paden /open/, /roepingen/ en /uitnodiging/ ontbreken.");
 ok(/android:allowBackup="false"/.test(manifest), "AndroidManifest: allowBackup moet false zijn.");
 ok(/android:usesCleartextTraffic="false"/.test(manifest), "AndroidManifest: cleartext-verkeer moet uit.");
 ok(/<key>aps-environment<\/key>/.test(read("ios/App/App/App.entitlements")), "iOS-entitlements: aps-environment ontbreekt.");

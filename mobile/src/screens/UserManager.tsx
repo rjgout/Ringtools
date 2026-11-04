@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AppointAuthority, ChurchFunctionCode, ManagedUser, Role } from "@shared/api-types";
+import type { AppointAuthority, ChurchFunctionCode, InvitationItem, InvitationStatus, ManagedUser, Role } from "@shared/api-types";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
@@ -49,6 +49,8 @@ export function UserManager({ ringId }: { ringId: string }) {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const invites = useLoad(() => api.ringInvitations(ringId), [ringId]);
+  const [notice, setNotice] = useState<string | null>(null);
 
   function open(target: ManagedUser | "new") {
     setEditing(target);
@@ -66,7 +68,10 @@ export function UserManager({ ringId }: { ringId: string }) {
     const authority = authoritiesFor(draft.churchFunctionCode).some((a) => a.value === draft.appointAuthority) ? draft.appointAuthority : "NONE";
     try {
       if (editing === "new") {
-        await run(() => api.addRingUser(ringId, { name: draft.name, email: draft.email, churchFunction: description, churchFunctionCode: draft.churchFunctionCode, role: draft.role, isRingManager: draft.isRingManager, appointAuthority: authority }));
+        // Nieuwe mensen worden uitgenodigd (zij activeren zelf hun account); een machtiging legt de beheerder pas na activatie vast.
+        const res = await run(() => api.createInvitation(ringId, { name: draft.name, email: draft.email, role: draft.role, churchFunction: description, churchFunctionCode: draft.churchFunctionCode, isRingManager: draft.isRingManager }));
+        setNotice(res.sent ? `De uitnodiging is verstuurd naar ${draft.email.trim()}.` : "De uitnodiging is aangemaakt, maar de e-mail kon niet worden verstuurd. Probeer het onder 'Uitnodigingen' opnieuw.");
+        await invites.reload();
       } else {
         await run(() => api.updateRingUser(editing.membershipId, { churchFunction: description, churchFunctionCode: draft.churchFunctionCode, role: draft.role, isRingManager: draft.isRingManager, active: draft.active, appointAuthority: authority, name: draft.name, email: draft.email }));
       }
@@ -82,7 +87,9 @@ export function UserManager({ ringId }: { ringId: string }) {
   return (
     <div className="stack">
       {dialog}
-      <div className="row between"><h2>Gebruikers</h2><button className="btn btn-primary" onClick={() => open("new")}>Toevoegen</button></div>
+      <div className="row between"><h2>Gebruikers</h2><button className="btn btn-primary" onClick={() => open("new")}>Uitnodigen</button></div>
+      {notice && <div className="banner ok" role="status">{notice}</div>}
+      <Invitations items={invites.data?.invitations ?? []} error={invites.error} onChanged={async (text) => { if (text) setNotice(text); await invites.reload(); await reload(); }} />
       {loading && !data && <Spinner />}
       {error && <ErrorState error={error} onRetry={reload} />}
       {data?.users.map((u) => (
@@ -96,7 +103,7 @@ export function UserManager({ ringId }: { ringId: string }) {
             <div className="stack" style={{ alignItems: "flex-end" }}>
               {u.isRingManager && <span className="badge ok">Ringbeheerder</span>}
               {u.appointAuthority && AUTHORITY_LABELS[u.appointAuthority] && <span className="badge">{AUTHORITY_LABELS[u.appointAuthority]}</span>}
-              {!u.activated && <span className="badge">Nog niet ingelogd</span>}
+              {!u.activated && <span className="badge">Nog niet geactiveerd</span>}
               {!u.active && <span className="badge bad">Inactief</span>}
             </div>
           </div>
@@ -104,8 +111,9 @@ export function UserManager({ ringId }: { ringId: string }) {
       ))}
 
       {editing && (
-        <form className="glass card stack" onSubmit={save} aria-label={editing === "new" ? "Gebruiker toevoegen" : "Gebruiker wijzigen"}>
-          <strong>{editing === "new" ? "Gebruiker toevoegen" : "Gebruiker wijzigen"}</strong>
+        <form className="glass card stack" onSubmit={save} aria-label={editing === "new" ? "Iemand uitnodigen" : "Gebruiker wijzigen"}>
+          <strong>{editing === "new" ? "Iemand uitnodigen" : "Gebruiker wijzigen"}</strong>
+          {editing === "new" && <span className="muted">De persoon krijgt een e-mail met een link om het account te activeren.</span>}
           <div><label htmlFor="u-name">Naam</label><input id="u-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} required minLength={2} /></div>
           <div><label htmlFor="u-email">E-mailadres</label><input id="u-email" type="email" autoCapitalize="none" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} required /></div>
           <div>
@@ -130,22 +138,90 @@ export function UserManager({ ringId }: { ringId: string }) {
             <span className="muted">De functie bepaalt welke bevoegdheden volgens de handboekprocedure mogelijk zijn. Bij &lsquo;Nog niet vastgelegd&rsquo; heeft iemand geen enkele bevoegdheid.</span>
           </div>
           <div><label htmlFor="u-func">Omschrijving (optioneel)</label><input id="u-func" value={draft.churchFunction} onChange={(e) => setDraft({ ...draft, churchFunction: e.target.value })} maxLength={200} /><span className="muted">Vrije tekst ter informatie; bepaalt nooit een bevoegdheid.</span></div>
-          <div>
+          {editing !== "new" && <div>
             <label htmlFor="u-auth">Machtiging</label>
             <select id="u-auth" value={authoritiesFor(draft.churchFunctionCode).some((a) => a.value === draft.appointAuthority) ? draft.appointAuthority : "NONE"} onChange={(e) => setDraft({ ...draft, appointAuthority: e.target.value as AppointAuthority })}>
               {authoritiesFor(draft.churchFunctionCode).map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
             </select>
             <span className="muted">{draft.churchFunctionCode === "RINGPRESIDENT" ? "De ringpresident is op grond van zijn functie bevoegd; een aparte machtiging is niet nodig." : "Alleen een expliciet vastgelegde machtiging maakt een aangewezen raadgever of hogeraadslid bevoegd om te roepen of aan te stellen."}</span>
-          </div>
+          </div>}
+          {editing === "new" && <span className="muted">Een machtiging (aangewezen raadgever of hogeraadslid) kun je vastleggen nadat de persoon zijn account heeft geactiveerd.</span>}
           <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={draft.isRingManager} onChange={(e) => setDraft({ ...draft, isRingManager: e.target.checked })} /> Ringbeheerder (beheert de gebruikers van deze ring)</label>
           {editing !== "new" && <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={draft.active} onChange={(e) => setDraft({ ...draft, active: e.target.checked })} /> Actief in deze ring</label>}
           {message && <div className="error" role="alert">{message}</div>}
           <div className="row">
             <button type="button" className="btn btn-ghost" onClick={() => setEditing(null)}>Annuleren</button>
-            <button className="btn btn-primary" disabled={busy}>{busy ? "Bezig…" : "Opslaan"}</button>
+            <button className="btn btn-primary" disabled={busy}>{busy ? "Bezig…" : editing === "new" ? "Uitnodiging versturen" : "Opslaan"}</button>
           </div>
         </form>
       )}
     </div>
+  );
+}
+
+const STATUS_LABEL: Record<InvitationStatus, { text: string; cls: string }> = {
+  NIET_VERSTUURD: { text: "Nog niet verstuurd", cls: "bad" },
+  VERSTUURD: { text: "Verstuurd", cls: "" },
+  VERLOPEN: { text: "Verlopen", cls: "bad" },
+  INGETROKKEN: { text: "Ingetrokken", cls: "" },
+  GEACTIVEERD: { text: "Account geactiveerd", cls: "ok" },
+};
+
+/** Overzicht van uitnodigingen met opnieuw versturen en intrekken. Token en code worden hier nooit getoond. */
+function Invitations({ items, error, onChanged }: { items: InvitationItem[]; error: Error | null; onChanged: (notice?: string) => Promise<void> }) {
+  const { api } = useAuth();
+  const { run, dialog } = useReauth();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [show, setShow] = useState(false);
+  // Geactiveerde en ingetrokken uitnodigingen zijn historie: standaard verborgen.
+  const open = items.filter((i) => i.status !== "GEACTIVEERD" && i.status !== "INGETROKKEN");
+  const shown = show ? items : open;
+  if (error || (items.length === 0)) return null;
+
+  async function act(id: string, kind: "resend" | "revoke") {
+    if (busyId) return;
+    setBusyId(id);
+    setMessage(null);
+    try {
+      if (kind === "resend") {
+        const res = await run(() => api.resendInvitation(id));
+        await onChanged(res.sent ? "De uitnodiging is opnieuw verstuurd." : "Versturen is niet gelukt. Probeer het later opnieuw.");
+      } else {
+        await run(() => api.revokeInvitation(id));
+        await onChanged("De uitnodiging is ingetrokken.");
+      }
+    } catch (err) {
+      setMessage(err instanceof ApiRequestError && err.code !== "cancelled" ? err.message : null);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="stack" aria-label="Uitnodigingen">
+      {dialog}
+      <div className="row between"><h2>Uitnodigingen</h2>{items.length > open.length && <button className="btn btn-ghost" onClick={() => setShow(!show)}>{show ? "Verberg afgeronde" : "Toon alle"}</button>}</div>
+      {message && <div className="error" role="alert">{message}</div>}
+      {shown.length === 0 && <span className="muted">Geen openstaande uitnodigingen.</span>}
+      {shown.map((i) => (
+        <div key={i.id} className="glass panel">
+          <div className="row between">
+            <div className="grow">
+              <strong>{i.name}</strong>
+              <div className="muted">{i.email} · {i.roleLabel}</div>
+              {i.status === "VERLOPEN" && <div className="muted">De uitnodiging is verlopen. Verstuur hem opnieuw.</div>}
+            </div>
+            <span className={`badge ${STATUS_LABEL[i.status].cls}`}>{STATUS_LABEL[i.status].text}</span>
+          </div>
+          {(i.canResend || i.canRevoke) && (
+            <div className="row" style={{ marginTop: 8 }}>
+              {i.canResend && <button className="btn" disabled={busyId === i.id} onClick={() => void act(i.id, "resend")}>{i.status === "VERSTUURD" ? "Herinneren" : "Opnieuw versturen"}</button>}
+              {i.canRevoke && <button className="btn btn-ghost" disabled={busyId === i.id} onClick={() => void act(i.id, "revoke")}>Intrekken</button>}
+            </div>
+          )}
+        </div>
+      ))}
+    </section>
   );
 }

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export function GET() {
   const appId = process.env.APPLE_APP_ID;
   const details = appId
-    ? [{ appIDs: [appId], components: [{ "/": "/open/*" }, { "/": "/roepingen/*" }] }]
+    ? [{ appIDs: [appId], components: [{ "/": "/open/*" }, { "/": "/roepingen/*" }, { "/": "/uitnodiging/*" }] }]
     : [];
   return new Response(JSON.stringify({ applinks: { details } }), {
     headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=300" },

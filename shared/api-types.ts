@@ -144,6 +144,29 @@ export type ManagedUser = {
   otherRingCount: number;
 };
 
+/** Uitnodiging in het gebruikersbeheer. Bevat nooit een token of code. */
+export type InvitationStatus = "NIET_VERSTUURD" | "VERSTUURD" | "VERLOPEN" | "INGETROKKEN" | "GEACTIVEERD";
+export type InvitationItem = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  roleLabel: string;
+  churchFunction: string;
+  churchFunctionCode: ChurchFunctionCode;
+  isRingManager: boolean;
+  status: InvitationStatus;
+  sentAt: string | null;
+  expiresAt: string;
+  canResend: boolean;
+  canRevoke: boolean;
+};
+export type InvitationPreview =
+  | { valid: true; name: string; ringName: string; roleLabel: string; expiresAt: string }
+  | { valid: false; reason: "expired" | "invalid" };
+/** Resultaat van een activatie: geen sessie; de gebruiker logt daarna in (met verplichte MFA waar die geldt). */
+export type InvitationActivation = { ok: true; email: string; ringName: string; mfaRequired: boolean };
+
 export type AppointAuthority = "NONE" | "RINGPRESIDENT" | "AANGEWEZEN_RAADGEVER" | "AANGEWEZEN_HOGERAADSLID";
 
 export type AdminRing = { id: string; name: string; active: boolean; callingCount: number; memberCount: number; managers: string[] };

@@ -13,12 +13,12 @@ describe("Universal Links / App Links (.well-known)", () => {
     expect(await aasa().json()).toEqual({ applinks: { details: [] } });
     expect(await assetlinks().json()).toEqual([]);
   });
-  it("met configuratie verwijzen ze alleen naar /open/* en /roepingen/*", async () => {
+  it("met configuratie verwijzen ze alleen naar /open/*, /roepingen/* en /uitnodiging/*", async () => {
     process.env.APPLE_APP_ID = "ABCDE12345.nl.ringapeldoorn.ringtools";
     process.env.ANDROID_SHA256_FINGERPRINTS = "AA:BB, CC:DD";
     const apple = await aasa().json();
     expect(apple.applinks.details[0].appIDs).toEqual(["ABCDE12345.nl.ringapeldoorn.ringtools"]);
-    expect(apple.applinks.details[0].components).toEqual([{ "/": "/open/*" }, { "/": "/roepingen/*" }]);
+    expect(apple.applinks.details[0].components).toEqual([{ "/": "/open/*" }, { "/": "/roepingen/*" }, { "/": "/uitnodiging/*" }]);
     const android = await assetlinks().json();
     expect(android[0].target).toEqual({ namespace: "android_app", package_name: "nl.ringapeldoorn.ringtools", sha256_cert_fingerprints: ["AA:BB", "CC:DD"] });
     expect(android[0].relation).toEqual(["delegate_permission/common.handle_all_urls"]);
