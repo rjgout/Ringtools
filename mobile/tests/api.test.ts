@@ -21,7 +21,7 @@ describe("ApiClient", () => {
     const { api } = client(fetchImpl as unknown as typeof fetch);
     await api.openLink("t".repeat(20));
     await api.requestCode("a@b.nl");
-    for (const call of fetchImpl.mock.calls) expect(((call[1] as RequestInit).headers as Record<string, string>).Authorization).toBeUndefined();
+    for (const call of fetchImpl.mock.calls as unknown as [string, RequestInit][]) expect((call[1].headers as Record<string, string>).Authorization).toBeUndefined();
   });
   it("meldt 401 als sessie verlopen en geeft de servertekst door", async () => {
     const { api, onUnauthorized } = client((async () => json({ error: "Je sessie is verlopen.", code: "unauthenticated" }, 401)) as unknown as typeof fetch);
@@ -35,7 +35,7 @@ describe("ApiClient", () => {
   });
   it("vertaalt netwerkfouten naar een duidelijke offline-fout", async () => {
     const { api } = client((async () => { throw new TypeError("Failed to fetch"); }) as unknown as typeof fetch);
-    const err = await api.me().catch((e) => e as ApiRequestError);
+    const err = (await api.me().catch((e: unknown) => e)) as ApiRequestError;
     expect(err.isNetwork).toBe(true);
     expect(err.message).toMatch(/Geen verbinding/);
   });
