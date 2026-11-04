@@ -1,0 +1,536 @@
+[
+ {
+  "categorie": "Ringpresidium",
+  "lcr": "Ringpresident",
+  "nl": "Ringpresident",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Ringpresidium",
+  "lcr": "Eerste raadgever ringpresidium",
+  "nl": "Eerste raadgever ringpresidium",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Ringpresidium",
+  "lcr": "Tweede raadgever ringpresidium",
+  "nl": "Tweede raadgever ringpresidium",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Ringpresidium",
+  "lcr": "Ringadministrateur",
+  "nl": "Ringadministrateur",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Ringpresidium",
+  "lcr": "Assistent-ringadministrateur",
+  "nl": "Assistent-ringadministrateur",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Ringpresidium",
+  "lcr": "Assistent-ringadministrateur — ledenadministratie",
+  "nl": "Assistent-ringadministrateur — ledenadministratie",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Ringpresidium",
+  "lcr": "Assistent-ringadministrateur — financiën",
+  "nl": "Assistent-ringadministrateur — financiën",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Ringpresidium",
+  "lcr": "Ringsecretaris",
+  "nl": "Ringsecretaris",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Ringpresidium",
+  "lcr": "Assistent-secretaris van de ring",
+  "nl": "Assistent-secretaris van de ring",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Hoge raad",
+  "lcr": "Hogeraadslid ring",
+  "nl": "Hogeraadslid",
+  "status": "Naam gestandaardiseerd – controleer"
+ },
+ {
+  "categorie": "Patriarch",
+  "lcr": "Patriarch",
+  "nl": "Ringpatriarch",
+  "status": "Naam gestandaardiseerd – controleer"
+ },
+ {
+  "categorie": "Zustershulpvereniging van de ring",
+  "lcr": "ZHV-presidente",
+  "nl": "ZHV-presidente",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Zustershulpvereniging van de ring",
+  "lcr": "Eerste raadgeefster ZHV-presidium (ring)",
+  "nl": "Eerste raadgeefster ZHV-presidium (ring)",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Zustershulpvereniging van de ring",
+  "lcr": "Tweede raadgeefster ZHV-presidium (ring)",
+  "nl": "Tweede raadgeefster ZHV-presidium (ring)",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Zustershulpvereniging van de ring",
+  "lcr": "ZHV-secretaresse",
+  "nl": "ZHV-secretaresse",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jongemannen van de ring",
+  "lcr": "Jongemannenpresident",
+  "nl": "Jongemannenpresident",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jongemannen van de ring",
+  "lcr": "Eerste raadgever jongemannen",
+  "nl": "Eerste raadgever jongemannen",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jongemannen van de ring",
+  "lcr": "Tweede raadgever jongemannen",
+  "nl": "Tweede raadgever jongemannen",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jongemannen van de ring",
+  "lcr": "Jongemannensecretaris",
+  "nl": "Jongemannensecretaris",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jongemannen van de ring",
+  "lcr": "Young Men Camp Director",
+  "nl": "Kampleider jongemannen",
+  "status": "Voorlopige vertaling – te toetsen aan officiële Nederlandse benaming"
+ },
+ {
+  "categorie": "Jongemannen van de ring",
+  "lcr": "Young Men Assistant Camp Director",
+  "nl": "Assistent-kampleider jongemannen",
+  "status": "Voorlopige vertaling – te toetsen aan officiële Nederlandse benaming"
+ },
+ {
+  "categorie": "Jongevrouwen van de ring",
+  "lcr": "Jongevrouwenpresidente",
+  "nl": "Jongevrouwenpresidente",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jongevrouwen van de ring",
+  "lcr": "Eerste raadgeefster jongevrouwen",
+  "nl": "Eerste raadgeefster jongevrouwen",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jongevrouwen van de ring",
+  "lcr": "Tweede raadgeefster jongevrouwen",
+  "nl": "Tweede raadgeefster jongevrouwen",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jongevrouwen van de ring",
+  "lcr": "Jongevrouwensecretaresse",
+  "nl": "Jongevrouwensecretaresse",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jongevrouwen van de ring",
+  "lcr": "Young Women Camp Director",
+  "nl": "Kampleider jongevrouwen",
+  "status": "Voorlopige vertaling – te toetsen aan officiële Nederlandse benaming"
+ },
+ {
+  "categorie": "Jongevrouwen van de ring",
+  "lcr": "Young Women Assistant Camp Director",
+  "nl": "Assistent-kampleider jongevrouwen",
+  "status": "Voorlopige vertaling – te toetsen aan officiële Nederlandse benaming"
+ },
+ {
+  "categorie": "Zondagsschool van de ring",
+  "lcr": "Zondagsschoolpresident",
+  "nl": "Zondagsschoolpresident",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Zondagsschool van de ring",
+  "lcr": "Eerste raadgever zondagsschool",
+  "nl": "Eerste raadgever zondagsschool",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Zondagsschool van de ring",
+  "lcr": "Tweede raadgever zondagsschool",
+  "nl": "Tweede raadgever zondagsschool",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Zondagsschool van de ring",
+  "lcr": "Zondagsschoolsecretaris",
+  "nl": "Zondagsschoolsecretaris",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jeugdwerk van de ring",
+  "lcr": "Jeugdwerkpresidente (ring)",
+  "nl": "Jeugdwerkpresidente (ring)",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jeugdwerk van de ring",
+  "lcr": "Eerste raadgeefster JW-presidente (ring)",
+  "nl": "Eerste raadgeefster JW-presidente (ring)",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jeugdwerk van de ring",
+  "lcr": "Tweede raadgeefster JW-presidente (ring)",
+  "nl": "Tweede raadgeefster JW-presidente (ring)",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jeugdwerk van de ring",
+  "lcr": "Jeugdwerksecretaresse (ring)",
+  "nl": "Jeugdwerksecretaresse (ring)",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jeugdwerk van de ring",
+  "lcr": "Jeugdwerkdirigente van de ring",
+  "nl": "Jeugdwerkdirigente van de ring",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jonge alleenstaande",
+  "lcr": "Adviseur jonge alleenstaanden",
+  "nl": "Adviseur jonge alleenstaanden",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jonge alleenstaande",
+  "lcr": "Ringvertegenwoordig(st)er jonge alleenstaanden",
+  "nl": "Ringvertegenwoordig(st)er jonge alleenstaanden",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Jonge alleenstaande",
+  "lcr": "Young Single Adult Committee Chair",
+  "nl": "Voorzitter comité jongvolwassenen",
+  "status": "Voorlopige vertaling – te toetsen aan officiële Nederlandse benaming"
+ },
+ {
+  "categorie": "Jonge alleenstaande",
+  "lcr": "Young Single Adult Committee Member",
+  "nl": "Lid comité jongvolwassenen",
+  "status": "Voorlopige vertaling – te toetsen aan officiële Nederlandse benaming"
+ },
+ {
+  "categorie": "Alleenstaande",
+  "lcr": "Vertegenwoordig(st)er alleenstaanden",
+  "nl": "Vertegenwoordig(st)er alleenstaanden",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Tempelwerk en familiegeschiedenis van de ring",
+  "lcr": "Consulent tempelwerk en familiegeschiedenis van de ring",
+  "nl": "Consulent tempelwerk en familiegeschiedenis van de ring",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Tempelwerk en familiegeschiedenis van de ring",
+  "lcr": "Consulent tempelwerk en familiegeschiedenis - centrum voor familiegeschiedenis",
+  "nl": "Consulent tempelwerk en familiegeschiedenis - centrum voor familiegeschiedenis",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Activiteiten en sporten",
+  "lcr": "Leider culturele activiteiten",
+  "nl": "Leider culturele activiteiten",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Activiteiten en sporten",
+  "lcr": "Deskundige activiteitencomité",
+  "nl": "Deskundige activiteitencomité",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Activiteiten en sporten",
+  "lcr": "Leider lichamelijke activiteiten",
+  "nl": "Leider lichamelijke activiteiten",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Activiteiten en sporten",
+  "lcr": "Coördinator sportofficials",
+  "nl": "Coördinator sportofficials",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Activiteiten en sporten",
+  "lcr": "Sportofficial",
+  "nl": "Sportofficial",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Activiteiten en sporten",
+  "lcr": "Sportdeskundige (ring)",
+  "nl": "Sportdeskundige (ring)",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Manager/planner trektocht",
+  "nl": "Manager/planner trektocht",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Manager trektocht",
+  "nl": "Manager trektocht",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Planner trektocht",
+  "nl": "Planner trektocht",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Ringvertegenwoordiger onroerend goed",
+  "nl": "Ringvertegenwoordiger onroerend goed",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Gebouwendeskundige (ring)",
+  "nl": "Gebouwendeskundige (ring)",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Ringplanner - gebouwen 1",
+  "nl": "Ringplanner - gebouwen 1",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Ringplanner - gebouwen 2",
+  "nl": "Ringplanner - gebouwen 2",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Ringplanner - gebouwen 3",
+  "nl": "Ringplanner - gebouwen 3",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Ringplanner - gebouwen 4",
+  "nl": "Ringplanner - gebouwen 4",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Ringplanner - gebouwen 5",
+  "nl": "Ringplanner - gebouwen 5",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Vrijwilliger-zendeling recreatiekamp",
+  "nl": "Vrijwilliger-zendeling recreatiekamp",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Manager recreatiekamp van de ring",
+  "nl": "Manager recreatiekamp van de ring",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Manager en planner recreatiekamp van de ring",
+  "nl": "Manager en planner recreatiekamp van de ring",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Gebouwen en voorzieningen",
+  "lcr": "Planner recreatiekamp van de ring",
+  "nl": "Planner recreatiekamp van de ring",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Geschiedenis",
+  "lcr": "Geschiedschrijver",
+  "nl": "Geschiedschrijver",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Kerkcommunicatie",
+  "lcr": "Communicatiebestuurder",
+  "nl": "Communicatiebestuurder",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Kerkcommunicatie",
+  "lcr": "Communicatiedeskundige",
+  "nl": "Communicatiedeskundige",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Kerkcommunicatie",
+  "lcr": "Assistent-communicatiebestuurder",
+  "nl": "Assistent-communicatiebestuurder",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Kerkcommunicatie",
+  "lcr": "JustServe-deskundige",
+  "nl": "JustServe-deskundige",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Kerkwerkzendelingen",
+  "lcr": "Kerkwerkzendeling van de ring",
+  "nl": "Kerkwerkzendeling van de ring",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Kerkwerkzendelingen",
+  "lcr": "Deskundige kerkwerkzendeling",
+  "nl": "Deskundige kerkwerkzendeling",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Muziek",
+  "lcr": "Muziekcoördinator van de ring",
+  "nl": "Muziekcoördinator van de ring",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Muziek",
+  "lcr": "Muziekadviseur",
+  "nl": "Muziekadviseur",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Muziek",
+  "lcr": "Muziekdeskundige",
+  "nl": "Muziekdeskundige",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Pre-militaire dienst",
+  "lcr": "Instructeur pre-militaire dienst",
+  "nl": "Instructeur pre-militaire dienst",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Seminarie en instituut",
+  "lcr": "Instituutshoofd",
+  "nl": "Instituutshoofd",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Seminarie en instituut",
+  "lcr": "Instituutsleerkracht",
+  "nl": "Instituutsleerkracht",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Seminarie en instituut",
+  "lcr": "Seminariehoofd",
+  "nl": "Seminariehoofd",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Seminarie en instituut",
+  "lcr": "Seminarieleerkracht",
+  "nl": "Seminarieleerkracht",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Technologie",
+  "lcr": "Technisch specialist",
+  "nl": "Technisch specialist",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Technologie",
+  "lcr": "Stake Interpreter",
+  "nl": "Ringtolk",
+  "status": "Voorlopige vertaling – te toetsen aan officiële Nederlandse benaming"
+ },
+ {
+  "categorie": "Technologie",
+  "lcr": "Stake Interpretation Coordinator",
+  "nl": "Coördinator tolkendienst van de ring",
+  "status": "Voorlopige vertaling – te toetsen aan officiële Nederlandse benaming"
+ },
+ {
+  "categorie": "Verifiëren",
+  "lcr": "Voorzitter verificatiecomité",
+  "nl": "Voorzitter verificatiecomité",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Verifiëren",
+  "lcr": "Lid verificatiecomité",
+  "nl": "Lid verificatiecomité",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Verifiëren",
+  "lcr": "Verificateur",
+  "nl": "Verificateur",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Voor de kracht van de jeugd",
+  "lcr": "FSY-vertegenwoordiger",
+  "nl": "FSY-vertegenwoordiger",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Welzijn en zelfredzaamheid",
+  "lcr": "Begeleider zelfredzaamheidsgroep",
+  "nl": "Begeleider zelfredzaamheidsgroep",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Welzijn en zelfredzaamheid",
+  "lcr": "Ringdeskundige handicaps",
+  "nl": "Ringdeskundige handicaps",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Welzijn en zelfredzaamheid",
+  "lcr": "Activiteitenleid(st)er voor leden met een handicap",
+  "nl": "Activiteitenleid(st)er voor leden met een handicap",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ },
+ {
+  "categorie": "Welzijn en zelfredzaamheid",
+  "lcr": "Welzijns- en zelfredzaamheidsdeskundige van de ring",
+  "nl": "Welzijns- en zelfredzaamheidsdeskundige van de ring",
+  "status": "Overgenomen uit Nederlandstalige LCR-lijst"
+ }
+]

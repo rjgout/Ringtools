@@ -4,6 +4,7 @@ import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
 import { ErrorState, Spinner } from "../components/ui";
+import { CallingPicker, type PickedCalling } from "../components/CallingPicker";
 
 type Key = "roepenAssigneeId" | "ondersteunenAssigneeId" | "aanstellenAssigneeId";
 const TASKS: { key: Key; label: string }[] = [
@@ -18,7 +19,8 @@ export function NewCalling() {
   const navigate = useNavigate();
   const members = useLoad(() => api.ringMembers(ring!.id), [ring?.id]);
   const [personName, setPersonName] = useState("");
-  const [functionTitle, setFunctionTitle] = useState("");
+  const [picked, setPicked] = useState<PickedCalling | null>(null);
+  const functionTitle = picked?.name ?? "";
   const [assignees, setAssignees] = useState<Record<Key, string>>({ roepenAssigneeId: "", ondersteunenAssigneeId: "", aanstellenAssigneeId: "" });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -53,7 +55,7 @@ export function NewCalling() {
       {members.data && (
         <div className="glass card stack">
           <div><label htmlFor="person">Naam van de persoon</label><input id="person" value={personName} onChange={(e) => setPersonName(e.target.value)} required minLength={2} maxLength={200} /></div>
-          <div><label htmlFor="func">Roeping / functie</label><input id="func" value={functionTitle} onChange={(e) => setFunctionTitle(e.target.value)} required minLength={2} maxLength={200} /></div>
+          <CallingPicker ringId={ring!.id} value={picked} onChange={setPicked} />
           {TASKS.map((t) => (
             <div key={t.key}>
               <label htmlFor={t.key}>Verantwoordelijke voor {t.label.toLowerCase()} (optioneel)</label>
@@ -63,7 +65,7 @@ export function NewCalling() {
               </select>
             </div>
           ))}
-          <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Bezig…" : "Voorstel indienen"}</button>
+          <button className="btn btn-primary" type="submit" disabled={busy || !picked || (picked.source === "EIGEN" && !picked.customConfirmed)}>{busy ? "Bezig…" : "Voorstel indienen"}</button>
         </div>
       )}
       {message && <div role="alert" className="glass panel">{message}</div>}

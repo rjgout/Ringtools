@@ -32,7 +32,7 @@ async function loadActiveActor(db: Db, actorId: string): Promise<User> {
  * gegevens van de client): de webmin mag elke ring beheren, een ringbeheerder
  * uitsluitend zijn eigen ring.
  */
-async function assertCanManageRing(db: Db, actorId: string, ringId: string): Promise<User> {
+export async function assertCanManageRing(db: Db, actorId: string, ringId: string): Promise<User> {
   const actor = await loadActiveActor(db, actorId);
   if (actor.role === "ADMIN") return actor;
   const membership = await db.ringMembership.findUnique({ where: { userId_ringId: { userId: actor.id, ringId } } });
@@ -90,12 +90,34 @@ async function resolveUser(
   return { user, isNew: true };
 }
 
+export type AppointAuthorityValue = "NONE" | "RINGPRESIDENT" | "AANGEWEZEN_RAADGEVER" | "AANGEWEZEN_HOGERAADSLID";
+
+/**
+ * Een aanstellingsbevoegdheid is een expliciete aanwijzing en moet passen bij de Ringtools-rol; gedeactiveerde leden
+ * krijgen nooit (nieuwe) bevoegdheden. Hoogstens één actieve ringpresident per ring.
+ */
+async function resolveAuthority(tx: Db, ringId: string, membershipId: string | null, role: Role, active: boolean, wanted: AppointAuthorityValue | undefined): Promise<AppointAuthorityValue> {
+  const value = wanted ?? "NONE";
+  if (value === "NONE" || !active) return "NONE";
+  const needsPresidium = value === "RINGPRESIDENT" || value === "AANGEWEZEN_RAADGEVER";
+  if (needsPresidium && role !== "RINGPRESIDIUM") throw new RingError("Deze aanwijzing is alleen mogelijk voor een lid van het ringpresidium.");
+  if (value === "AANGEWEZEN_HOGERAADSLID" && role !== "HOGERAAD") throw new RingError("Deze aanwijzing is alleen mogelijk voor een hogeraadslid.");
+  if (value === "RINGPRESIDENT") {
+    const other = await tx.ringMembership.count({
+      where: { ringId, appointAuthority: "RINGPRESIDENT", active: true, user: { active: true }, ...(membershipId ? { NOT: { id: membershipId } } : {}) },
+    });
+    if (other > 0) throw new RingError("Er is in deze ring al een ringpresident aangewezen.");
+  }
+  return value;
+}
+
 export type NewMemberInput = {
   existingUserId?: string;
   name?: string;
   email?: string;
   churchFunction: string;
   role: Role;
+  appointAuthority?: AppointAuthorityValue;
 };
 
 /** Alleen de systeemadministrator (webmin) kan een nieuwe ring aanmaken, direct met de eerste ringbeheerder. */
@@ -169,6 +191,7 @@ export async function addMember(input: { actorId: string; ringId: string; isRing
     });
     if (existingMembership) throw new RingError("Deze persoon is al lid van deze ring.");
 
+    const appointAuthority = await resolveAuthority(tx, input.ringId, null, input.role, true, input.appointAuthority);
     const membership = await tx.ringMembership.create({
       data: {
         userId: user.id,
@@ -176,6 +199,7 @@ export async function addMember(input: { actorId: string; ringId: string; isRing
         role: input.role,
         churchFunction: input.churchFunction.trim(),
         isRingManager: input.isRingManager,
+        appointAuthority,
         active: true,
       },
     });
@@ -200,6 +224,7 @@ export async function updateMember(input: {
   role: Role;
   isRingManager: boolean;
   active: boolean;
+  appointAuthority?: AppointAuthorityValue;
   name?: string;
   email?: string;
 }) {
@@ -238,6 +263,9 @@ export async function updateMember(input: {
       });
     }
 
+    // Zonder expliciete waarde blijft een bestaande aanwijzing alleen behouden als die nog bij de rol past en het lid actief is.
+    const keep = before.appointAuthority !== "NONE" && input.role === before.role && input.active ? before.appointAuthority : "NONE";
+    const appointAuthority = await resolveAuthority(tx, before.ringId, before.id, input.role, input.active, input.appointAuthority ?? keep);
     const after = await tx.ringMembership.update({
       where: { id: before.id },
       data: {
@@ -245,6 +273,7 @@ export async function updateMember(input: {
         role: input.role,
         isRingManager: input.isRingManager,
         active: input.active,
+        appointAuthority,
       },
     });
 

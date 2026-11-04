@@ -36,6 +36,11 @@ export function TabBar({ unread, pending, canManageUsers = false }: { unread: nu
           Gebruikers
         </NavLink>
       )}
+      {canManageUsers && (
+        <NavLink to="/inrichting" className={tab}>
+          Inrichting
+        </NavLink>
+      )}
       <NavLink to="/meldingen" className={tab}>
         Meldingen
         {unread > 0 && <span className="dot" aria-label={`${unread} ongelezen`}>{unread}</span>}

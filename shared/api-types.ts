@@ -126,9 +126,13 @@ export type ManagedUser = {
   churchFunction: string;
   role: Role;
   isRingManager: boolean;
+  appointAuthority: AppointAuthority;
+  activated: boolean;
   active: boolean;
   otherRingCount: number;
 };
+
+export type AppointAuthority = "NONE" | "RINGPRESIDENT" | "AANGEWEZEN_RAADGEVER" | "AANGEWEZEN_HOGERAADSLID";
 
 export type AdminRing = { id: string; name: string; active: boolean; callingCount: number; memberCount: number; managers: string[] };
 
@@ -159,3 +163,45 @@ export type ApiMeta = { apiVersion: number; minAppVersion: string };
 
 /** Foutvorm van elke API-respons met een foutstatus. */
 export type ApiErrorBody = { error: string; code: string | null };
+
+// ---- Ringinrichting en roepingencatalogus (Fase C2) ----
+
+export type UnitKind = "WIJK" | "GEMEENTE";
+export type UnitInfo = {
+  id: string;
+  kind: UnitKind;
+  name: string;
+  active: boolean;
+  responsibleStatus: "OK" | "VACANT" | "INACTIEF";
+  responsible: { id: string; name: string } | null;
+  defaults: { roepen: { id: string; name: string } | null; ondersteunen: { id: string; name: string } | null; aanstellen: { id: string; name: string } | null };
+};
+export type SetupStep = { key: string; label: string; done: boolean; detail: string };
+export type RingSetup = { steps: SetupStep[]; complete: boolean };
+
+export type CatalogCalling = {
+  /** Standaardroeping: stabiele interne code. Eigen roeping: id van de eigen roeping. */
+  code: string;
+  source: "STANDAARD" | "EIGEN";
+  name: string;
+  aliases: string[];
+  category: string;
+  type: string;
+  handbook: string[];
+  /** Alleen standaardroepingen; bij eigen roepingen worden nooit bevoegdheden afgeleid. */
+  approvalRoute: string | null;
+  ringtoolsProcess: boolean;
+  extraApproval: string | null;
+  grantedBy: string | null;
+  appointedBy: string | null;
+  supportVenue: string | null;
+  appointment: string | null;
+  releaseFollowUps: string[];
+  warning: string | null;
+  reviewNotes: string[];
+  active: boolean;
+  catalogVersion: string | null;
+};
+export type CatalogResult = { version: string; categories: string[]; callings: CatalogCalling[] };
+export type EligibleAppointers = { rule: string | null; appointers: { id: string; name: string; authority: AppointAuthority }[] };
+export type CustomCalling = { id: string; name: string; category: string; active: boolean; source: "EIGEN" };

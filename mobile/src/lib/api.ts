@@ -1,5 +1,9 @@
 import type {
   AdminRing,
+  AppointAuthority,
+  CatalogResult,
+  CustomCalling,
+  EligibleAppointers,
   ApiMeta,
   AppNotification,
   CallingDetail,
@@ -12,8 +16,11 @@ import type {
   RemindResult,
   RingMemberInfo,
   SessionInfo,
+  RingSetup,
   TaskKey,
   TokenResult,
+  UnitInfo,
+  UnitKind,
   UserSearchHit,
 } from "@shared/api-types";
 
@@ -135,10 +142,10 @@ export class ApiClient {
   ringUsers(ringId: string) {
     return this.request<{ users: ManagedUser[] }>("GET", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/users`);
   }
-  addRingUser(ringId: string, input: { existingUserId?: string; name?: string; email?: string; churchFunction: string; role: string; isRingManager: boolean }) {
+  addRingUser(ringId: string, input: { existingUserId?: string; name?: string; email?: string; churchFunction: string; role: string; isRingManager: boolean; appointAuthority?: AppointAuthority }) {
     return this.request<{ userId: string; name: string; joinedRounds: number }>("POST", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/users`, input);
   }
-  updateRingUser(membershipId: string, input: { churchFunction: string; role: string; isRingManager: boolean; active: boolean; name?: string; email?: string }) {
+  updateRingUser(membershipId: string, input: { churchFunction: string; role: string; isRingManager: boolean; active: boolean; appointAuthority?: AppointAuthority; name?: string; email?: string }) {
     return this.request<{ ok: boolean; joinedRounds: number }>("POST", `${this.admin ? "/admin" : ""}/memberships/${encodeURIComponent(membershipId)}`, input);
   }
   dashboard(ringId: string) {
@@ -199,6 +206,38 @@ export class ApiClient {
     }
   ) {
     return this.request<{ ok: boolean; alreadyRegistered: boolean }>("POST", `/callings/${encodeURIComponent(id)}/group-decision`, input);
+  }
+  // ---- Ringinrichting en catalogus (ringbeheerder: eigen ring; webmin: via /admin) ----
+  private ringPath(ringId: string, tail: string) {
+    return `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/${tail}`;
+  }
+  ringSetup(ringId: string) {
+    return this.request<RingSetup>("GET", this.ringPath(ringId, "setup"));
+  }
+  units(ringId: string) {
+    return this.request<{ units: UnitInfo[] }>("GET", this.ringPath(ringId, "units"));
+  }
+  createUnit(ringId: string, input: { kind: UnitKind; name: string; responsibleUserId?: string | null; defaultRoepenUserId?: string | null; defaultOndersteunenUserId?: string | null; defaultAanstellenUserId?: string | null }) {
+    return this.request<{ id: string }>("POST", this.ringPath(ringId, "units"), input);
+  }
+  updateUnit(id: string, input: { name?: string; kind?: UnitKind; active?: boolean; responsibleUserId?: string | null; defaultRoepenUserId?: string | null; defaultOndersteunenUserId?: string | null; defaultAanstellenUserId?: string | null }) {
+    return this.request<{ ok: boolean }>("POST", `${this.admin ? "/admin" : ""}/units/${encodeURIComponent(id)}`, input);
+  }
+  customCallings(ringId: string) {
+    return this.request<{ callings: CustomCalling[] }>("GET", this.ringPath(ringId, "custom-callings"));
+  }
+  createCustomCalling(ringId: string, input: { name: string; category: string }) {
+    return this.request<{ id: string }>("POST", this.ringPath(ringId, "custom-callings"), input);
+  }
+  updateCustomCalling(id: string, input: { name?: string; category?: string; active?: boolean }) {
+    return this.request<{ ok: boolean }>("POST", `${this.admin ? "/admin" : ""}/custom-callings/${encodeURIComponent(id)}`, input);
+  }
+  /** Doorzoekbare roepingencatalogus (standaard + eigen roepingen van deze ring). */
+  catalog(ringId: string, q: string, category = "") {
+    return this.request<CatalogResult>("GET", `/catalog/callings?ring=${encodeURIComponent(ringId)}&q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}`);
+  }
+  appointers(ringId: string, code: string) {
+    return this.request<EligibleAppointers>("GET", `/catalog/callings/${encodeURIComponent(code)}/appointers?ring=${encodeURIComponent(ringId)}`);
   }
   markProcessed(id: string) {
     return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/process`, {});

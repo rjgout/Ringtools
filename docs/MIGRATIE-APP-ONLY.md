@@ -68,3 +68,29 @@ coördineren; **LCR blijft de officiële bron**, Ringtools houdt geen blijvend p
   cascade op het voorstel: verdwijnen met het voorstel, dus geen blijvend register). Bestaande voorstellen en statussen blijven ongewijzigd geldig.
 - Overgangswebapp: alleen een knop "Vrijgeven aan de hoge raad" (zodat geen voorstel vastloopt); gezamenlijke besluiten zijn app-only.
 - Open bij C1: pushmelding aan ringstaf bij "wacht op vrijgave" (nu zichtbaar op overzicht/dashboard); toesteltest.
+
+### C2 – Ringinrichting en roepingencatalogus (gerealiseerd)
+- **Catalogus** (`src/lib/catalog/callings.ts`, versie `2026.11-1`): 89 functietitels in 23 organisatiecategorieën uit het aangeleverde LCR-overzicht, plus de afgesproken
+  uitzondering "Eerste/Tweede raadgever in de bisschap". **Alleen functietitels en categorieën**: geen namen, bezettingen, steundata of unitgegevens. Het LCR-bronbestand
+  staat niet in de repository (test borgt dat er geen `.pdf` in zit). Het later aangeleverde CSV-overzicht (zonder personen) is gebruikt als onafhankelijke controle;
+  `tests/fixtures/lcr-functietitels.json` bevat alleen titels/categorieën/vertaalstatus en controleert dat de catalogus volledig is en niets extra's bevat.
+  Het LCR-overzicht bevat geen functiecodes: de codes zijn stabiele **interne** codes.
+- Per functie: Nederlandse naam, LCR-/Engelse alias (zoekbaar), categorie, type, handboekreferentie, goedkeuringsroute, wie mag roepen en aanstellen, steunverlening, of aanstelling
+  verplicht is, vervolgvragen bij ontheffing (president(e) → eerste en tweede raadgever), waarschuwing, controlepunten, actief en cataloguversie.
+  Ringpresident, nieuwe ringraadgevers en patriarch lopen via een procedure buiten Ringtools (niet te kiezen); de bisschop zelf is niet opgenomen.
+- **Bevoegdheidsregels** komen uit Algemeen handboek 30.8.3 (zoals opgehaald; de bron gaf een samenvatting) en 30.6. **Ter controle door de eigenaar:** alle regels staan als
+  `reviewNotes` gemarkeerd waar ze niet bevestigd zijn (o.a. instituutshoofd, seminariehoofd, verificatiecomité, bisschapsraadgevers, noot 3 activiteitencomité/kerkgebouwen).
+  De 8 voorlopige vertalingen en de 2 gestandaardiseerde namen (Hogeraadslid, Ringpatriarch) uit het CSV-overzicht zijn gemarkeerd.
+- **Wijken en gemeenten** (`RingUnit`): toevoegen, hernoemen, (de)activeren, verantwoordelijk hogeraadslid (meerdere units per lid mogelijk), standaardverantwoordelijken voor de
+  drie taken. Vacature en niet-meer-actieve verantwoordelijke zijn zichtbaar en geven geen voorstel. De koppeling bepaalt **nooit** wie in de hoge raad mag ondersteunen.
+  Gedeactiveerde units/leden krijgen geen nieuwe toewijzingen.
+- **Eigen roepingen** (`RingCustomCalling`): per ring, alleen daar zichtbaar, zonder afgeleide bevoegdheden; bij gebruik bevestigt de bevoegde leiding de procedure
+  (nu afgedwongen in de app; serverafdwinging volgt in C3 bij het opslaan op het voorstel). Bestaande voorstellen behouden hun functienaam.
+- **Aanstellingsbevoegdheid** (`RingMembership.appointAuthority`): expliciete aanwijzing (ringpresident, aangewezen raadgever, aangewezen hogeraadslid) door de ringbeheerder,
+  passend bij de rol, max. één ringpresident, vervalt bij deactiveren of rolwijziging. De lijst van mogelijke aanstellers (`GET /catalog/callings/:code/appointers`) volgt de regel
+  van de standaardroeping; een Ringtools-rol of kerkelijke functie is op zichzelf geen machtiging; bij eigen/bijzondere procedures is de lijst leeg (handmatige registratie, C3).
+- **Ringinrichting**: overzicht van acht stappen (`GET /rings/:id/setup`); activatie volgt uit `User.activatedAt` (eerste voltooide login). Vacatures in de hoge raad zijn toegestaan.
+- **Migratie** `20261108100000_c2_ringinrichting` (additief): enums, `RingUnit`, `RingCustomCalling`, kolommen `RingMembership.appointAuthority` en `User.activatedAt`; bestaande
+  ingelogde gebruikers worden als geactiveerd gemarkeerd; niets wordt verwijderd.
+- **App**: tabblad "Inrichting" (ringbeheerder) en in het ringbeheer van de webmin; roepingenkiezer (zoeken, organisatie automatisch voorgesteld, eigen roeping toevoegen) in "Nieuw voorstel".
+- Open bij C2: opslaan van catalogus-/unitkeuze op het voorstel, automatische voorinvulling van verantwoordelijken en procesvoorstellen (C3); toesteltest.

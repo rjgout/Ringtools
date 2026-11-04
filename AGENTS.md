@@ -46,6 +46,7 @@ Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet ·
 | Gebruikersbeheer binnen eigen ring (ringbeheerder) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | ⚠ | — |
 | Ringbeheer: ringen aanmaken/wijzigen/(de)activeren (alleen webmin) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ (aanmaken/wijzigen; activeren alleen in de app) |
 | Eerste ringbeheerder van een nieuwe ring aanwijzen (webmin) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ |
+| Wijken/gemeenten, hogeraadskoppeling, ringinrichting, roepingencatalogus, eigen roepingen, aanstellingsbevoegdheid | ✅ C2 (toesteltest open) | ✅ C2 (toesteltest open) | — | ✅ (via app-beheer) |
 | Uitnodigen en activeren van nieuwe gebruikers | 🔧 C | 🔧 C | — | — |
 | Ontheffingen (aparte module) | 🔧 D | 🔧 D | — | — |
 | Meldingen in de app (bel) | ✅ | ✅ | ⚠ | — |

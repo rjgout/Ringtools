@@ -19,7 +19,7 @@ import type { ApiAuth } from "./auth";
 const WINDOW = 15 * 60 * 1000;
 
 /** Vertaalt fouten uit de ringbeheer-lib naar API-fouten (zonder gegevens van andere ringen te lekken). */
-async function ringErrors<T>(fn: () => Promise<T>): Promise<T> {
+export async function ringErrors<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
@@ -27,6 +27,12 @@ async function ringErrors<T>(fn: () => Promise<T>): Promise<T> {
     if (err instanceof RingError) throw new ApiError(400, err.message, "ring");
     throw err;
   }
+}
+
+export async function requireMembershipFor(userId: string, ringId: string) {
+  const m = await prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, user: { active: true }, ring: { active: true } } });
+  if (!m) throw new ApiError(404, "Niet gevonden.", "not-found");
+  return m;
 }
 
 /** Gevoelige beheeracties vereisen een recente tweede factor (≤ 15 min); anders volgt eerst herverificatie. */
@@ -106,7 +112,7 @@ export async function userReauth(auth: ApiAuth, body: Record<string, unknown>) {
 
 // ---- Gebruikersbeheer (ringbeheerder: eigen ring; webmin: elke ring) ----
 
-async function assertCanSeeRingUsers(actor: ApiAuth["user"], ringId: string) {
+export async function assertCanSeeRingUsers(actor: ApiAuth["user"], ringId: string) {
   if (actor.role === "ADMIN") {
     if (!(await prisma.ring.findUnique({ where: { id: ringId } }))) throw new ApiError(404, "Niet gevonden.", "not-found");
     return;
@@ -128,6 +134,8 @@ export async function listUsersFor(auth: ApiAuth, ringId: string) {
       churchFunction: m.churchFunction,
       role: m.role as Role,
       isRingManager: m.isRingManager,
+      appointAuthority: m.appointAuthority,
+      activated: !!m.user.activatedAt,
       active: m.active && m.user.active,
       otherRingCount: m.otherRingCount,
     })),

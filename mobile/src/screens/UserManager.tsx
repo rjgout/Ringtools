@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ManagedUser, Role } from "@shared/api-types";
+import type { AppointAuthority, ManagedUser, Role } from "@shared/api-types";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
@@ -13,8 +13,15 @@ const ROLES: { value: Role; label: string }[] = [
   { value: "HOGERAAD", label: "Hoge raad" },
 ];
 
-type Draft = { name: string; email: string; churchFunction: string; role: Role; isRingManager: boolean; active: boolean };
-const EMPTY: Draft = { name: "", email: "", churchFunction: "", role: "HOGERAAD", isRingManager: false, active: true };
+type Draft = { name: string; email: string; churchFunction: string; role: Role; isRingManager: boolean; active: boolean; appointAuthority: AppointAuthority };
+const EMPTY: Draft = { name: "", email: "", churchFunction: "", role: "HOGERAAD", isRingManager: false, active: true, appointAuthority: "NONE" };
+
+const AUTHORITIES: { value: AppointAuthority; label: string; roles: Role[] }[] = [
+  { value: "NONE", label: "Geen aanstellingsbevoegdheid", roles: ["RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR", "HOGERAAD"] },
+  { value: "RINGPRESIDENT", label: "Ringpresident", roles: ["RINGPRESIDIUM"] },
+  { value: "AANGEWEZEN_RAADGEVER", label: "Aangewezen raadgever", roles: ["RINGPRESIDIUM"] },
+  { value: "AANGEWEZEN_HOGERAADSLID", label: "Aangewezen hogeraadslid", roles: ["HOGERAAD"] },
+];
 
 /**
  * Gebruikersbeheer voor één ring (ringbeheerder: eigen ring; webmin: elke ring). Alle regels — eigen ring,
@@ -32,7 +39,7 @@ export function UserManager({ ringId }: { ringId: string }) {
   function open(target: ManagedUser | "new") {
     setEditing(target);
     setMessage(null);
-    setDraft(target === "new" ? EMPTY : { name: target.name, email: target.email, churchFunction: target.churchFunction, role: target.role, isRingManager: target.isRingManager, active: target.active });
+    setDraft(target === "new" ? EMPTY : { name: target.name, email: target.email, churchFunction: target.churchFunction, role: target.role, isRingManager: target.isRingManager, active: target.active, appointAuthority: target.appointAuthority ?? "NONE" });
   }
 
   async function save(e: React.FormEvent) {
@@ -42,9 +49,9 @@ export function UserManager({ ringId }: { ringId: string }) {
     setMessage(null);
     try {
       if (editing === "new") {
-        await run(() => api.addRingUser(ringId, { name: draft.name, email: draft.email, churchFunction: draft.churchFunction, role: draft.role, isRingManager: draft.isRingManager }));
+        await run(() => api.addRingUser(ringId, { name: draft.name, email: draft.email, churchFunction: draft.churchFunction, role: draft.role, isRingManager: draft.isRingManager, appointAuthority: draft.appointAuthority }));
       } else {
-        await run(() => api.updateRingUser(editing.membershipId, { churchFunction: draft.churchFunction, role: draft.role, isRingManager: draft.isRingManager, active: draft.active, name: draft.name, email: draft.email }));
+        await run(() => api.updateRingUser(editing.membershipId, { churchFunction: draft.churchFunction, role: draft.role, isRingManager: draft.isRingManager, active: draft.active, appointAuthority: draft.appointAuthority, name: draft.name, email: draft.email }));
       }
       setEditing(null);
       await reload();
@@ -70,6 +77,8 @@ export function UserManager({ ringId }: { ringId: string }) {
             </div>
             <div className="stack" style={{ alignItems: "flex-end" }}>
               {u.isRingManager && <span className="badge ok">Ringbeheerder</span>}
+              {u.appointAuthority && u.appointAuthority !== "NONE" && <span className="badge">{AUTHORITIES.find((a) => a.value === u.appointAuthority)?.label}</span>}
+              {!u.activated && <span className="badge">Nog niet ingelogd</span>}
               {!u.active && <span className="badge bad">Inactief</span>}
             </div>
           </div>
@@ -88,6 +97,13 @@ export function UserManager({ ringId }: { ringId: string }) {
               {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
             <span className="muted">De kerkelijke functie geeft nooit automatisch rechten; alleen de rol bepaalt wat iemand mag.</span>
+          </div>
+          <div>
+            <label htmlFor="u-auth">Aanstellingsbevoegdheid (expliciete aanwijzing)</label>
+            <select id="u-auth" value={AUTHORITIES.find((a) => a.value === draft.appointAuthority && a.roles.includes(draft.role)) ? draft.appointAuthority : "NONE"} onChange={(e) => setDraft({ ...draft, appointAuthority: e.target.value as AppointAuthority })}>
+              {AUTHORITIES.filter((a) => a.roles.includes(draft.role)).map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+            </select>
+            <span className="muted">Een rol of kerkelijke functie is op zichzelf geen machtiging; alleen een hier vastgelegde aanwijzing bepaalt wie een aanstelling kan verrichten.</span>
           </div>
           <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={draft.isRingManager} onChange={(e) => setDraft({ ...draft, isRingManager: e.target.checked })} /> Ringbeheerder (beheert de gebruikers van deze ring)</label>
           {editing !== "new" && <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={draft.active} onChange={(e) => setDraft({ ...draft, active: e.target.checked })} /> Actief in deze ring</label>}

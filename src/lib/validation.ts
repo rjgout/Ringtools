@@ -13,6 +13,7 @@ export const createCallingSchema = z.object({
 const membershipRoleSchema = z.enum(["RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR", "HOGERAAD"], {
   message: "Kies een rol binnen Ringtools.",
 });
+export const appointAuthoritySchema = z.enum(["NONE", "RINGPRESIDENT", "AANGEWEZEN_RAADGEVER", "AANGEWEZEN_HOGERAADSLID"]);
 const churchFunctionSchema = z.string().trim().min(2, "Vul de kerkelijke functie in.").max(200);
 
 export const ringNameSchema = z.string().trim().min(2, "Vul de naam van de ring in.").max(120);
@@ -25,6 +26,7 @@ export const addMemberSchema = z.object({
   churchFunction: churchFunctionSchema,
   role: membershipRoleSchema,
   isRingManager: z.boolean(),
+  appointAuthority: appointAuthoritySchema.optional(),
 });
 
 export const updateMemberSchema = z.object({
@@ -35,6 +37,7 @@ export const updateMemberSchema = z.object({
   role: membershipRoleSchema,
   isRingManager: z.boolean(),
   active: z.boolean(),
+  appointAuthority: appointAuthoritySchema.optional(),
 });
 
 export const createRingSchema = z.object({

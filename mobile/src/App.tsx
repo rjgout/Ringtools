@@ -17,6 +17,7 @@ import { Notifications } from "./screens/Notifications";
 import { Profile } from "./screens/Profile";
 import { AdminHome } from "./screens/admin/AdminHome";
 import { UserManager } from "./screens/UserManager";
+import { RingSetup } from "./screens/RingSetup";
 import { OpenLink } from "./screens/OpenLink";
 
 /**
@@ -114,6 +115,7 @@ function Shell() {
             <Route path="/voorstellen/nieuw" element={<NewCalling />} />
             <Route path="/roepingen/:id" element={<CallingDetail />} />
             <Route path="/open/:token" element={<OpenLink />} />
+            {ring.isRingManager && <Route path="/inrichting" element={<div className="stack"><h1>{ring.name}</h1><RingSetup ringId={ring.id} /></div>} />}
             {ring.isRingManager && <Route path="/gebruikers" element={<div className="stack"><h1>{ring.name}</h1><UserManager ringId={ring.id} /></div>} />}
             <Route path="/meldingen" element={<Notifications onChanged={refreshUnread} />} />
             <Route path="/profiel" element={<Profile />} />

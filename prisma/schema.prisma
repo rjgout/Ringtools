@@ -37,6 +37,18 @@ enum DecisionMethod {
   MEETING
 }
 
+enum AppointAuthority {
+  NONE
+  RINGPRESIDENT
+  AANGEWEZEN_RAADGEVER
+  AANGEWEZEN_HOGERAADSLID
+}
+
+enum UnitKind {
+  WIJK
+  GEMEENTE
+}
+
 enum OndersteuningContext {
   AVONDMAALSVERGADERING
   RINGCONFERENTIE
@@ -57,20 +69,22 @@ enum NotificationType {
 }
 
 model User {
-  id                        String   @id @default(cuid())
+  id                        String    @id @default(cuid())
   name                      String
-  email                     String   @unique
+  email                     String    @unique
   role                      Role
-  active                    Boolean  @default(true)
+  active                    Boolean   @default(true)
   passwordHash              String? // alleen gevuld voor de systeemadministrator (webmin)
   // E-mailmeldingen voor de workflow (stemuitnodigingen, taken, herinneringen)
   // zijn uit te zetten; de inlog-/magic-link-mail zelf blijft altijd werken.
-  emailNotificationsEnabled Boolean  @default(true)
+  emailNotificationsEnabled Boolean   @default(true)
   // Optionele passkey-verificatie voor reguliere gebruikers (standaard uit).
   // De systeemadministrator (TOTP) is hiervan uitgezonderd en altijd verplicht.
-  mfaEnabled                Boolean  @default(false)
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  mfaEnabled                Boolean   @default(false)
+  // Eerste voltooide login (accountactivatie). Leeg = uitgenodigd maar nog niet geactiveerd.
+  activatedAt               DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
   magicLinkTokens     MagicLinkToken[]
   sessions            Session[]
@@ -99,6 +113,10 @@ model User {
   groupDecisionsRegistered GroupDecision[] @relation("GroupDecisionRegisteredBy")
   groupDecisionsPresided   GroupDecision[] @relation("GroupDecisionPresiding")
   callingAudits            CallingAudit[]  @relation("CallingAuditActor")
+  unitsResponsible         RingUnit[]      @relation("UnitResponsible")
+  unitsDefaultRoepen       RingUnit[]      @relation("UnitDefaultRoepen")
+  unitsDefaultOndersteunen RingUnit[]      @relation("UnitDefaultOndersteunen")
+  unitsDefaultAanstellen   RingUnit[]      @relation("UnitDefaultAanstellen")
   smtpSettingsUpdatedBy    SmtpSettings[]
 
   @@index([role, active])
@@ -453,9 +471,11 @@ model Ring {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships   RingMembership[]
-  callings      Calling[]
-  notifications Notification[]
+  memberships    RingMembership[]
+  units          RingUnit[]
+  customCallings RingCustomCalling[]
+  callings       Calling[]
+  notifications  Notification[]
 }
 
 // Lidmaatschap van een gebruiker in een ring. `role` is de workflowrol binnen
@@ -463,17 +483,20 @@ model Ring {
 // tekst) en heeft geen invloed op rechten; `isRingManager` geeft de
 // administratieve bevoegdheid voor gebruikersbeheer in deze ring.
 model RingMembership {
-  id             String   @id @default(cuid())
-  userId         String
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ringId         String
-  ring           Ring     @relation(fields: [ringId], references: [id], onDelete: Cascade)
-  role           Role
-  churchFunction String   @default("")
-  isRingManager  Boolean  @default(false)
-  active         Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id               String           @id @default(cuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ringId           String
+  ring             Ring             @relation(fields: [ringId], references: [id], onDelete: Cascade)
+  role             Role
+  churchFunction   String           @default("")
+  isRingManager    Boolean          @default(false)
+  // Expliciet aangewezen aanstellingsbevoegdheid in deze ring. Een Ringtools-rol of kerkelijke functie is op
+  // zichzelf geen machtiging; alleen wat hier door de ringbeheerder is vastgelegd telt als aanwijzing.
+  appointAuthority AppointAuthority @default(NONE)
+  active           Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   @@unique([userId, ringId])
   @@index([ringId, active, role])
@@ -517,4 +540,46 @@ model CallingAudit {
   detail    String?
 
   @@index([callingId, createdAt])
+}
+
+// Wijk of gemeente in een ring: organisatorische instelling (geen ledenoverzicht). De koppeling aan een hogeraadslid wordt
+// gebruikt om bij een nieuwe roeping automatisch het betrokken hogeraadslid voor te stellen en bepaalt NOOIT wie mag ondersteunen.
+model RingUnit {
+  id                        String   @id @default(cuid())
+  ringId                    String
+  ring                      Ring     @relation(fields: [ringId], references: [id], onDelete: Cascade)
+  kind                      UnitKind
+  name                      String
+  active                    Boolean  @default(true)
+  // Verantwoordelijk hogeraadslid (leeg = vacature). Eén hogeraadslid kan meerdere units hebben.
+  responsibleUserId         String?
+  responsibleUser           User?    @relation("UnitResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  // Standaardverantwoordelijken voor de uitvoeringstaken bij voorstellen uit deze unit.
+  defaultRoepenUserId       String?
+  defaultRoepenUser         User?    @relation("UnitDefaultRoepen", fields: [defaultRoepenUserId], references: [id], onDelete: SetNull)
+  defaultOndersteunenUserId String?
+  defaultOndersteunenUser   User?    @relation("UnitDefaultOndersteunen", fields: [defaultOndersteunenUserId], references: [id], onDelete: SetNull)
+  defaultAanstellenUserId   String?
+  defaultAanstellenUser     User?    @relation("UnitDefaultAanstellen", fields: [defaultAanstellenUserId], references: [id], onDelete: SetNull)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@unique([ringId, name])
+  @@index([ringId, active])
+}
+
+// Eigen roeping van één ring (alleen zichtbaar binnen die ring). Bewust zonder bevoegdheids- of procedureregels:
+// de bevoegde leiding controleert de procedure en bevestigt dat bij gebruik.
+model RingCustomCalling {
+  id        String   @id @default(cuid())
+  ringId    String
+  ring      Ring     @relation(fields: [ringId], references: [id], onDelete: Cascade)
+  name      String
+  category  String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ringId, name])
+  @@index([ringId, active])
 }

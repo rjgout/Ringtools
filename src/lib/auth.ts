@@ -62,7 +62,13 @@ export async function createVerifiedSession(userId: string, userAgent?: string |
   await prisma.session.create({
     data: { userId, tokenHash: hashToken(rawToken), expiresAt, mfaAt: new Date(), userAgent: userAgent || null },
   });
+  await markActivated(userId);
   return { rawToken, expiresAt };
+}
+
+/** Eerste voltooide login = accountactivatie (blijft daarna ongewijzigd). */
+async function markActivated(userId: string): Promise<void> {
+  await prisma.user.updateMany({ where: { id: userId, activatedAt: null }, data: { activatedAt: new Date() } });
 }
 
 type SessionRow = Prisma.SessionGetPayload<{ include: { user: true } }>;
@@ -223,6 +229,7 @@ export async function promoteSessionToMfaVerified(sessionId: string, userId: str
       data: { userId, tokenHash: hashToken(rawToken), expiresAt, mfaAt: new Date(), userAgent: userAgent || null },
     });
   });
+  await markActivated(userId);
   return { rawToken, expiresAt };
 }
 

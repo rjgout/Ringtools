@@ -6,6 +6,7 @@ import { ApiRequestError } from "../../lib/api";
 import { useReauth } from "../../components/Reauth";
 import { ErrorState, Spinner } from "../../components/ui";
 import { UserManager } from "../UserManager";
+import { RingSetup } from "../RingSetup";
 
 const ROLES: { value: Role; label: string }[] = [
   { value: "RINGPRESIDIUM", label: "Ringpresidium" },
@@ -44,6 +45,7 @@ export function AdminHome() {
         <RingEditor ring={current} onRename={(name) => act(() => api.adminRenameRing(current.id, name), "Naam opgeslagen.")}
           onActive={(active) => act(() => api.adminSetRingActive(current.id, active), active ? "Ring geactiveerd." : "Ring gedeactiveerd: leden hebben geen toegang meer.")} />
         {message && <div role="status" className="glass panel">{message}</div>}
+        <RingSetup ringId={current.id} />
         <UserManager ringId={current.id} />
       </main>
     );
