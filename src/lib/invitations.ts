@@ -116,7 +116,8 @@ export async function createInvitation(input: InvitationInput) {
     if (!ring || !ring.active) throw new RingError("Deze ring bestaat niet of is niet actief.");
     await lockRing(tx, input.ringId); // serialiseert aanmaken per ring: geen dubbele actieve uitnodigingen
 
-    const existingUser = await tx.user.findUnique({ where: { email }, include: { memberships: { where: { ringId: input.ringId } } } });
+    // Hoofdletterongevoelig zoeken: een oud account met afwijkende schrijfwijze mag nooit een dubbel account opleveren.
+    const existingUser = await tx.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, include: { memberships: { where: { ringId: input.ringId } } } });
     if (existingUser?.role === "ADMIN") throw new RingError("Dit e-mailadres kan niet worden uitgenodigd.");
     if (existingUser?.memberships.some((m) => m.active)) throw new RingError("Deze persoon is al lid van deze ring.");
 
@@ -191,6 +192,10 @@ export async function resendInvitation(input: { actorId: string; invitationId: s
   const result = await prisma.$transaction(async (tx) => {
     const inv = await loadManaged(tx, input.actorId, input.invitationId);
     if (!inv.ring.active) throw new RingError("Deze ring is niet actief.");
+    // Gelijktijdige verzoeken (dubbeltik) leiden niet tot meerdere e-mails: hooguit twee pogingen per wachttijd (één extra voor een mislukte verzending).
+    if (!rateLimit(`invite-resend-inv:${inv.id}`, 2, INVITATION_RESEND_COOLDOWN_MS).allowed) {
+      throw new RingError("Deze uitnodiging is net verstuurd. Wacht een paar minuten voordat je hem opnieuw verstuurt.");
+    }
     await lockRing(tx, inv.ringId);
     const fresh = await tx.ringInvitation.findUniqueOrThrow({ where: { id: inv.id } });
     if (fresh.acceptedAt) throw new RingError("Deze uitnodiging is al geactiveerd.");
@@ -375,7 +380,7 @@ export async function activateInvitation(credentials: Credentials, clientKey: st
     });
     if (claimed.count !== 1) return { failed: "invalid" as const };
 
-    const existing = await tx.user.findUnique({ where: { email: inv.email } });
+    const existing = await tx.user.findFirst({ where: { email: { equals: inv.email, mode: "insensitive" } } });
     if (existing && (existing.role === "ADMIN" || !existing.active)) {
       // Geen overname van het beheerdersaccount of een gedeactiveerd account; de claim wordt teruggedraaid, het verzoek wordt wel vastgelegd.
       throw new RollbackWithAudit(inv.id);

@@ -426,3 +426,25 @@ describe("Uitnodigingen en deactiveren", () => {
     spies.forEach((x) => x.mockRestore());
   });
 });
+
+describe("Robuustheid", () => {
+  it("een bestaand account met afwijkende hoofdletters in het e-mailadres krijgt geen dubbel account", async () => {
+    const s = await setup();
+    const legacy = await prisma.user.create({ data: { name: "Oud Account", email: "Mixed.Case@Test.Ringapeldoorn.nl", role: "HOGERAAD", active: true, activatedAt: new Date() } });
+    const { token } = await invite(s, { name: "Mixed", email: "mixed.case@test.ringapeldoorn.nl", role: "HOGERAAD", churchFunctionCode: "HOGERAADSLID" });
+    expect((await call("POST", "/invitations/activate", { body: { token } })).status).toBe(200);
+    expect(await prisma.user.count({ where: { email: { equals: "mixed.case@test.ringapeldoorn.nl", mode: "insensitive" } } })).toBe(1);
+    expect(await prisma.ringMembership.count({ where: { userId: legacy.id, ringId: s.ringA.id } })).toBe(1);
+  });
+
+  it("gelijktijdig opnieuw versturen (dubbeltik) levert niet meer dan twee pogingen en één geldige link op", async () => {
+    const s = await setup();
+    await invite(s);
+    const id = (await prisma.ringInvitation.findFirstOrThrow()).id;
+    await prisma.ringInvitation.update({ where: { id }, data: { sentAt: new Date(Date.now() - INVITATION_RESEND_COOLDOWN_MS - 1000) } });
+    sendMailMock.mockClear();
+    const res = await Promise.all(Array.from({ length: 5 }, () => call("POST", `/invitations/${id}/resend`, { token: s.token })));
+    expect(res.filter((r) => r.status === 200).length).toBeLessThanOrEqual(2);
+    expect(sendMailMock.mock.calls.length).toBeLessThanOrEqual(2);
+  });
+});

@@ -82,7 +82,7 @@ h2 { font-size: 1.05rem; margin: 8px 0 0; }
 a.panel, button.panel { display: block; width: 100%; text-align: left; color: inherit; text-decoration: none; font: inherit; }
 .btn {
   display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 8px;
-  border: 0; border-radius: 16px; padding: 0 20px; font: inherit; font-weight: 600; cursor: pointer; color: var(--text);
+  border: 0; border-radius: 16px; padding: 12px 20px; text-align: center; font: inherit; font-weight: 600; cursor: pointer; color: var(--text); /* padding: tekst die op een smal scherm afbreekt houdt ruimte */
 }
 .btn:active { transform: scale(0.98); }
 .btn:disabled { opacity: 0.5; pointer-events: none; }
@@ -107,8 +107,11 @@ input:focus-visible, select:focus-visible, .btn:focus-visible, a:focus-visible, 
   display: flex; padding: 6px calc(var(--sar) + 8px) calc(var(--sab) + 6px) calc(var(--sal) + 8px);
   border-top: 1px solid rgb(var(--surface-border) / var(--surface-border-alpha));
   background: rgb(var(--surface) / 0.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  /* Ringbeheerders hebben zes tabs: op een smal scherm schuift de balk horizontaal in plaats van de pagina te laten overlopen. */
+  overflow-x: auto; scrollbar-width: none;
 }
-.tab { flex: 1; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+.tabbar::-webkit-scrollbar { display: none; }
+.tab { flex: 1 0 auto; padding: 0 5px; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   color: var(--text-muted); text-decoration: none; font-size: 0.74rem; font-weight: 600; position: relative; }
 .tab.active { color: var(--primary); }
 .tab .dot { position: absolute; top: 4px; right: calc(50% - 22px); min-width: 18px; height: 18px; border-radius: 9px; padding: 0 5px; background: var(--danger); color: #fff; font-size: 0.7rem; line-height: 18px; text-align: center; }
