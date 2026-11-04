@@ -47,6 +47,19 @@ const TEMPLATES: Record<NotificationEvent, { title: string; message: string }> =
     title: "Nog te verwerken",
     message: "Een roeping staat al 30 dagen open en is nog niet verwerkt.",
   },
+  // Ontheffingen: bewust zonder het woord "ontheffing", namen of functies (vergrendeld scherm, vertrouwelijkheid).
+  CONFIDENTIAL_PROPOSAL: {
+    title: "Vertrouwelijk voorstel",
+    message: "Er staat een vertrouwelijk voorstel klaar dat jouw aandacht vraagt.",
+  },
+  CONFIDENTIAL_HOGERAAD: {
+    title: "Vertrouwelijk voorstel",
+    message: "Er staat een vertrouwelijk voorstel klaar waarvoor jouw ondersteuning wordt gevraagd.",
+  },
+  CONFIDENTIAL_PAUSED: {
+    title: "Vertrouwelijk voorstel",
+    message: "Een vertrouwelijk voorstel is gepauzeerd en vraagt aandacht.",
+  },
 };
 
 export type EmailBuilder = (user: User) => { subject: string; text: string } | Promise<{ subject: string; text: string }>;
@@ -70,17 +83,37 @@ export async function notify(params: {
   event: NotificationEvent;
   url: string;
   callingId?: string;
+  /**
+   * Meldingen over een ontheffing: de betrokkenen van het dossier (tijdelijk gekoppelde accounts) krijgen NOOIT een melding, ook niet
+   * als de aanroeper ze per ongeluk meegeeft. Ontheffingen versturen bovendien nooit e-mail (geen `buildEmail`).
+   */
+  ontheffingId?: string;
   buildEmail?: EmailBuilder;
+  /** Herhaalde levering: sla ontvangers over die voor dit voorstel al een melding van dit type hebben (geen dubbele meldingen). */
+  skipExisting?: boolean;
 }): Promise<void> {
-  const { userIds, ringId, event, url, callingId, buildEmail } = params;
+  const { userIds, ringId, event, url, callingId, ontheffingId, buildEmail, skipExisting } = params;
   if (userIds.length === 0) return;
 
   // Nooit naar gedeactiveerde gebruikers (ook niet intern) en nooit naar
   // personen die geen actief lid van deze ring (meer) zijn: meldingen van
   // verschillende ringen mogen nooit door elkaar lopen.
-  const users = await prisma.user.findMany({
+  let users = await prisma.user.findMany({
     where: { id: { in: userIds }, active: true, memberships: { some: { ringId, active: true } } },
   });
+  if (ontheffingId && users.length > 0) {
+    const subjects = await prisma.ontheffingPerson.findMany({ where: { ontheffingId, userId: { in: users.map((u) => u.id) } }, select: { userId: true } });
+    const hidden = new Set(subjects.map((p) => p.userId));
+    users = users.filter((u) => !hidden.has(u.id));
+  }
+  if (skipExisting && (callingId || ontheffingId) && users.length > 0) {
+    const already = await prisma.notification.findMany({
+      where: { ...(ontheffingId ? { ontheffingId } : { callingId }), type: event, userId: { in: users.map((u) => u.id) } },
+      select: { userId: true },
+    });
+    const done = new Set(already.map((n) => n.userId));
+    users = users.filter((u) => !done.has(u.id));
+  }
   if (users.length === 0) return;
 
   const template = TEMPLATES[event];
@@ -95,6 +128,7 @@ export async function notify(params: {
       message: template.message,
       targetUrl: url,
       callingId: callingId ?? null,
+      ontheffingId: ontheffingId ?? null,
     })),
   });
 

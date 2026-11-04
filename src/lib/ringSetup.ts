@@ -201,9 +201,16 @@ const ALLOWED: Record<AuthorityRule, AppointAuthority[]> = {
  */
 export async function eligibleAppointers(ringId: string, catalogCode: string | null, which: "appointedBy" | "grantedBy" = "appointedBy") {
   const entry = catalogCode ? getCatalogEntry(catalogCode) : null;
-  const rule = entry ? entry[which] : null;
-  // Alleen geverifieerde regels kennen bevoegdheden toe; onbekend/bijzonder/eigen = nooit automatisch.
-  const allowed = entry && entry.ruleStatus === "GEVERIFIEERD" && rule ? ALLOWED[rule] : [];
+  return eligibleForRule(ringId, entry ? entry.ruleStatus : null, entry ? entry[which] : null);
+}
+
+/**
+ * Personen die bij een gegeven regel én regelstatus bevoegd zijn. Los van de actuele catalogus, zodat een voorstel kan blijven werken
+ * met de regel die bij indienen is vastgelegd (procedureSnapshot). Alleen een geverifieerde regel kent bevoegdheid toe; de personen
+ * zelf worden altijd NU opnieuw bepaald (actief lidmaatschap en expliciete aanwijzing in deze ring).
+ */
+export async function eligibleForRule(ringId: string, ruleStatus: string | null, rule: string | null) {
+  const allowed = ruleStatus === "GEVERIFIEERD" && rule && rule in ALLOWED ? ALLOWED[rule as AuthorityRule] : [];
   if (allowed.length === 0) return { rule: rule ?? null, appointers: [] as { id: string; name: string; authority: AppointAuthority }[] };
   const rows = await prisma.ringMembership.findMany({
     where: { ringId, active: true, user: { active: true }, ring: { active: true }, appointAuthority: { in: allowed } },

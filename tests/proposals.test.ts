@@ -179,13 +179,23 @@ describe("Indienen", () => {
     expect(await prisma.calling.count()).toBe(0);
   });
 
-  it("een ring zonder units kan zonder unit indienen; met units is de unit verplicht", async () => {
+  it("indienen is geblokkeerd zolang de ringinrichting geen wijken of gemeenten kent; het concept blijft bewaard", async () => {
     const s = await setup();
     await prisma.ringUnit.deleteMany();
     const d = await draft(s, base(s, { unitId: null }));
-    const r = await submit(d.body.id, s.token);
-    expect(r.status).toBe(200);
-    expect((await prisma.calling.findUniqueOrThrow({ where: { id: r.body.id } })).unitNameSnapshot).toBeNull();
+    expect(d.status).toBe(200); // opslaan als concept mag altijd
+    const blocked = await submit(d.body.id, s.token);
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.error).toMatch(/ringinrichting is nog niet compleet/);
+    expect(await prisma.calling.count()).toBe(0);
+    expect(await prisma.callingDraft.count({ where: { id: d.body.id, submittedAt: null } })).toBe(1);
+    // na het invoeren van een wijk: een unit is verplicht, daarna lukt indienen met dezelfde conceptsleutel
+    const unit = await createUnit(s.manager.id, s.ring.id, { kind: "GEMEENTE", name: "Gemeente Nieuw" });
+    expect((await submit(d.body.id, s.token)).status).toBe(400); // nog steeds geen wijk/gemeente van herkomst gekozen
+    expect((await call("POST", `/drafts/${d.body.id}`, { token: s.token, body: { unitId: unit.id } })).status).toBe(200);
+    const ok = await submit(d.body.id, s.token);
+    expect(ok.status).toBe(200);
+    expect((await prisma.calling.findUniqueOrThrow({ where: { id: ok.body.id } })).unitNameSnapshot).toBe("Gemeente Nieuw");
   });
 
   it("oude voorstellen blijven geldig (zonder C3-velden) en een latere unit- of cataloguswijziging verandert een bestaand voorstel niet", async () => {
@@ -271,6 +281,21 @@ describe("Eigen roepingen en niet-geverifieerde functies: servercontrole", () =>
   });
 });
 
+describe("Bisschop buiten Ringtools", () => {
+  it("een eigen roeping 'Bisschop' kan niet worden ingediend; raadgevers in de bisschap wel herkenbaar anders", async () => {
+    const s = await setup();
+    const { isBishopFunctionName } = await import("@/lib/catalog/callings");
+    expect(isBishopFunctionName("Bisschop")).toBe(true);
+    expect(isBishopFunctionName("  Bisschóp van de wijk ")).toBe(true);
+    expect(isBishopFunctionName("Eerste raadgever in de bisschap")).toBe(false);
+    expect(isBishopFunctionName("Raadgever van de bisschop")).toBe(false);
+    const own = await createCustomCalling(s.manager.id, s.ring.id, { name: "Bisschop", category: "Overig" });
+    const d = await draft(s, base(s, { functionSource: "EIGEN", functionCode: own.id, procedureConfirmed: true }));
+    expect(d.status).toBe(400);
+    expect(d.body.error).toMatch(/bisschop/i);
+  });
+});
+
 describe("Aanstellingsbevoegdheid en voorgestelde verantwoordelijken", () => {
   it("een geverifieerde regel staat alleen expliciet aangewezen personen toe; anderen worden server-side geweigerd", async () => {
     const s = await setup();
@@ -349,6 +374,124 @@ describe("Aanstellingsbevoegdheid en voorgestelde verantwoordelijken", () => {
     // ondersteunen (steunverlening) kent geen bevoegdheidsregel en geen externe registratie
     expect((await assign("ondersteunen", { assigneeId: s.ha1.id })).status).toBe(200);
     expect((await assign("ondersteunen", { externalName: "Extern" })).status).toBe(400);
+  });
+});
+
+describe("C3-correcties: vastgelegde procedure en herstelbare meldingen", () => {
+  it("achteraf wijzigen van een verantwoordelijke volgt de bij indienen vastgelegde procedure, niet de actuele catalogus", async () => {
+    const s = await setup();
+    await authorize(s, s.president.id, "RINGPRESIDENT", "Ringpresident");
+    const created = await submit((await draft(s, base(s))).body.id, s.token); // ringadministrateur: geverifieerde regel
+    const id = created.body.id as string;
+    const assign = () => call("POST", `/callings/${id}/tasks/aanstellen/assign`, { token: s.token, body: { assigneeId: s.president.id } });
+    expect((await assign()).status).toBe(200); // volgens snapshot en catalogus toegestaan
+
+    // De vastgelegde regel was strenger/anders dan de actuele catalogus: de snapshot telt. (De catalogus zelf is niet te wijzigen in een test;
+    // daarom wordt de snapshot aangepast om aan te tonen dat de server de snapshot leest en niet de catalogus.)
+    const row = await prisma.calling.findUniqueOrThrow({ where: { id } });
+    const snap = row.procedureSnapshot as Record<string, unknown>;
+    expect(snap.ruleStatus).toBe("GEVERIFIEERD");
+    await prisma.calling.update({ where: { id }, data: { procedureSnapshot: { ...snap, ruleStatus: "TE_BEOORDELEN" } } });
+    expect((await assign()).status).toBe(400); // catalogus zegt GEVERIFIEERD, snapshot niet → geweigerd
+
+    await prisma.calling.update({ where: { id }, data: { procedureSnapshot: { ...snap, appointedBy: "BIJZONDER" } } });
+    expect((await assign()).status).toBe(400); // andere vastgelegde regel
+
+    await prisma.calling.update({ where: { id }, data: { procedureSnapshot: { ...snap, appointedBy: "RINGPRESIDENT", ruleStatus: "GEVERIFIEERD" } } });
+    expect((await assign()).status).toBe(200);
+    // een raadgever (aangewezen) valt buiten de vastgelegde regel RINGPRESIDENT
+    await authorize(s, s.counselor.id, "AANGEWEZEN_RAADGEVER", "Raadgever");
+    expect((await call("POST", `/callings/${id}/tasks/aanstellen/assign`, { token: s.token, body: { assigneeId: s.counselor.id } })).status).toBe(400);
+  });
+
+  it("een voorstel zonder snapshot (van vóór C3) valt terug op de catalogus; een eigen roeping kent nooit interne uitvoerders toe", async () => {
+    const s = await setup();
+    await authorize(s, s.president.id, "RINGPRESIDENT", "Ringpresident");
+    const { createCalling } = await import("@/lib/workflow");
+    const legacy = await createCalling({ ringId: s.ring.id, personName: "Oud", functionTitle: "Ringadministrateur", createdById: s.manager.id });
+    await prisma.calling.update({ where: { id: legacy.id }, data: { functionSource: "STANDAARD", functionCode: "ringadministrateur" } });
+    expect((await call("POST", `/callings/${legacy.id}/tasks/aanstellen/assign`, { token: s.token, body: { assigneeId: s.president.id } })).status).toBe(200);
+    const own = await createCustomCalling(s.manager.id, s.ring.id, { name: "Eigen taak", category: "Overig" });
+    const c = await submit((await draft(s, base(s, { functionSource: "EIGEN", functionCode: own.id, procedureConfirmed: true }))).body.id, s.token);
+    expect((await call("POST", `/callings/${c.body.id}/tasks/aanstellen/assign`, { token: s.token, body: { assigneeId: s.president.id } })).status).toBe(400);
+  });
+
+  const countNotes = async (callingId: string) => {
+    const rows = await prisma.notification.groupBy({ by: ["type", "userId"], where: { callingId }, _count: true });
+    return rows.map((r) => `${r.type}:${r.userId}:${r._count}`).sort();
+  };
+
+  it("slaagt het indienen maar mislukt het versturen van meldingen, dan blijft het voorstel bestaan en herstelt een herhaling zonder dubbele meldingen", async () => {
+    const s = await setup();
+    const d = await draft(s, base(s, { ondersteunenAssigneeId: s.ha2.id }));
+    const spy = vi.spyOn(prisma.notification, "createMany").mockRejectedValueOnce(new Error("tijdelijke storing"));
+    const first = await submit(d.body.id, s.token);
+    spy.mockRestore();
+    expect(first.status).toBe(200); // het voorstel is aangemaakt
+    expect(first.body.notificationsDelivered).toBe(false);
+    const id = first.body.id as string;
+    expect(await prisma.calling.count()).toBe(1);
+    expect(await prisma.notification.count({ where: { callingId: id } })).toBe(0);
+    expect((await prisma.calling.findUniqueOrThrow({ where: { id } })).creationNotifiedAt).toBeNull();
+
+    // direct herhalen binnen de lease: geen tweede verzender ("busy"), geen duplicaten
+    const busy = await submit(d.body.id, s.token);
+    expect(busy.body).toMatchObject({ id, alreadySubmitted: true, notificationsDelivered: false });
+    expect(await prisma.notification.count({ where: { callingId: id } })).toBe(0);
+
+    // na afloop van de lease levert een herhaling alsnog af
+    await prisma.calling.update({ where: { id }, data: { creationNotifyClaimedAt: new Date(Date.now() - 5 * 60 * 1000) } });
+    const retry = await submit(d.body.id, s.token);
+    expect(retry.body).toMatchObject({ id, alreadySubmitted: true, notificationsDelivered: true });
+    const after = await countNotes(id);
+    expect(after).toEqual([
+      `NEW_PROPOSAL:${s.president.id}:1`, `NEW_PROPOSAL:${s.counselor.id}:1`, `TASK_ASSIGNED:${s.ha2.id}:1`,
+    ].sort());
+    // en verder herhalen verandert niets meer
+    expect((await submit(d.body.id, s.token)).body.notificationsDelivered).toBe(true);
+    expect(await countNotes(id)).toEqual(after);
+  });
+
+  it("een gedeeltelijk gelukte levering wordt aangevuld zonder de al verstuurde meldingen te herhalen", async () => {
+    const s = await setup();
+    const d = await draft(s, base(s, { ondersteunenAssigneeId: s.ha2.id }));
+    const real = prisma.notification.createMany.bind(prisma.notification);
+    let calls = 0;
+    const spy = vi.spyOn(prisma.notification, "createMany").mockImplementation(((args: Parameters<typeof real>[0]) => {
+      calls++;
+      return calls === 1 ? real(args) : Promise.reject(new Error("storing bij taakmelding"));
+    }) as unknown as typeof prisma.notification.createMany);
+    const first = await submit(d.body.id, s.token);
+    spy.mockRestore();
+    const id = first.body.id as string;
+    expect(first.body.notificationsDelivered).toBe(false);
+    expect(await prisma.notification.count({ where: { callingId: id, type: "NEW_PROPOSAL" } })).toBe(2); // presidium kreeg al bericht
+    expect(await prisma.notification.count({ where: { callingId: id, type: "TASK_ASSIGNED" } })).toBe(0);
+
+    await prisma.calling.update({ where: { id }, data: { creationNotifyClaimedAt: new Date(Date.now() - 5 * 60 * 1000) } });
+    expect((await submit(d.body.id, s.token)).body.notificationsDelivered).toBe(true);
+    expect(await prisma.notification.count({ where: { callingId: id, type: "NEW_PROPOSAL" } })).toBe(2); // niet opnieuw
+    expect(await prisma.notification.count({ where: { callingId: id, type: "TASK_ASSIGNED" } })).toBe(1);
+  });
+
+  it("de achtergrondtaak levert meldingen af van een voorstel dat nooit is verstuurd (crash tussen opslaan en versturen)", async () => {
+    const s = await setup();
+    const { createCallingInTx, retryPendingCreationNotifications } = await import("@/lib/workflow");
+    const { calling } = await prisma.$transaction((tx) => createCallingInTx(tx, { ringId: s.ring.id, personName: "Crash Test", functionTitle: "Ringadministrateur", createdById: s.manager.id }));
+    expect(await retryPendingCreationNotifications()).toBe(0); // te vers: nog binnen de lease, de aanroeper kan nog bezig zijn
+    await prisma.calling.update({ where: { id: calling.id }, data: { createdAt: new Date(Date.now() - 10 * 60 * 1000) } });
+    expect(await retryPendingCreationNotifications()).toBe(1);
+    expect(await prisma.notification.count({ where: { callingId: calling.id, type: "NEW_PROPOSAL" } })).toBe(2);
+    expect(await retryPendingCreationNotifications()).toBe(0); // geen tweede keer
+    expect(await prisma.notification.count({ where: { callingId: calling.id, type: "NEW_PROPOSAL" } })).toBe(2);
+  });
+
+  it("bestaande voorstellen van vóór deze migratie worden niet alsnog gemeld", async () => {
+    const s = await setup();
+    const { retryPendingCreationNotifications } = await import("@/lib/workflow");
+    const c = await prisma.calling.create({ data: { ringId: s.ring.id, personName: "Oud", functionTitle: "X", createdById: s.manager.id, createdAt: new Date(Date.now() - 86_400_000), creationNotifiedAt: new Date() } });
+    expect(await retryPendingCreationNotifications()).toBe(0);
+    expect(await prisma.notification.count({ where: { callingId: c.id } })).toBe(0);
   });
 });
 

@@ -27,6 +27,7 @@ import {
   AuthorizationError,
 } from "../workflow";
 import { assignTaskGuarded } from "../proposals";
+import { ontheffingCounts } from "../ontheffingen";
 import { eligibleAppointers } from "../ringSetup";
 import { ApiError } from "./http";
 import { hashToken } from "../crypto";
@@ -143,6 +144,7 @@ export async function getDashboard(userId: string, ringId: string) {
     role: membership.role,
     isStaff: staff,
     counts,
+    ontheffingen: await ontheffingCounts(userId, ringId),
     attention: attention.map((c) => toItem(c)),
     pendingSupport: support,
     myTasks: tasks.map((c) => {
@@ -473,6 +475,7 @@ export async function listNotificationsFor(userId: string, ringId: string) {
       title: n.title,
       message: n.message,
       callingId: n.callingId,
+      ontheffingId: n.ontheffingId,
       readAt: n.readAt?.toISOString() ?? null,
       createdAt: n.createdAt.toISOString(),
     })),

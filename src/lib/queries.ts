@@ -1,3 +1,4 @@
+import { ontheffingCounts } from "./ontheffingen";
 import { prisma } from "./prisma";
 import type { Calling, Role } from "@prisma/client";
 import { STAGE_ROLE } from "./rbac";
@@ -172,6 +173,8 @@ export async function getPendingActionCount(userId: string): Promise<number> {
   const memberships = await prisma.ringMembership.findMany({ where: { userId, active: true, ring: { active: true } } });
   let count = 0;
   for (const m of memberships) {
+    // Ontheffingen: alleen wat deze gebruiker volgens dezelfde zichtbaarheidsregel mag zien (een betrokkene telt nooit mee).
+    count += (await ontheffingCounts(userId, m.ringId)).needsMyVote;
     if (m.role === "HOGERAAD") {
       const { pendingVotes, tasks } = await getHogeraadOverview(userId, m.ringId);
       count += pendingVotes.length + tasks.length;

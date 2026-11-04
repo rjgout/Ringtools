@@ -29,6 +29,9 @@ export function Notifications({ onChanged }: { onChanged: () => void }) {
             <div className="muted">{n.message}</div>
           </>
         );
+        if (n.ontheffingId) {
+          return <Link key={n.id} to={`/ontheffingen/${n.ontheffingId}`} className="glass panel" style={n.readAt ? { opacity: 0.7 } : undefined}>{body}</Link>;
+        }
         return n.callingId ? (
           <Link key={n.id} to={`/roepingen/${n.callingId}`} className="glass panel" style={n.readAt ? { opacity: 0.7 } : undefined}>{body}</Link>
         ) : (

@@ -1,9 +1,10 @@
 import cron from "node-cron";
 import { env } from "./env";
-import { sendDue30DayReminders, deleteDueProcessedCallings } from "./workflow";
+import { sendDue30DayReminders, deleteDueProcessedCallings, retryPendingCreationNotifications } from "./workflow";
 import { deleteExpiredAuthData } from "./auth";
 import { deleteExpiredOpenLinks } from "./openLinks";
 import { deleteStaleDrafts } from "./proposals";
+import { deleteDueOntheffingen, retryPendingOntheffingNotifications } from "./ontheffingen";
 
 let started = false;
 
@@ -31,6 +32,16 @@ export function startBackgroundJobs(): void {
     options
   );
 
+  // Elke 10 minuten: aanmaakmeldingen die nooit (volledig) zijn afgeleverd alsnog afmaken (herstel na crash of tijdelijke storing).
+  cron.schedule(
+    "*/10 * * * *",
+    () => {
+      retryPendingCreationNotifications().catch((err) => console.error("[cron] Herhalen van aanmaakmeldingen mislukt:", err));
+      retryPendingOntheffingNotifications().catch((err) => console.error("[cron] Herhalen van meldingen mislukt:", err));
+    },
+    options
+  );
+
   // Ook één keer kort na opstarten uitvoeren, zodat een roeping niet wacht
   // tot de volgende nacht als de container net is herstart.
   runOnce().catch((err) => console.error("[cron] Onverwachte fout bij opstarten:", err));
@@ -48,6 +59,12 @@ async function runOnce(): Promise<void> {
 
   const drafts = await deleteStaleDrafts();
   if (drafts > 0) console.log(`[cron] ${drafts} verlaten of ingediend concept(en) opgeruimd.`);
+
+  const retried = await retryPendingCreationNotifications();
+  if (retried > 0) console.log(`[cron] ${retried} aanmaakmelding(en) alsnog afgeleverd.`);
+
+  const ontheffingen = await deleteDueOntheffingen();
+  if (ontheffingen > 0) console.log(`[cron] ${ontheffingen} ontheffingsdossier(s) volgens de bewaarregels verwijderd.`);
 
   const deleted = await deleteDueProcessedCallings();
   if (deleted > 0) console.log(`[cron] ${deleted} verwerkte roeping(en) na 30 dagen verwijderd.`);

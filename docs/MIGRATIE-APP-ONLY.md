@@ -11,7 +11,7 @@ technische beheeromgeving voor `webmin` blijft via het web bestaan. **Deze migra
 | A | Alle roepings- en taakfunctionaliteit in de app | gebouwd en getest (CI); toesteltest iPhone/Android open |
 | B | Gebruikers- en ringbeheer; veilige webmin-login in de app | gebouwd en getest (lokaal); toesteltest open |
 | C | Native passkeys; uitnodigings- en activatieprocedure | gepland |
-| D | Ontheffingen (eigen module en datamodel) | gepland |
+| D | Ontheffingen (eigen module en datamodel) | gebouwd en getest (C4, lokaal/CI); toesteltest open; zie "C4" en "Open vragen" |
 | E | Publieke informatieve website; voorbereiding uitschakelen web-login (feature flag, standaard UIT) | gepland |
 | F | Live acceptatie iPhone/Android; daarna eventuele storepublicatie | gepland (handmatig, eigenaar) |
 
@@ -120,3 +120,47 @@ coördineren; **LCR blijft de officiële bron**, Ringtools houdt geen blijvend p
   (nachtelijke cron, `deleteStaleDrafts`). Concepten zijn tijdelijke persoonsgegevens en vallen onder de bestaande bewaartermijnen.
 - **Migratie** `20261109100000_c3_concepten` (additief): enum `FunctionSource`, kolommen op `Calling` (alle nullable), tabel `CallingDraft`; niets wordt verwijderd.
 - **C1 blijft intact**: ingediend voorstel → ringpresidium → akkoord wacht op expliciete vrijgave → geen automatische doorstart; lege hoge raad keurt nooit goed; individueel en gezamenlijk akkoord werken beide.
+
+### C3-correcties (bij C4)
+- **Vastgelegde procedure telt**: `assignTaskChecked` bepaalt de bevoegdheid bij achteraf wijzigen uit de bij indienen vastgelegde `procedureSnapshot` (regel + `ruleStatus`), niet uit de actuele catalogus.
+  Alleen voor voorstellen van vóór de snapshot valt het terug op de catalogus. De personen zelf worden altijd nu bepaald (actief lid, expliciet aangewezen).
+- **Herstelbare aanmaakmeldingen**: na een gelukt indienen zijn de meldingen losgekoppeld van het opslaan. `Calling.creationNotifyClaimedAt/creationNotifiedAt` + `deliverCreationNotifications` (claim met 2 minuten
+  lease, compare-and-set): precies één verzender tegelijk; pas na volledig succes wordt `creationNotifiedAt` gezet. Een fout laat het voorstel bestaan; een herhaald indienen of de cron (elke 10 minuten,
+  `retryPendingCreationNotifications`) maakt de levering af en slaat ontvangers over die al een interne melding voor dit voorstel hebben. Interne melding is de betrouwbare registratie; push/e-mail zijn per ontvanger
+  hooguit eenmaal (liever een gemiste push dan een dubbele). Bestaande voorstellen zijn in de migratie als reeds gemeld gemarkeerd.
+- **Wijk/gemeente van herkomst verplicht**: indienen is geblokkeerd zolang de ring geen actieve wijk/gemeente heeft (het concept blijft bewaard); daarna is een keuze verplicht. De overgangswebapp (vrije tekst, wordt
+  uitgefaseerd) gebruikt `createCalling` direct en kent deze eis niet; nieuwe functionaliteit loopt alleen via de app.
+- **Bisschop**: een eigen roeping met de naam "Bisschop" is voor voorstellen en ontheffingen geweigerd (`isBishopFunctionName`).
+
+### C4 – Ontheffingen (gerealiseerd)
+Zelfstandige module (`src/lib/ontheffingen.ts`, `src/lib/api/ontheffingen.ts`, app-schermen `Ontheffingen`, `OntheffingForm`, `OntheffingDetail`), los van `Calling`.
+- **Route**: concept → ringpresidium (individueel via ondersteuning in de app, of gezamenlijk besluit in een vergadering) → `PRESIDIUM_APPROVED` wacht op **expliciete, idempotente vrijgave** → hoge raad
+  (individueel of gezamenlijk; presiderend presidiumlid verplicht) → `APPROVED` → uitvoering per persoon: persoonlijk informeren → bekendmaking (met registratie of er ook een dankbetuiging is uitgesproken; geen
+  stemknoppen) → administratief verwerken → `PROCESSED` → dossier wordt 30 dagen later verwijderd. Een lege hoge raad (ook na uitsluiting van betrokkenen) leidt nooit tot goedkeuring en blokkeert de vrijgave.
+- **Concept**: naam handmatig, wijk/gemeente (verplicht bij indienen), roeping uit de Nederlandstalige catalogus (of eigen roeping met procedurebevestiging); bewaren en later wijzigen; alleen zichtbaar voor de
+  aanmaker; start niets; vervalt 30 dagen na de laatste wijziging. Indienen valideert alles opnieuw, is atomair en idempotent en legt unit, functie, cataloguversie en procedure vast.
+- **Buiten Ringtools**: functies met `ringtoolsProcess = false` (o.a. ringpresident, eerste/tweede raadgever ringpresidium, ringpatriarch) en de bisschop zijn niet te kiezen; raadgevers in een bisschap wel (afspraak eigenaar).
+- **Vertrouwelijkheid betrokkene** (geen register van huidige roepingen, dus nooit koppelen op naam):
+  - Bij elke betrokkene verklaart de staf expliciet "Ringtools-account: dit account" (`GEKOPPELD`) of "geen account" (`GEEN_ACCOUNT`); zonder antwoord kan niet worden ingediend. Je kunt jezelf niet koppelen; een account
+    maar één keer per dossier; alleen een actief lid van déze ring. De koppeling ligt na indienen vast (geen wijziging) en verdwijnt met het dossier (cascade bij verwijderen/opruimen).
+  - Een gekoppeld account heeft **nergens** toegang: detail (`loadAccess` geeft hetzelfde antwoord als bij een onbestaand dossier), lijst, aantallen (`ontheffingCounts`, dashboard, app-badge), stemmen, vrijgave,
+    uitvoering, verwijderen, push, interne meldingen (`notify` filtert betrokkenen zelf nog eens weg) en deeplinks. Het is uitgesloten van de deelnemerslijsten van beide rondes en van het gezamenlijk besluit.
+  - Ontheffingen sturen nooit e-mail en geen persoonlijke open-link; push en interne meldingen zijn generiek ("Vertrouwelijk voorstel") zonder naam, functie of het woord ontheffing. Een universele link bestaat bewust niet.
+  - Een concept is alleen voor de aanmaker zichtbaar (voor de koppeling vastligt kan niemand anders het zien). Hogeraadsleden zien alleen dossiers van hun lopende ronde, en daarin alleen naam en functie.
+  - Het audittrail bevat geen namen of functies.
+- **Gezamenlijke ontheffing** (functie met `releaseFollowUps`: ZHV-presidente, jongemannen-/jongevrouwen-/zondagsschool-/jeugdwerkpresident(e)): verplichte vraag per raadgever: "Naam invullen" (met account-
+  identificatie) of "Niet van toepassing" (optionele reden, vastgelegd). Er komt **één** besluit voor het dossier (geen afzonderlijke goedkeuringsbesluiten of stemmen per persoon); de uitvoeringsstatus
+  (geïnformeerd/bekendgemaakt/verwerkt) staat per persoon; het dossier is verwerkt zodra alle genoemde personen verwerkt zijn. Een "niet van toepassing"-raadgever heeft geen naam, koppeling of status.
+- **Migratie** `20261111100000_c4_ontheffingen` (additief): enums, tabellen `Ontheffing`, `OntheffingPerson`, `OntheffingVoter`, `OntheffingVote`, `OntheffingDecision`, `OntheffingAudit`, kolom `Notification.ontheffingId`,
+  drie `NotificationType`-waarden. Plus `20261110100000_c4a_aanmaakmeldingen` (C3-correctie). Niets wordt verwijderd.
+- **Herstelbare meldingen**: `Ontheffing.notifyEvent/notifyClaimedAt` (zelfde claim/lease-principe); cron elke 10 minuten.
+
+### Open vragen voor de eigenaar (niet zelf beslist)
+1. **Deelname van een betrokken hogeraadslid na kennisgeving.** Hoe neemt de betrokkene daarna deel aan de eigen behandeling, of wordt hij daarvan uitgesloten? Er is geen kerkelijke regel verzonnen: een gekoppeld account blijft
+   voorlopig *altijd* uitgesloten en zonder toegang (veiligste uitgangspunt). Het register van de kennisgeving (`informedAt`) staat klaar, maar geeft geen toegang.
+2. Moet persoonlijk informeren verplicht zijn vóór de vrijgave aan de hoge raad bij de ontheffing van een hogeraadslid (nu: mogelijk vanaf presidiumakkoord, niet verplicht)?
+3. Is de dankbetuiging verplicht vóór administratief verwerken (nu: bekendmaking is verplicht; of er een dankbetuiging was wordt geregistreerd)?
+4. Wat als het hele ringpresidium betrokkene is (bijv. ontheffing van alle drie)? Er blijven dan geen presidiumdeelnemers over; alleen een gezamenlijk besluit door secretaris/administrateur kan dan worden vastgelegd.
+5. Bewaartermijn van dossiers die nooit worden afgerond (nu alleen: verwerkt = 30 dagen, concept = 30 dagen na laatste wijziging).
+6. Geldt de wijk/gemeente van herkomst ook voor ontheffingen van ringfuncties zonder wijkbinding?
+

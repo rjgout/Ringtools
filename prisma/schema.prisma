@@ -73,6 +73,10 @@ enum NotificationType {
   TASK_COMPLETED
   REMINDER_30_DAYS
   SUPPORT_REMINDER
+  // Ontheffingen (Fase C4): bewust neutrale, generieke meldingen ("vertrouwelijk voorstel"), nooit met namen of functies.
+  CONFIDENTIAL_PROPOSAL
+  CONFIDENTIAL_HOGERAAD
+  CONFIDENTIAL_PAUSED
 }
 
 model User {
@@ -106,26 +110,33 @@ model User {
   openLinkTokens      OpenLinkToken[]
   devicePushTokens    DevicePushToken[]
 
-  createdCallings          Calling[]       @relation("CallingCreatedBy")
+  createdCallings          Calling[]            @relation("CallingCreatedBy")
   eligibleVotes            EligibleVoter[]
   votes                    Vote[]
-  roepenAssigned           Calling[]       @relation("RoepenAssignee")
-  roepenDone               Calling[]       @relation("RoepenDoneBy")
-  ondersteunenAssigned     Calling[]       @relation("OndersteunenAssignee")
-  ondersteunenDone         Calling[]       @relation("OndersteunenDoneBy")
-  aanstellenAssigned       Calling[]       @relation("AanstellenAssignee")
-  aanstellenDone           Calling[]       @relation("AanstellenDoneBy")
-  processedCallings        Calling[]       @relation("ProcessedBy")
-  releasedCallings         Calling[]       @relation("HogeraadReleasedBy")
-  groupDecisionsRegistered GroupDecision[] @relation("GroupDecisionRegisteredBy")
-  groupDecisionsPresided   GroupDecision[] @relation("GroupDecisionPresiding")
-  callingAudits            CallingAudit[]  @relation("CallingAuditActor")
-  callingDrafts            CallingDraft[]  @relation("DraftCreatedBy")
-  unitsResponsible         RingUnit[]      @relation("UnitResponsible")
-  unitsDefaultRoepen       RingUnit[]      @relation("UnitDefaultRoepen")
-  unitsDefaultOndersteunen RingUnit[]      @relation("UnitDefaultOndersteunen")
-  unitsDefaultAanstellen   RingUnit[]      @relation("UnitDefaultAanstellen")
+  roepenAssigned           Calling[]            @relation("RoepenAssignee")
+  roepenDone               Calling[]            @relation("RoepenDoneBy")
+  ondersteunenAssigned     Calling[]            @relation("OndersteunenAssignee")
+  ondersteunenDone         Calling[]            @relation("OndersteunenDoneBy")
+  aanstellenAssigned       Calling[]            @relation("AanstellenAssignee")
+  aanstellenDone           Calling[]            @relation("AanstellenDoneBy")
+  processedCallings        Calling[]            @relation("ProcessedBy")
+  releasedCallings         Calling[]            @relation("HogeraadReleasedBy")
+  groupDecisionsRegistered GroupDecision[]      @relation("GroupDecisionRegisteredBy")
+  groupDecisionsPresided   GroupDecision[]      @relation("GroupDecisionPresiding")
+  callingAudits            CallingAudit[]       @relation("CallingAuditActor")
+  callingDrafts            CallingDraft[]       @relation("DraftCreatedBy")
+  unitsResponsible         RingUnit[]           @relation("UnitResponsible")
+  unitsDefaultRoepen       RingUnit[]           @relation("UnitDefaultRoepen")
+  unitsDefaultOndersteunen RingUnit[]           @relation("UnitDefaultOndersteunen")
+  unitsDefaultAanstellen   RingUnit[]           @relation("UnitDefaultAanstellen")
   smtpSettingsUpdatedBy    SmtpSettings[]
+  ontheffingenCreated      Ontheffing[]         @relation("OntheffingCreatedBy")
+  ontheffingPersons        OntheffingPerson[]   @relation("OntheffingPersonUser")
+  ontheffingVoterRows      OntheffingVoter[]    @relation("OntheffingVoterUser")
+  ontheffingVotes          OntheffingVote[]     @relation("OntheffingVoteUser")
+  ontheffingDecisionsBy    OntheffingDecision[] @relation("OntheffingDecisionBy")
+  ontheffingDecisionsPres  OntheffingDecision[] @relation("OntheffingDecisionPresiding")
+  ontheffingAudits         OntheffingAudit[]    @relation("OntheffingAuditActor")
 
   @@index([role, active])
 }
@@ -317,6 +328,11 @@ model Calling {
 
   reminder30SentAt DateTime? // eenmalige herinnering 30 dagen na aanmaken
 
+  // Aanmaakmeldingen (uitnodiging presidium + taakverantwoordelijken): "claim" met korte lease zodat één aanroep tegelijk verstuurt,
+  // "notifiedAt" zodra alles is afgeleverd. Een mislukte levering wordt herhaald zonder dubbele meldingen (zie deliverCreationNotifications).
+  creationNotifyClaimedAt DateTime?
+  creationNotifiedAt      DateTime?
+
   // Presidiumakkoord en vrijgave aan de hoge raad (geen automatische doorstart).
   presidiumApprovedAt     DateTime?
   presidiumApprovalMethod DecisionMethod?
@@ -462,21 +478,24 @@ model DevicePushToken {
 // altijd aangemaakt voor een relevante workflow-gebeurtenis, ongeacht of de
 // ontvanger push/e-mail heeft uitgeschakeld voor die gebeurtenis.
 model Notification {
-  id        String           @id @default(cuid())
-  userId    String
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ringId    String
-  ring      Ring             @relation(fields: [ringId], references: [id], onDelete: Cascade)
-  type      NotificationType
-  title     String
-  message   String
-  targetUrl String
+  id           String           @id @default(cuid())
+  userId       String
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ringId       String
+  ring         Ring             @relation(fields: [ringId], references: [id], onDelete: Cascade)
+  type         NotificationType
+  title        String
+  message      String
+  targetUrl    String
   // Bij verwijdering van de roeping (bv. 30 dagen na verwerking) worden de
   // gekoppelde meldingen automatisch mee verwijderd.
-  callingId String?
-  calling   Calling?         @relation(fields: [callingId], references: [id], onDelete: Cascade)
-  readAt    DateTime?
-  createdAt DateTime         @default(now())
+  callingId    String?
+  calling      Calling?         @relation(fields: [callingId], references: [id], onDelete: Cascade)
+  // Idem voor ontheffingen: meldingen verdwijnen met het dossier.
+  ontheffingId String?
+  ontheffing   Ontheffing?      @relation(fields: [ontheffingId], references: [id], onDelete: Cascade)
+  readAt       DateTime?
+  createdAt    DateTime         @default(now())
 
   @@index([userId, ringId, readAt])
   @@index([userId, createdAt])
@@ -500,6 +519,7 @@ model Ring {
   callings       Calling[]
   notifications  Notification[]
   callingDrafts  CallingDraft[]
+  ontheffingen   Ontheffing[]
 }
 
 // Lidmaatschap van een gebruiker in een ring. `role` is de workflowrol binnen
@@ -637,4 +657,182 @@ model CallingDraft {
 
   @@index([ringId, updatedAt])
   @@index([submittedAt])
+}
+
+// ---- Ontheffingen (Fase C4): zelfstandige module, los van Calling ----
+
+enum OntheffingStatus {
+  CONCEPT
+  PRESIDIUM_VOTING
+  PRESIDIUM_PAUSED
+  // Presidium akkoord (individueel of gezamenlijk); wacht op een expliciete vrijgave aan de hoge raad.
+  PRESIDIUM_APPROVED
+  HOGERAAD_VOTING
+  HOGERAAD_PAUSED
+  // Besluit genomen: uitvoering per persoon (informeren, bekendmaken, verwerken).
+  APPROVED
+  PROCESSED
+}
+
+enum OntheffingPersonRole {
+  HOOFD
+  RAADGEVER
+}
+
+// Antwoord op de verplichte vervolgvraag per raadgever bij de ontheffing van een president(e).
+enum FollowUpAnswer {
+  OPEN
+  NAAM
+  NIET_VAN_TOEPASSING
+}
+
+// Tijdelijke, expliciete identificatie van het Ringtools-account van de betrokkene (nooit via de naam).
+enum AccountLinkMode {
+  ONBEKEND
+  GEKOPPELD
+  GEEN_ACCOUNT
+}
+
+// Betrokkenen zijn vertrouwelijk: de persoon (of het gekoppelde account) mag het dossier nergens kunnen ontdekken. Een dossier
+// bevat alleen wat voor de procedure nodig is en verdwijnt 30 dagen na verwerking (concepten: 30 dagen zonder wijziging).
+model Ontheffing {
+  id          String           @id @default(cuid())
+  ringId      String
+  ring        Ring             @relation(fields: [ringId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User             @relation("OntheffingCreatedBy", fields: [createdById], references: [id])
+  status      OntheffingStatus @default(CONCEPT)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  // Wijk of gemeente van herkomst (verplicht bij indienen) en vastlegging van de gekozen functie en procedure.
+  unitId               String?
+  unitNameSnapshot     String?
+  unitKindSnapshot     UnitKind?
+  functionSource       FunctionSource?
+  functionCode         String?
+  functionName         String?
+  catalogVersion       String?
+  procedureSnapshot    Json?
+  procedureConfirmed   Boolean         @default(false)
+  procedureConfirmedAt DateTime?
+  // Gezamenlijke ontheffing: de functie kent verplichte vervolgvragen (president(e) en raadgevers).
+  joint                Boolean         @default(false)
+
+  submittedAt             DateTime?
+  presidiumApprovedAt     DateTime?
+  presidiumApprovalMethod DecisionMethod?
+  hogeraadReleasedAt      DateTime?
+  hogeraadReleasedById    String?
+  hogeraadApprovalMethod  DecisionMethod?
+  approvedAt              DateTime?
+  processedAt             DateTime?
+
+  // Herstelbare meldingen (zelfde principe als Calling.creationNotify*): welke gebeurtenis nog moet worden gemeld.
+  notifyEvent     String?
+  notifyClaimedAt DateTime?
+
+  persons       OntheffingPerson[]
+  voters        OntheffingVoter[]
+  votes         OntheffingVote[]
+  decisions     OntheffingDecision[]
+  audits        OntheffingAudit[]
+  notifications Notification[]
+
+  @@index([ringId, status])
+  @@index([status, updatedAt])
+  @@index([processedAt])
+}
+
+model OntheffingPerson {
+  id           String               @id @default(cuid())
+  ontheffingId String
+  ontheffing   Ontheffing           @relation(fields: [ontheffingId], references: [id], onDelete: Cascade)
+  role         OntheffingPersonRole
+  // Alleen bij RAADGEVER: catalogcode van de raadgeversfunctie uit de vervolgvraag.
+  followUpCode String?
+  functionName String
+  answer       FollowUpAnswer       @default(OPEN)
+  name         String?
+  naReason     String?
+  // Tijdelijke identificatie van het account; verdwijnt met het dossier.
+  accountMode  AccountLinkMode      @default(ONBEKEND)
+  userId       String?
+  user         User?                @relation("OntheffingPersonUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  // Uitvoeringsstatus per persoon (geen fictieve afzonderlijke goedkeuringsbesluiten).
+  informedAt    DateTime?
+  informedById  String?
+  announcedAt   DateTime?
+  announcedById String?
+  thankedAt     DateTime?
+  processedAt   DateTime?
+  processedById String?
+  createdAt     DateTime  @default(now())
+
+  @@unique([ontheffingId, followUpCode])
+  @@index([ontheffingId])
+  @@index([userId])
+}
+
+model OntheffingVoter {
+  id            String     @id @default(cuid())
+  ontheffingId  String
+  ontheffing    Ontheffing @relation(fields: [ontheffingId], references: [id], onDelete: Cascade)
+  stage         VoteStage
+  userId        String
+  user          User       @relation("OntheffingVoterUser", fields: [userId], references: [id], onDelete: Cascade)
+  lastInvitedAt DateTime   @default(now())
+
+  @@unique([ontheffingId, stage, userId])
+  @@index([userId])
+}
+
+model OntheffingVote {
+  id           String     @id @default(cuid())
+  ontheffingId String
+  ontheffing   Ontheffing @relation(fields: [ontheffingId], references: [id], onDelete: Cascade)
+  stage        VoteStage
+  userId       String
+  user         User       @relation("OntheffingVoteUser", fields: [userId], references: [id], onDelete: Cascade)
+  support      Boolean
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([ontheffingId, stage, userId])
+}
+
+model OntheffingDecision {
+  id                    String     @id @default(cuid())
+  ontheffingId          String
+  ontheffing            Ontheffing @relation(fields: [ontheffingId], references: [id], onDelete: Cascade)
+  stage                 VoteStage
+  decidedOn             DateTime   @db.Date
+  registeredById        String
+  registeredBy          User       @relation("OntheffingDecisionBy", fields: [registeredById], references: [id])
+  registeredAt          DateTime   @default(now())
+  agreed                Boolean
+  note                  String?
+  presidingUserId       String?
+  presidingUser         User?      @relation("OntheffingDecisionPresiding", fields: [presidingUserId], references: [id])
+  presentUserIds        String[]
+  absentUserIds         String[]
+  overrodeNegativeVotes Boolean    @default(false)
+  resolutionNote        String?
+
+  @@unique([ontheffingId, stage])
+}
+
+// Kort auditspoor per dossier zonder namen of functies; verdwijnt met het dossier.
+model OntheffingAudit {
+  id           String     @id @default(cuid())
+  ontheffingId String
+  ontheffing   Ontheffing @relation(fields: [ontheffingId], references: [id], onDelete: Cascade)
+  type         String
+  actorId      String
+  actor        User       @relation("OntheffingAuditActor", fields: [actorId], references: [id])
+  createdAt    DateTime   @default(now())
+  detail       String?
+
+  @@index([ontheffingId, createdAt])
 }

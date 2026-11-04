@@ -1,3 +1,6 @@
+import { Ontheffingen } from "./screens/Ontheffingen";
+import { OntheffingForm } from "./screens/OntheffingForm";
+import { OntheffingDetail } from "./screens/OntheffingDetail";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { App as CapApp } from "@capacitor/app";
@@ -115,6 +118,10 @@ function Shell() {
             <Route path="/voorstellen/nieuw" element={<NewCalling />} />
             <Route path="/voorstellen/concept/:id" element={<NewCalling />} />
             <Route path="/roepingen/:id" element={<CallingDetail />} />
+            <Route path="/ontheffingen" element={<Ontheffingen />} />
+            <Route path="/ontheffingen/nieuw" element={<OntheffingForm />} />
+            <Route path="/ontheffingen/concept/:id" element={<OntheffingForm />} />
+            <Route path="/ontheffingen/:id" element={<OntheffingDetail />} />
             <Route path="/open/:token" element={<OpenLink />} />
             {ring.isRingManager && <Route path="/inrichting" element={<div className="stack"><h1>{ring.name}</h1><RingSetup ringId={ring.id} /></div>} />}
             {ring.isRingManager && <Route path="/gebruikers" element={<div className="stack"><h1>{ring.name}</h1><UserManager ringId={ring.id} /></div>} />}

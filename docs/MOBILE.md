@@ -176,3 +176,12 @@ Eigenaar doet handmatig, **vóór** de eerste upload:
 
 ## Wat u zelf live moet testen
 Zie de lijst onderaan `docs/STORE-PRIVACY.md` ("Handmatige acceptatietests").
+
+## Ontheffingen (API, Fase C4)
+Alle routes onder `/api/mobile/v1`, bearer-sessie met MFA-gate; webmin krijgt overal 403.
+- `GET/POST /ontheffingen?ring=` (lijst / nieuw concept), `GET/POST /ontheffingen/:id` (weergave / concept wijzigen), `POST /ontheffingen/:id/submit` (idempotent), `/delete` (bevestiging verplicht), `/vote`, `/release` (idempotent),
+  `/group-decision`, `POST /ontheffingen/persons/:pid/{inform|announce|process|rename}`.
+- Een betrokkene, een niet-deelnemer, een lid van een andere ring en een concept van iemand anders krijgen exact hetzelfde antwoord (403) als bij een onbestaand dossier.
+- Dashboard bevat `ontheffingen: { needsMyVote, open }` met dezelfde zichtbaarheid; meldingen dragen `ontheffingId` (geen `callingId`) en zijn generiek. Deeplink: alleen het interne pad `/ontheffingen/<id>` (pushtik in de app),
+  bewust geen universal link/app link en geen e-maillink (`apple-app-site-association` ongewijzigd).
+

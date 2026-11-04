@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { CallingLink, ErrorState, Spinner } from "../components/ui";
@@ -21,6 +22,12 @@ export function Home() {
           {data.pendingSupport.map((c) => (
             <CallingLink key={c.id} id={c.id} name={c.personName} title={c.functionTitle} status={c.phase} mine />
           ))}
+          {(data.isStaff || (data.ontheffingen?.open ?? 0) > 0) && (
+            <Link to="/ontheffingen" className="glass panel row between">
+              <span>Ontheffingen{(data.ontheffingen?.needsMyVote ?? 0) > 0 ? " – wacht op jouw reactie" : ""}</span>
+              <strong>{(data.ontheffingen?.needsMyVote ?? 0) > 0 ? data.ontheffingen.needsMyVote : (data.ontheffingen?.open ?? 0)}</strong>
+            </Link>
+          )}
           {data.isStaff && data.counts && (
             <>
               <h2>Stand van zaken</h2>

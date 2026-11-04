@@ -15,6 +15,9 @@ import type {
   LoginResult,
   ManagedUser,
   Me,
+  OntheffingConceptInput,
+  OntheffingListItem,
+  OntheffingView,
   RemindResult,
   RingMemberInfo,
   SessionInfo,
@@ -195,7 +198,7 @@ export class ApiClient {
   }
   /** Dient een concept in. Herhaald aanroepen (dubbel tikken, netwerkherhaling) maakt nooit een tweede voorstel. */
   submitDraft(id: string) {
-    return this.request<{ id: string; alreadySubmitted: boolean }>("POST", `/drafts/${encodeURIComponent(id)}/submit`, {});
+    return this.request<{ id: string; alreadySubmitted: boolean; notificationsDelivered: boolean }>("POST", `/drafts/${encodeURIComponent(id)}/submit`, {});
   }
   suggestions(ringId: string, unitId: string | null, source: string | null, code: string | null) {
     const q = new URLSearchParams({ ring: ringId });
@@ -235,6 +238,42 @@ export class ApiClient {
     }
   ) {
     return this.request<{ ok: boolean; alreadyRegistered: boolean }>("POST", `/callings/${encodeURIComponent(id)}/group-decision`, input);
+  }
+  // ---- Ontheffingen (vertrouwelijk; een betrokkene krijgt nooit toegang tot het eigen dossier) ----
+  ontheffingen(ringId: string) {
+    return this.request<{ ontheffingen: OntheffingListItem[] }>("GET", `/ontheffingen?ring=${encodeURIComponent(ringId)}`);
+  }
+  ontheffing(id: string) {
+    return this.request<OntheffingView>("GET", `/ontheffingen/${encodeURIComponent(id)}`);
+  }
+  createOntheffing(ringId: string, input: OntheffingConceptInput) {
+    return this.request<{ id: string }>("POST", `/ontheffingen?ring=${encodeURIComponent(ringId)}`, input);
+  }
+  updateOntheffing(id: string, input: OntheffingConceptInput) {
+    return this.request<{ ok: boolean }>("POST", `/ontheffingen/${encodeURIComponent(id)}`, input);
+  }
+  /** Idempotent: herhaald aanroepen (dubbel tikken, netwerkherhaling) maakt nooit een tweede overgang of dubbele meldingen. */
+  submitOntheffing(id: string) {
+    return this.request<{ id: string; alreadySubmitted: boolean; notificationsDelivered: boolean }>("POST", `/ontheffingen/${encodeURIComponent(id)}/submit`, {});
+  }
+  deleteOntheffing(id: string) {
+    return this.request<{ ok: boolean }>("POST", `/ontheffingen/${encodeURIComponent(id)}/delete`, { confirmed: true });
+  }
+  voteOntheffing(id: string, support: boolean) {
+    return this.request<{ status: string }>("POST", `/ontheffingen/${encodeURIComponent(id)}/vote`, { support });
+  }
+  releaseOntheffing(id: string) {
+    return this.request<{ released: boolean; alreadyReleased: boolean }>("POST", `/ontheffingen/${encodeURIComponent(id)}/release`, {});
+  }
+  ontheffingDecision(
+    id: string,
+    input: { stage: "PRESIDIUM" | "HOGERAAD"; decidedOn: string; agreed: boolean; note?: string; presidingUserId?: string; presentUserIds?: string[]; absentUserIds?: string[]; resolveNegative?: boolean; resolutionNote?: string }
+  ) {
+    return this.request<{ status: string; alreadyRegistered: boolean }>("POST", `/ontheffingen/${encodeURIComponent(id)}/group-decision`, input);
+  }
+  /** Uitvoering per persoon: persoonlijk informeren, bekendmaking (met eventuele dankbetuiging) en administratief verwerken. */
+  ontheffingStep(personId: string, step: "inform" | "announce" | "process" | "rename", body: { thanked?: boolean; name?: string } = {}) {
+    return this.request<{ ok?: boolean; dossierProcessed?: boolean }>("POST", `/ontheffingen/persons/${encodeURIComponent(personId)}/${step}`, body);
   }
   // ---- Ringinrichting en catalogus (ringbeheerder: eigen ring; webmin: via /admin) ----
   private ringPath(ringId: string, tail: string) {

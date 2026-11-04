@@ -10,6 +10,7 @@ import { reviewOverview } from "../catalog/callings";
 import * as mgmt from "./management";
 import * as setup from "./setup";
 import * as drafts from "./drafts";
+import * as ontheffingen from "./ontheffingen";
 
 /** Verhoog bij een niet-achterwaarts-compatibele wijziging; de app toont dan een update-melding. */
 export const API_VERSION = 1;
@@ -129,6 +130,17 @@ authedRoute("GET", "/drafts/:id", async ({ auth, params }) => drafts.getDraftFor
 authedRoute("POST", "/drafts/:id", async ({ auth, params, body }) => drafts.updateDraftFor(auth.user.id, params.id, body));
 authedRoute("POST", "/drafts/:id/delete", async ({ auth, params }) => drafts.deleteDraftFor(auth.user.id, params.id));
 authedRoute("POST", "/drafts/:id/submit", async ({ auth, params }) => drafts.submitDraftFor(auth.user.id, params.id));
+// ---- Ontheffingen (vertrouwelijk; betrokkenen hebben geen toegang tot hun eigen dossier) ----
+authedRoute("GET", "/ontheffingen", async (ctx) => ontheffingen.listFor(ctx.auth.user.id, ringOf(ctx)));
+authedRoute("POST", "/ontheffingen", async (ctx) => ontheffingen.createFor(ctx.auth.user.id, ringOf(ctx), ctx.body));
+authedRoute("GET", "/ontheffingen/:id", async ({ auth, params }) => ontheffingen.viewFor(auth.user.id, params.id));
+authedRoute("POST", "/ontheffingen/:id", async ({ auth, params, body }) => ontheffingen.updateFor(auth.user.id, params.id, body));
+authedRoute("POST", "/ontheffingen/:id/submit", async ({ auth, params }) => ontheffingen.submitFor(auth.user.id, params.id));
+authedRoute("POST", "/ontheffingen/:id/delete", async ({ auth, params, body }) => ontheffingen.deleteFor(auth.user.id, params.id, body.confirmed === true));
+authedRoute("POST", "/ontheffingen/:id/vote", async ({ auth, params, body }) => ontheffingen.voteFor(auth.user.id, params.id, body.support));
+authedRoute("POST", "/ontheffingen/:id/release", async ({ auth, params }) => ontheffingen.releaseFor(auth.user.id, params.id));
+authedRoute("POST", "/ontheffingen/:id/group-decision", async ({ auth, params, body }) => ontheffingen.decisionFor(auth.user.id, params.id, body));
+authedRoute("POST", "/ontheffingen/persons/:pid/:step", async ({ auth, params, body }) => ontheffingen.personStepFor(auth.user.id, params.pid, params.step, body));
 authedRoute("GET", "/catalog/review", async () => reviewOverview());
 authedRoute("GET", "/callings/:id", async ({ auth, params }) => svc.getCallingView(auth.user.id, params.id));
 

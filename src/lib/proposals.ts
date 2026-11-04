@@ -1,9 +1,9 @@
 import type { Calling, CallingDraft, FunctionSource, Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { STAFF_ROLES } from "./rbac";
-import { getCatalogEntry, requiresProcedureConfirmation, CATALOG_VERSION, type CatalogEntry } from "./catalog/callings";
-import { eligibleAppointers, listUnits } from "./ringSetup";
-import { WorkflowError, AuthorizationError, afterCallingCreated, assignTask, createCallingInTx } from "./workflow";
+import { getCatalogEntry, requiresProcedureConfirmation, isBishopFunctionName, BISHOP_OUTSIDE_RINGTOOLS, CATALOG_VERSION, type CatalogEntry } from "./catalog/callings";
+import { eligibleAppointers, eligibleForRule, listUnits } from "./ringSetup";
+import { WorkflowError, AuthorizationError, assignTask, createCallingInTx, deliverCreationNotifications } from "./workflow";
 
 /**
  * Roepingsvoorstellen via concepten (Fase C3). Een concept mag onvolledig zijn, is alleen zichtbaar voor ringstaf van de eigen ring,
@@ -69,12 +69,13 @@ export async function resolveFunction(ringId: string, source: FunctionSource | n
   if (source === "EIGEN") {
     const own = await prisma.ringCustomCalling.findFirst({ where: { id: code, ringId, active: true, ring: { active: true } } });
     if (!own) throw new WorkflowError("Deze eigen roeping bestaat niet in deze ring.");
+    if (isBishopFunctionName(own.name)) throw new WorkflowError(BISHOP_OUTSIDE_RINGTOOLS);
     return { source: "EIGEN", code, name: own.name, category: own.category, entry: null, requiresConfirmation: true };
   }
   throw new WorkflowError("Kies een roeping uit de catalogus of een eigen roeping.");
 }
 
-function procedureSnapshot(fn: ResolvedFunction): Prisma.InputJsonValue {
+export function procedureSnapshot(fn: ResolvedFunction): Prisma.InputJsonValue {
   const e = fn.entry;
   return {
     source: fn.source,
@@ -144,12 +145,22 @@ export async function assignTaskChecked(input: { actorId: string; callingId: str
     return null; // geen bevoegdheidsregel: de bestaande workflow doet de rest
   }
   if (structured && input.assigneeId) {
-    const fn: ResolvedFunction | null =
-      calling.functionSource === "STANDAARD" && calling.functionCode
-        ? { source: "STANDAARD", code: calling.functionCode, name: calling.functionTitle, category: "", entry: getCatalogEntry(calling.functionCode), requiresConfirmation: false }
-        : null;
     const which: Which = input.task === "ROEPEN" ? "grantedBy" : "appointedBy";
-    if (!(await eligibleIds(calling.ringId, fn, which)).has(input.assigneeId)) {
+    // Bevoegdheid volgens de bij indienen vastgelegde procedure (snapshot), niet volgens de actuele catalogus. Alleen voor voorstellen
+    // van vóór de snapshot (zonder procedureSnapshot) valt dit terug op de catalogus.
+    const snap = calling.procedureSnapshot && typeof calling.procedureSnapshot === "object" && !Array.isArray(calling.procedureSnapshot)
+      ? (calling.procedureSnapshot as Record<string, unknown>) : null;
+    let allowedIds: Set<string>;
+    if (snap) {
+      const rule = typeof snap[which] === "string" ? (snap[which] as string) : null;
+      const status = typeof snap.ruleStatus === "string" ? (snap.ruleStatus as string) : null;
+      allowedIds = new Set((await eligibleForRule(calling.ringId, status, rule)).appointers.map((a) => a.id));
+    } else if (calling.functionSource === "STANDAARD" && calling.functionCode) {
+      allowedIds = await eligibleIds(calling.ringId, { source: "STANDAARD", code: calling.functionCode, name: calling.functionTitle, category: "", entry: null, requiresConfirmation: false }, which);
+    } else {
+      allowedIds = new Set();
+    }
+    if (!allowedIds.has(input.assigneeId)) {
       throw new WorkflowError("Deze persoon heeft geen aangewezen bevoegdheid voor deze stap. Kies een bevoegde persoon of registreer een externe persoon.");
     }
   }
@@ -292,14 +303,14 @@ export async function getDraftView(actorId: string, draftId: string) {
  * Dient een concept in. Alles wordt opnieuw gevalideerd; het indienen is atomair en idempotent (rij-lock + 'submittedAt'): een herhaald verzoek of
  * dubbel tikken maakt nooit een tweede voorstel en verstuurt nooit dubbele meldingen. Na indienen worden de persoonsgegevens uit het concept gewist.
  */
-export async function submitDraft(actorId: string, draftId: string): Promise<{ calling: Calling; alreadySubmitted: boolean }> {
+export async function submitDraft(actorId: string, draftId: string): Promise<{ calling: Calling; alreadySubmitted: boolean; notificationsDelivered: boolean }> {
   const first = await draftFor(actorId, draftId);
 
   const outcome = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "CallingDraft" WHERE "id" = ${draftId} FOR UPDATE`;
     const draft = await tx.callingDraft.findUniqueOrThrow({ where: { id: draftId } });
     if (draft.submittedAt && draft.submittedCallingId) {
-      return { calling: await tx.calling.findUniqueOrThrow({ where: { id: draft.submittedCallingId } }), presidiumIds: null as string[] | null };
+      return { calling: await tx.calling.findUniqueOrThrow({ where: { id: draft.submittedCallingId } }), created: false };
     }
     const ringId = draft.ringId;
 
@@ -309,7 +320,12 @@ export async function submitDraft(actorId: string, draftId: string): Promise<{ c
     const activeUnits = await tx.ringUnit.count({ where: { ringId, active: true } });
     const unit = draft.unitId ? await tx.ringUnit.findFirst({ where: { id: draft.unitId, ringId, active: true } }) : null;
     if (draft.unitId && !unit) throw new WorkflowError("Deze wijk of gemeente hoort niet bij deze ring of is gedeactiveerd.");
-    if (!unit && activeUnits > 0) throw new WorkflowError("Kies de wijk of gemeente van herkomst.");
+    // De wijk of gemeente van herkomst is verplicht. Zolang de ringinrichting geen actieve wijken of gemeenten kent, kan er dus niets
+    // worden ingediend (het concept blijft bewaard); de ringbeheerder of webmin richt eerst de wijken en gemeenten in.
+    if (activeUnits === 0) {
+      throw new WorkflowError("De ringinrichting is nog niet compleet: er zijn geen wijken of gemeenten ingevoerd. Laat de ringbeheerder deze eerst invoeren; je concept blijft bewaard.");
+    }
+    if (!unit) throw new WorkflowError("Kies de wijk of gemeente van herkomst.");
 
     const fn = await resolveFunction(ringId, draft.functionSource, draft.functionCode);
     if (fn.requiresConfirmation && !draft.procedureConfirmed) {
@@ -326,7 +342,7 @@ export async function submitDraft(actorId: string, draftId: string): Promise<{ c
     await validateAssignees(ringId, fn, assignees);
 
     const now = new Date();
-    const { calling, presidiumIds } = await createCallingInTx(tx, {
+    const { calling } = await createCallingInTx(tx, {
       ringId,
       personName,
       functionTitle: fn.name, // Nederlandse functienaam op het moment van indienen
@@ -350,16 +366,14 @@ export async function submitDraft(actorId: string, draftId: string): Promise<{ c
         roepenAssigneeId: null, ondersteunenAssigneeId: null, aanstellenAssigneeId: null, roepenExternalName: null, aanstellenExternalName: null,
       },
     });
-    return { calling, presidiumIds };
+    return { calling, created: true };
   });
 
   void first;
-  // Alleen de aanroep die het voorstel daadwerkelijk aanmaakte, verstuurt meldingen.
-  if (outcome.presidiumIds) {
-    await afterCallingCreated(outcome.calling, outcome.presidiumIds);
-    return { calling: outcome.calling, alreadySubmitted: false };
-  }
-  return { calling: outcome.calling, alreadySubmitted: true };
+  // Het voorstel staat nu definitief in de database. Meldingen gaan los daarvan en zijn herstelbaar: ook bij een herhaald verzoek
+  // (alreadySubmitted) wordt een eerder mislukte levering alsnog afgemaakt, zonder dubbele meldingen (claim + skipExisting).
+  const delivery = await deliverCreationNotifications(outcome.calling.id);
+  return { calling: outcome.calling, alreadySubmitted: !outcome.created, notificationsDelivered: delivery === "sent" || delivery === "already-sent" };
 }
 
 /** Opruimregels: verlaten concepten na 30 dagen zonder wijziging; ingediende concepten (alleen nog een sleutel) na 7 dagen. */

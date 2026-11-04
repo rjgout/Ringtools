@@ -328,6 +328,16 @@ export const CALLINGS: CatalogEntry[] = RAW.map((e) => {
 
 export const CATEGORIES: string[] = [...new Set(CALLINGS.map((c) => c.category))];
 
+/**
+ * De bisschop zelf (handboek 30.7) volgt een procedure buiten de normale Ringtools-goedkeuring. De catalogus bevat hem daarom niet; deze
+ * controle voorkomt dat hij via een eigen roeping alsnog in een Ringtools-proces terechtkomt. Raadgevers in de bisschap vallen er niet onder.
+ */
+export function isBishopFunctionName(name: string): boolean {
+  const n = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return /\bbisschop\b/.test(n) && !/raadgever|raadgeefster|secretaris|secretaresse|administrateur/.test(n);
+}
+export const BISHOP_OUTSIDE_RINGTOOLS = "De procedure voor een bisschop (handboek 30.7) loopt buiten de normale Ringtools-goedkeuring; hiervoor kan in Ringtools niets worden ingediend.";
+
 const BY_CODE = new Map(CALLINGS.map((c) => [c.code, c]));
 export function getCatalogEntry(code: string): CatalogEntry | null {
   return BY_CODE.get(code) ?? null;

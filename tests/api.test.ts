@@ -142,7 +142,8 @@ describe("API: ondersteuningsprocedure", () => {
   it("een presidiumlid ziet het voorstel, brengt ondersteuning uit en de ronde schuift door", async () => {
     const { ring, users } = await ringWith("RINGPRESIDIUM", "HOGERAAD");
     const token = await login(users[0].id);
-    const draft = await call("POST", `/drafts?ring=${ring.id}`, { token, body: { personName: "Jan Jansen", functionSource: "STANDAARD", functionCode: "ringadministrateur" } });
+    const unit = await prisma.ringUnit.create({ data: { ringId: ring.id, kind: "WIJK", name: "Wijk Test" } });
+    const draft = await call("POST", `/drafts?ring=${ring.id}`, { token, body: { personName: "Jan Jansen", unitId: unit.id, functionSource: "STANDAARD", functionCode: "ringadministrateur" } });
     expect(draft.status).toBe(200);
     const created = await call("POST", `/drafts/${draft.body.id}/submit`, { token });
     expect(created.status).toBe(200);
@@ -385,7 +386,8 @@ describe("API: ledenlijst voor verantwoordelijken (Fase A)", () => {
     const outsiderRing = await createTestRing("Ring B");
     const outsider = await createTestUser("RINGPRESIDIUM", "Vreemd", { ringId: outsiderRing.id });
     const staff = await login(users[0].id);
-    const base = { personName: "Jan Test", functionSource: "STANDAARD", functionCode: "ringadministrateur" };
+    const unit = await prisma.ringUnit.create({ data: { ringId: ring.id, kind: "WIJK", name: "Wijk Test" } });
+    const base = { personName: "Jan Test", unitId: unit.id, functionSource: "STANDAARD", functionCode: "ringadministrateur" };
     expect((await call("POST", `/drafts?ring=${ring.id}`, { token: staff, body: { ...base, ondersteunenAssigneeId: outsider.id } })).status).toBeGreaterThanOrEqual(400);
     const ok = await call("POST", `/drafts?ring=${ring.id}`, { token: staff, body: { ...base, ondersteunenAssigneeId: users[1].id } });
     expect(ok.status).toBe(200);

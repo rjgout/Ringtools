@@ -75,9 +75,10 @@ async function lockCalling(tx: Db, callingId: string): Promise<void> {
 async function notifyParticipants(
   calling: Calling,
   userIds: string[],
-  opts: { event: "NEW_PROPOSAL" | "ADVANCED_TO_HOGERAAD" | "REINVITE" | "SUPPORT_REMINDER" }
+  opts: { event: "NEW_PROPOSAL" | "ADVANCED_TO_HOGERAAD" | "REINVITE" | "SUPPORT_REMINDER"; skipExisting?: boolean }
 ) {
   await notify({
+    skipExisting: opts.skipExisting,
     userIds,
     ringId: calling.ringId,
     event: opts.event,
@@ -99,11 +100,12 @@ async function notifyParticipants(
   });
 }
 
-export async function notifyTaskAssignee(callingId: string, task: TaskKey, assigneeId: string) {
+export async function notifyTaskAssignee(callingId: string, task: TaskKey, assigneeId: string, opts: { skipExisting?: boolean } = {}) {
   const calling = await prisma.calling.findUniqueOrThrow({ where: { id: callingId } });
   const label = TASK_LABELS[task];
 
   await notify({
+    skipExisting: opts.skipExisting,
     userIds: [assigneeId],
     ringId: calling.ringId,
     event: "TASK_ASSIGNED",
@@ -226,20 +228,72 @@ export async function createCallingInTx(tx: Db, input: CreateCallingInput): Prom
 }
 
 /** Meldingen na het aanmaken: uitnodiging aan het ringpresidium en bericht aan de gekozen taakverantwoordelijken. */
-export async function afterCallingCreated(calling: Calling, presidiumIds: string[]): Promise<void> {
-  await notifyParticipants(calling, presidiumIds, { event: "NEW_PROPOSAL" });
+export async function afterCallingCreated(calling: Calling, presidiumIds: string[], opts: { skipExisting?: boolean } = {}): Promise<void> {
+  await notifyParticipants(calling, presidiumIds, { event: "NEW_PROPOSAL", skipExisting: opts.skipExisting });
   for (const [task, assigneeId] of [
     ["ROEPEN", calling.roepenAssigneeId],
     ["ONDERSTEUNEN", calling.ondersteunenAssigneeId],
     ["AANSTELLEN", calling.aanstellenAssigneeId],
   ] as const) {
-    if (assigneeId) await notifyTaskAssignee(calling.id, task, assigneeId);
+    if (assigneeId) await notifyTaskAssignee(calling.id, task, assigneeId, { skipExisting: opts.skipExisting });
   }
 }
 
+/** Hoe lang één aanroep de levering van de aanmaakmeldingen "claimt" voordat een andere aanroep het mag overnemen. */
+export const CREATION_NOTIFY_LEASE_MS = 2 * 60 * 1000;
+
+export type CreationDelivery = "sent" | "already-sent" | "busy" | "failed";
+
+/**
+ * Levert de aanmaakmeldingen van een nieuw voorstel betrouwbaar af, ook als een eerdere poging halverwege mislukte.
+ * - Compare-and-set claim met korte lease: precies één aanroep tegelijk verstuurt (geen dubbele meldingen bij dubbel tikken/herhalen).
+ * - Pas na volledig succes wordt creationNotifiedAt gezet; bij een fout blijft het voorstel bestaan en kan een volgende poging
+ *   (opnieuw indienen, of de achtergrondtaak) het afmaken. Een herhaalde poging slaat ontvangers over die al een interne melding
+ *   voor dit voorstel hebben (de interne melding is de betrouwbare registratie; push/e-mail zijn "at most once" per ontvanger).
+ */
+export async function deliverCreationNotifications(callingId: string, now: Date = new Date()): Promise<CreationDelivery> {
+  const prev = await prisma.calling.findUnique({ where: { id: callingId }, select: { creationNotifiedAt: true, creationNotifyClaimedAt: true } });
+  if (!prev) return "already-sent";
+  if (prev.creationNotifiedAt) return "already-sent";
+  if (prev.creationNotifyClaimedAt && now.getTime() - prev.creationNotifyClaimedAt.getTime() < CREATION_NOTIFY_LEASE_MS) return "busy";
+
+  const claimed = await prisma.calling.updateMany({
+    where: { id: callingId, creationNotifiedAt: null, creationNotifyClaimedAt: prev.creationNotifyClaimedAt },
+    data: { creationNotifyClaimedAt: now },
+  });
+  if (claimed.count !== 1) return "busy"; // een andere aanroep was ons voor
+
+  const isRetry = prev.creationNotifyClaimedAt !== null;
+  try {
+    const calling = await prisma.calling.findUniqueOrThrow({ where: { id: callingId } });
+    if (stageForStatus(calling.status) === "PRESIDIUM") {
+      const voters = await prisma.eligibleVoter.findMany({ where: { callingId, stage: "PRESIDIUM" }, select: { userId: true } });
+      await afterCallingCreated(calling, voters.map((v) => v.userId), { skipExisting: isRetry });
+    }
+    await prisma.calling.update({ where: { id: callingId }, data: { creationNotifiedAt: new Date() } });
+    return "sent";
+  } catch (err) {
+    console.error(`[meldingen] Aanmaakmeldingen voor voorstel ${callingId} mislukt; wordt opnieuw geprobeerd:`, err);
+    return "failed";
+  }
+}
+
+/** Achtergrondtaak: levert aanmaakmeldingen af die nooit (volledig) zijn gelukt, bijv. na een crash tussen opslaan en versturen. */
+export async function retryPendingCreationNotifications(now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - CREATION_NOTIFY_LEASE_MS);
+  const pending = await prisma.calling.findMany({
+    where: { creationNotifiedAt: null, createdAt: { lt: cutoff }, OR: [{ creationNotifyClaimedAt: null }, { creationNotifyClaimedAt: { lt: cutoff } }] },
+    select: { id: true },
+    take: 50,
+  });
+  let delivered = 0;
+  for (const p of pending) if ((await deliverCreationNotifications(p.id, now)) === "sent") delivered++;
+  return delivered;
+}
+
 export async function createCalling(input: CreateCallingInput): Promise<Calling> {
-  const { calling, presidiumIds } = await prisma.$transaction((tx) => createCallingInTx(tx, input));
-  await afterCallingCreated(calling, presidiumIds);
+  const { calling } = await prisma.$transaction((tx) => createCallingInTx(tx, input));
+  await deliverCreationNotifications(calling.id);
   return calling;
 }
 
@@ -406,7 +460,7 @@ export async function releaseToHogeraad(input: { callingId: string; actorId: str
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function parseMeetingDate(raw: string): Date {
+export function parseMeetingDate(raw: string): Date {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw new WorkflowError("Vul de datum van het besluit in.");
   const date = new Date(`${raw}T00:00:00.000Z`);
   if (Number.isNaN(date.getTime())) throw new WorkflowError("Vul de datum van het besluit in.");

@@ -5,6 +5,7 @@ let defaultRingId: string | null = null;
 
 export async function resetDatabase() {
   // Volgorde belangrijk vanwege foreign keys zonder cascade op User/Ring.
+  await prisma.ontheffing.deleteMany();
   await prisma.callingDraft.deleteMany();
   await prisma.vote.deleteMany();
   await prisma.eligibleVoter.deleteMany();

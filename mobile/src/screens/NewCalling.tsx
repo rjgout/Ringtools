@@ -136,8 +136,9 @@ export function NewCalling() {
     );
   };
 
+  const noUnits = !!units.data && units.data.units.filter((u) => u.active).length === 0;
   const needsConfirmation = !!picked?.requiresConfirmation;
-  const ready = personName.trim().length >= 2 && !!picked && (!needsConfirmation || picked.customConfirmed) && (!!unitId || (units.data?.units.filter((u) => u.active).length ?? 0) === 0);
+  const ready = personName.trim().length >= 2 && !!picked && (!needsConfirmation || picked.customConfirmed) && !!unitId;
 
   return (
     <form className="stack" onSubmit={submit}>
@@ -160,6 +161,7 @@ export function NewCalling() {
             {(units.data?.units ?? []).filter((u) => u.active).map((u) => <option key={u.id} value={u.id}>{u.kind === "WIJK" ? "Wijk" : "Gemeente"} {u.name}</option>)}
           </select>
         </div>
+        {noUnits && <div className="error" role="alert">De ringinrichting is nog niet compleet: er zijn geen wijken of gemeenten ingevoerd. Je kunt het concept opslaan, maar pas indienen nadat de ringbeheerder deze heeft ingevoerd.</div>}
       </div>
       <div className="glass card stack">
         <strong>3. Roeping</strong>

@@ -47,6 +47,8 @@ export type Dashboard = {
     aanstellenOpen: number;
     awaitingRelease: number;
   } | null;
+  /** Aantallen voor ontheffingen; volgen dezelfde zichtbaarheid als de lijst (een betrokkene ziet dus nooit een aantal). */
+  ontheffingen: { needsMyVote: number; open: number };
   attention: CallingItem[];
   pendingSupport: CallingItem[];
   myTasks: (CallingItem & { tasks: string[] })[];
@@ -155,6 +157,7 @@ export type AppNotification = {
   title: string;
   message: string;
   callingId: string | null;
+  ontheffingId: string | null;
   readAt: string | null;
   createdAt: string;
 };
@@ -238,3 +241,80 @@ export type DraftView = {
 };
 export type DraftListItem = { id: string; personName: string | null; functionCode: string | null; functionSource: string | null; unitName: string | null; updatedAt: string };
 export type ReviewOverview = { version: string; total: number; verified: number; items: { code: string; name: string; category: string; status: string; notes: string[] }[] };
+
+// ---- Ontheffingen (Fase C4; vertrouwelijk) ----
+
+export type OntheffingStatus =
+  | "CONCEPT" | "PRESIDIUM_VOTING" | "PRESIDIUM_PAUSED" | "PRESIDIUM_APPROVED" | "HOGERAAD_VOTING" | "HOGERAAD_PAUSED" | "APPROVED" | "PROCESSED";
+export type FollowUpAnswer = "OPEN" | "NAAM" | "NIET_VAN_TOEPASSING";
+export type AccountLinkMode = "ONBEKEND" | "GEKOPPELD" | "GEEN_ACCOUNT";
+
+export type OntheffingListItem = {
+  id: string;
+  status: OntheffingStatus;
+  statusLabel: string;
+  personName: string | null;
+  functionName: string | null;
+  unitName: string | null;
+  joint: boolean;
+  needsMyVote: boolean;
+  updatedAt: string;
+};
+
+export type OntheffingExecution = { informedAt: string | null; announcedAt: string | null; thankedAt: string | null; processedAt: string | null };
+
+/** Staf ziet alle velden; een hogeraadslid ziet alleen id, rol, functie en naam. */
+export type OntheffingPerson = {
+  id: string;
+  role: "HOOFD" | "RAADGEVER";
+  functionName: string;
+  name: string | null;
+  followUpCode?: string | null;
+  answer?: FollowUpAnswer;
+  naReason?: string | null;
+  accountMode?: AccountLinkMode;
+  userId?: string | null;
+  execution?: OntheffingExecution | null;
+};
+
+export type RoundSummary = { eligible: number; responded: number; positive: number; negative: number };
+
+export type OntheffingView = {
+  id: string;
+  ringId: string;
+  status: OntheffingStatus;
+  statusLabel: string;
+  stage: "PRESIDIUM" | "HOGERAAD" | null;
+  joint: boolean;
+  unit: { name: string; kind: UnitKind | null } | null;
+  function: { source: "STANDAARD" | "EIGEN" | null; code: string; name: string | null; ruleStatus: string; warning: string | null } | null;
+  persons: OntheffingPerson[];
+  viewer: { staff: boolean; canVote: boolean; myVote: boolean | null; canSubmit: boolean; canRelease: boolean; canDecide: boolean; canDelete: boolean };
+  // Alleen staf:
+  submittedAt?: string | null;
+  procedureConfirmed?: boolean;
+  requiresConfirmation?: boolean;
+  unitId?: string | null;
+  followUps?: { code: string; name: string }[];
+  rounds?: { presidium: RoundSummary; hogeraad: RoundSummary };
+  decisions?: { stage: "PRESIDIUM" | "HOGERAAD"; decidedOn: string; note: string | null; presentCount: number; absentCount: number; overrodeNegativeVotes: boolean }[];
+  audit?: { type: string; actor: string; createdAt: string; detail: string | null }[];
+  retention?: { deleteAfter: string } | null;
+  blockers?: string[];
+};
+
+export type OntheffingConceptInput = Partial<{
+  unitId: string | null;
+  functionSource: "STANDAARD" | "EIGEN" | null;
+  functionCode: string | null;
+  procedureConfirmed: boolean;
+  persons: {
+    role: "HOOFD" | "RAADGEVER";
+    followUpCode?: string | null;
+    answer?: FollowUpAnswer;
+    name?: string | null;
+    naReason?: string | null;
+    accountMode?: AccountLinkMode;
+    userId?: string | null;
+  }[];
+}>;

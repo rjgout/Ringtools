@@ -49,7 +49,7 @@ Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet ·
 | Wijken/gemeenten, hogeraadskoppeling, ringinrichting, roepingencatalogus, eigen roepingen, aanstellingsbevoegdheid | ✅ C2 (toesteltest open) | ✅ C2 (toesteltest open) | — | ✅ (via app-beheer) |
 | Nieuw voorstel via concept (naam → unit → roeping → verantwoordelijken), servercontrole bevoegdheden en eigen roepingen | ✅ C3 (toesteltest open) | ✅ C3 (toesteltest open) | — | — |
 | Uitnodigen en activeren van nieuwe gebruikers | 🔧 C | 🔧 C | — | — |
-| Ontheffingen (aparte module) | 🔧 D | 🔧 D | — | — |
+| Ontheffingen (aparte module; vertrouwelijk, betrokkene heeft geen toegang) | ✅ C4 (toesteltest open) | ✅ C4 (toesteltest open) | — | — |
 | Meldingen in de app (bel) | ✅ | ✅ | ⚠ | — |
 | Native push (APNs/FCM) | ✅ (niet in PersonalTeam) | ✅ | — | — |
 | Universal Links / App Links | ✅ (niet in PersonalTeam) | ✅ | `.well-known`-bestanden | — |
@@ -137,6 +137,11 @@ bijwerken van deze tabel en van `docs/MOBILE.md`.
 - **Catalogus en bevoegdheden.** Onbekende regels zijn `ONBEKEND`/`TE_BEOORDELEN`, nooit de ruimste standaardbevoegdheid; alleen `GEVERIFIEERD` kent (expliciet aangewezen) personen bevoegdheid toe, en
   een Ringtools-rol of kerkelijke functie is nooit een machtiging. Nieuwe voorstellen lopen uitsluitend via concepten (`/drafts`) met server-side validatie bij indienen (idempotent); een eigen of niet-geverifieerde
   roeping vereist altijd de bevestigde procedurecontrole. Wijzigingen aan de catalogus: draai `npm run catalog:review` (test bewaakt `docs/CATALOGUS-CONTROLE.md`).
+
+- **Ontheffingen zijn vertrouwelijk.** Koppel een betrokkene nooit automatisch op naam aan een account; de staf identificeert het account expliciet (`OntheffingPerson.accountMode`). Een gekoppeld account heeft nergens
+  toegang (detail, lijst, aantallen, melding, push, deeplink). Gebruik voor elke nieuwe ontheffingsroute `loadAccess`/`visibleWhere` in `src/lib/ontheffingen.ts` en `notify({ ontheffingId })`; stuur nooit e-mail of
+  namen/functies in meldingen. Hoe een betrokken hogeraadslid na kennisgeving deelneemt is een OPEN vraag voor de eigenaar (`docs/MIGRATIE-APP-ONLY.md`); verzin geen kerkelijke regel.
+- **Meldingen na een gelukte opslag zijn herstelbaar** (claim + lease + `skipExisting`), nooit "opslaan en hopen". Achteraf wijzigen volgt de bij indienen vastgelegde procedure (`procedureSnapshot`).
 
 ## Design
 

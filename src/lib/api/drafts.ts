@@ -62,5 +62,5 @@ export async function suggestionsFor(userId: string, ringId: string, query: URLS
 }
 export async function submitDraftFor(userId: string, id: string) {
   const r = await mapErrors(() => submitDraft(userId, id));
-  return { id: r.calling.id, alreadySubmitted: r.alreadySubmitted };
+  return { id: r.calling.id, alreadySubmitted: r.alreadySubmitted, notificationsDelivered: r.notificationsDelivered };
 }

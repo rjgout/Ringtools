@@ -23,6 +23,12 @@ on:
       - "src/lib/safePath.ts"
       - "src/lib/rings.ts"
       - "src/lib/workflow.ts"
+      - "src/lib/proposals.ts"
+      - "src/lib/ontheffingen.ts"
+      - "src/lib/ringSetup.ts"
+      - "src/lib/queries.ts"
+      - "src/lib/cron.ts"
+      - "src/lib/catalog/**"
       - "src/lib/env.ts"
       - "src/app/api/mobile/**"
       - "src/app/.well-known/**"
@@ -53,6 +59,12 @@ on:
       - "src/lib/safePath.ts"
       - "src/lib/rings.ts"
       - "src/lib/workflow.ts"
+      - "src/lib/proposals.ts"
+      - "src/lib/ontheffingen.ts"
+      - "src/lib/ringSetup.ts"
+      - "src/lib/queries.ts"
+      - "src/lib/cron.ts"
+      - "src/lib/catalog/**"
       - "src/lib/env.ts"
       - "src/app/api/mobile/**"
       - "src/app/.well-known/**"
@@ -105,6 +117,8 @@ jobs:
           tests/api.test.ts tests/nativePush.test.ts tests/wellknown.test.ts tests/push.test.ts
           tests/sessions.test.ts tests/openlinks.test.ts tests/mfa.test.ts tests/mfaProof.test.ts
           tests/rings.test.ts tests/hardening.test.ts tests/notifications.test.ts
+          tests/proposals.test.ts tests/ontheffingen.test.ts tests/release.test.ts tests/catalog.test.ts
+          tests/ringsetup.test.ts tests/management.test.ts tests/workflow.test.ts
 
   client:
     name: Client en native configuratie
