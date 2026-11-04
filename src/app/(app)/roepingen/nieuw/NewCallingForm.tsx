@@ -25,6 +25,11 @@ export function NewCallingForm({ users }: { users: { id: string; name: string; r
         <input id="functionTitle" name="functionTitle" required className="input" placeholder="Hogeraadslid" />
       </div>
 
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" name="procedureConfirmed" required className="mt-1" />
+        <span>De bevoegde leiding heeft de procedure voor deze roeping gecontroleerd. (De app bevat een catalogus met bevoegdheidsregels per functie.)</span>
+      </label>
+
       <p className="text-sm font-medium text-[var(--text-muted)]">
         Verantwoordelijken (optioneel, mag ook later worden toegewezen)
       </p>

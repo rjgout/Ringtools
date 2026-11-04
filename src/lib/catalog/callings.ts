@@ -8,7 +8,7 @@
  * Alle bevoegdheidsregels zijn een samenvatting van het handboek en staan ter controle bij de eigenaar
  * (`reviewNotes`); Ringtools vervangt nooit de bevoegdheden die het handboek vastlegt.
  */
-export const CATALOG_VERSION = "2026.11-1";
+export const CATALOG_VERSION = "2026.11-2";
 
 export type ApprovalRoute = "RINGPRESIDIUM_HOGE_RAAD" | "EERSTE_PRESIDIUM" | "AANGEWEZEN_AUTORITEIT" | "QUORUM_TWAALF";
 /** Wie mag roepen/aanstellen. */
@@ -16,9 +16,17 @@ export type AuthorityRule =
   | "RINGPRESIDENT"
   | "RINGPRESIDENT_OF_RAADGEVER"
   | "RINGPRESIDENT_RAADGEVER_OF_HOGERAADSLID"
-  | "BIJZONDER";
+  | "BIJZONDER"
+  /** Onbekend: de juiste bevoegdheid is niet geverifieerd. Er worden dan geen bevoegdheden toegekend; menselijke controle is nodig. */
+  | "ONBEKEND";
 export type SupportVenue = "RINGCONFERENTIE" | "GEEN" | "NADER_BEPALEN";
-export type AppointmentRequirement = "VERPLICHT" | "OPTIONEEL";
+export type AppointmentRequirement = "VERPLICHT" | "OPTIONEEL" | "ONBEKEND";
+/**
+ * GEVERIFIEERD: de regel staat expliciet in het handboek (30.8.3, zoals aangeleverd) voor déze functie.
+ * TE_BEOORDELEN: de regel is niet geverifieerd; Ringtools kent geen bevoegdheden toe en vraagt menselijke controle.
+ * BIJZONDER: bijzondere procedure (extra goedkeuring buiten Ringtools).
+ */
+export type RuleStatus = "GEVERIFIEERD" | "TE_BEOORDELEN" | "BIJZONDER";
 export type FunctionType = "PRESIDENT" | "RAADGEVER" | "SECRETARIS" | "LEIDER" | "DESKUNDIGE" | "LERAAR" | "VERTEGENWOORDIGER" | "OVERIG";
 
 export type CatalogEntry = {
@@ -39,6 +47,7 @@ export type CatalogEntry = {
   appointedBy: AuthorityRule;
   supportVenue: SupportVenue;
   appointment: AppointmentRequirement;
+  ruleStatus: RuleStatus;
   /** Verplichte vervolgvragen bij ontheffing (handboek 30.6: ontheffing president(e) ontheft ook de raadgevers). */
   releaseFollowUps: string[];
   /** Waarschuwing die bij selectie getoond wordt. */
@@ -78,10 +87,12 @@ function entry(category: string, name: string, o: Overrides = {}): CatalogEntry 
     approvalRoute: "RINGPRESIDIUM_HOGE_RAAD",
     ringtoolsProcess: true,
     extraApproval: null,
-    grantedBy: "RINGPRESIDENT_RAADGEVER_OF_HOGERAADSLID",
-    appointedBy: "RINGPRESIDENT_RAADGEVER_OF_HOGERAADSLID",
-    supportVenue: "RINGCONFERENTIE",
-    appointment: "VERPLICHT",
+    // Veilige standaard: onbekend. Geen ruimste bevoegdheid aannemen zolang de regel niet is geverifieerd.
+    grantedBy: "ONBEKEND",
+    appointedBy: "ONBEKEND",
+    supportVenue: "NADER_BEPALEN",
+    appointment: "ONBEKEND",
+    ruleStatus: "TE_BEOORDELEN",
     releaseFollowUps: [],
     warning: null,
     reviewNotes: [],
@@ -93,24 +104,31 @@ function entry(category: string, name: string, o: Overrides = {}): CatalogEntry 
 }
 
 const TWIJFEL_VERTALING = "Nederlandse benaming is een uitgangsvertaling van de Engelse LCR-titel; controle door de eigenaar nodig.";
-const NIET_BEVESTIGD = "Bevoegdheidsregel niet bevestigd in de beschikbare handboektekst; standaardregel voor overige ringroepingen toegepast. Controle door de eigenaar nodig.";
+const NIET_BEVESTIGD = "Bevoegdheidsregel niet geverifieerd: de regels voor roepen, aanstellen, steunverlening en aanstellingsplicht staan hier als onbekend. Controle door de eigenaar nodig.";
 const BUITEN_RINGTOOLS = "Deze roeping volgt een procedure buiten Ringtools; Ringtools start hier geen goedkeuringsronde voor.";
 
-const RP_OF_RG: Overrides = { grantedBy: "RINGPRESIDENT_OF_RAADGEVER", appointedBy: "RINGPRESIDENT_OF_RAADGEVER" };
+/** Geverifieerde regel (expliciet genoemd in handboek 30.8.3): wie mag roepen/aanstellen, steunverlening in ringconferentie, aanstelling verplicht. */
+function V(rule: AuthorityRule = "RINGPRESIDENT_RAADGEVER_OF_HOGERAADSLID"): Overrides {
+  return { ruleStatus: "GEVERIFIEERD", grantedBy: rule, appointedBy: rule, supportVenue: "RINGCONFERENTIE", appointment: "VERPLICHT" };
+}
+const RP_OF_RG: Overrides = V("RINGPRESIDENT_OF_RAADGEVER");
+const BIJZONDER: Overrides = { ruleStatus: "BIJZONDER", grantedBy: "BIJZONDER", appointedBy: "BIJZONDER", supportVenue: "NADER_BEPALEN", appointment: "ONBEKEND" };
+const HUMAN_CHECK =
+  "Menselijke controle nodig: de bevoegdheden voor roepen en aanstellen, de steunverlening en de aanstellingsplicht zijn voor deze functie niet geverifieerd. Ringtools kent hier geen bevoegdheden aan toe.";
 
-export const CALLINGS: CatalogEntry[] = [
+const RAW: CatalogEntry[] = [
   // ---- Ringpresidium ----
   entry("Ringpresidium", "Ringpresident", {
-    type: "PRESIDENT", approvalRoute: "AANGEWEZEN_AUTORITEIT", ringtoolsProcess: false, grantedBy: "BIJZONDER", appointedBy: "BIJZONDER",
+    type: "PRESIDENT", approvalRoute: "AANGEWEZEN_AUTORITEIT", ringtoolsProcess: false, ...BIJZONDER,
     extraApproval: "Aangewezen algemeen autoriteit of gebiedszeventiger", warning: BUITEN_RINGTOOLS, handbook: [HB.roepingen],
   }),
   entry("Ringpresidium", "Eerste raadgever ringpresidium", {
-    type: "RAADGEVER", approvalRoute: "EERSTE_PRESIDIUM", ringtoolsProcess: false, grantedBy: "BIJZONDER", appointedBy: "BIJZONDER",
+    type: "RAADGEVER", approvalRoute: "EERSTE_PRESIDIUM", ringtoolsProcess: false, ...BIJZONDER,
     extraApproval: "Eerste Presidium (nieuwe raadgever in een bestaand ringpresidium)", warning: BUITEN_RINGTOOLS,
     reviewNotes: ["Bij een nieuw ringpresidium geldt een aangewezen algemeen autoriteit of gebiedszeventiger; hier is de regel voor een bestaand presidium aangehouden."],
   }),
   entry("Ringpresidium", "Tweede raadgever ringpresidium", {
-    type: "RAADGEVER", approvalRoute: "EERSTE_PRESIDIUM", ringtoolsProcess: false, grantedBy: "BIJZONDER", appointedBy: "BIJZONDER",
+    type: "RAADGEVER", approvalRoute: "EERSTE_PRESIDIUM", ringtoolsProcess: false, ...BIJZONDER,
     extraApproval: "Eerste Presidium (nieuwe raadgever in een bestaand ringpresidium)", warning: BUITEN_RINGTOOLS,
     reviewNotes: ["Bij een nieuw ringpresidium geldt een aangewezen algemeen autoriteit of gebiedszeventiger; hier is de regel voor een bestaand presidium aangehouden."],
   }),
@@ -129,14 +147,14 @@ export const CALLINGS: CatalogEntry[] = [
 
   // ---- Patriarch ----
   entry("Patriarch", "Ringpatriarch", {
-    type: "OVERIG", approvalRoute: "QUORUM_TWAALF", ringtoolsProcess: false, grantedBy: "BIJZONDER", appointedBy: "BIJZONDER", code: "ringpatriarch",
+    type: "OVERIG", approvalRoute: "QUORUM_TWAALF", ringtoolsProcess: false, ...BIJZONDER, code: "ringpatriarch",
     extraApproval: "Quorum der Twaalf", warning: BUITEN_RINGTOOLS, aliases: ["Patriarch"],
     reviewNotes: ["Naam gestandaardiseerd (LCR-titel: Patriarch); controle door de eigenaar nodig."],
   }),
 
   // ---- Zustershulpvereniging ----
   entry("Zustershulpvereniging van de ring", "ZHV-presidente", {
-    type: "PRESIDENT", grantedBy: "RINGPRESIDENT", appointedBy: "RINGPRESIDENT", handbook: [HB.roepingen, HB.ontheffing],
+    type: "PRESIDENT", ...V("RINGPRESIDENT"), handbook: [HB.roepingen, HB.ontheffing],
     releaseFollowUps: ["eerste-raadgeefster-zhv-presidium-ring", "tweede-raadgeefster-zhv-presidium-ring"],
   }),
   entry("Zustershulpvereniging van de ring", "Eerste raadgeefster ZHV-presidium (ring)", { type: "RAADGEVER" }),
@@ -259,7 +277,7 @@ export const CALLINGS: CatalogEntry[] = [
   }),
   entry("Verifiëren", "Lid verificatiecomité", { type: "OVERIG", reviewNotes: [NIET_BEVESTIGD] }),
   entry("Verifiëren", "Verificateur", {
-    type: "OVERIG", ...RP_OF_RG, aliases: ["Ringverificateur"], supportVenue: "GEEN", appointment: "OPTIONEEL",
+    type: "OVERIG", ...V("RINGPRESIDENT_OF_RAADGEVER"), aliases: ["Ringverificateur"], supportVenue: "GEEN", appointment: "OPTIONEEL",
     warning: "Voor een verificateur is geen steunverlening; de ringpresident bepaalt of een aanstelling nodig is (handboek 30.8.3).",
   }),
 
@@ -272,16 +290,41 @@ export const CALLINGS: CatalogEntry[] = [
 
   // ---- Uitzondering: raadgevers in een bisschap (afgesproken met de eigenaar) ----
   entry("Bisschap (uitzondering)", "Eerste raadgever in de bisschap", {
-    type: "RAADGEVER", source: "opdracht-eigenaar", grantedBy: "BIJZONDER", appointedBy: "BIJZONDER", handbook: [HB.bisschop],
+    type: "RAADGEVER", source: "opdracht-eigenaar", handbook: [HB.bisschop],
     warning: "Uitzondering: de goedkeuring van een raadgever in een bisschap verloopt via ringpresidium en hoge raad. De bisschop zelf valt buiten Ringtools.",
     reviewNotes: ["Wie mag roepen en aanstellen is niet uit de beschikbare handboektekst bevestigd; controle door de eigenaar nodig."],
   }),
   entry("Bisschap (uitzondering)", "Tweede raadgever in de bisschap", {
-    type: "RAADGEVER", source: "opdracht-eigenaar", grantedBy: "BIJZONDER", appointedBy: "BIJZONDER", handbook: [HB.bisschop],
+    type: "RAADGEVER", source: "opdracht-eigenaar", handbook: [HB.bisschop],
     warning: "Uitzondering: de goedkeuring van een raadgever in een bisschap verloopt via ringpresidium en hoge raad. De bisschop zelf valt buiten Ringtools.",
     reviewNotes: ["Wie mag roepen en aanstellen is niet uit de beschikbare handboektekst bevestigd; controle door de eigenaar nodig."],
   }),
 ];
+
+/**
+ * Functies die in handboek 30.8.3 expliciet worden genoemd als "raadgever/secretaris in organisatiepresidium ring",
+ * "seminarie- en instituutsleerkracht", "welzijnsdeskundige" of "tolkencoördinator" (ringpresident, aangewezen raadgever of hogeraadslid).
+ */
+const VERIFIED_RPRGH = new Set([
+  "Eerste raadgeefster ZHV-presidium (ring)", "Tweede raadgeefster ZHV-presidium (ring)", "ZHV-secretaresse",
+  "Eerste raadgever jongemannen", "Tweede raadgever jongemannen", "Jongemannensecretaris",
+  "Eerste raadgeefster jongevrouwen", "Tweede raadgeefster jongevrouwen", "Jongevrouwensecretaresse",
+  "Eerste raadgever zondagsschool", "Tweede raadgever zondagsschool", "Zondagsschoolsecretaris",
+  "Eerste raadgeefster JW-presidente (ring)", "Tweede raadgeefster JW-presidente (ring)", "Jeugdwerksecretaresse (ring)",
+  "Instituutsleerkracht", "Seminarieleerkracht",
+  "Welzijns- en zelfredzaamheidsdeskundige van de ring", "Coördinator tolkendienst van de ring",
+]);
+
+export const CALLINGS: CatalogEntry[] = RAW.map((e) => {
+  const verified = VERIFIED_RPRGH.has(e.name) ? { ...e, ...V() } : e;
+  if (verified.ruleStatus !== "TE_BEOORDELEN") return verified;
+  // Niet geverifieerd: expliciete waarschuwing en controlepunt, nooit een stilzwijgende standaardbevoegdheid.
+  return {
+    ...verified,
+    warning: [verified.warning, HUMAN_CHECK].filter(Boolean).join(" "),
+    reviewNotes: verified.reviewNotes.includes(NIET_BEVESTIGD) ? verified.reviewNotes : [...verified.reviewNotes, NIET_BEVESTIGD],
+  };
+});
 
 export const CATEGORIES: string[] = [...new Set(CALLINGS.map((c) => c.category))];
 
@@ -313,4 +356,50 @@ export function searchCatalog(query: string, opts: { category?: string; includeI
     scored.push({ entry: c, score });
   }
   return scored.sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name, "nl")).map((s) => s.entry);
+}
+
+/** Vereist deze functie een expliciete bevestiging dat de bevoegde leiding de procedure heeft gecontroleerd? */
+export function requiresProcedureConfirmation(entry: CatalogEntry): boolean {
+  return entry.ruleStatus !== "GEVERIFIEERD";
+}
+
+export type ReviewItem = { code: string; name: string; category: string; status: RuleStatus; notes: string[] };
+
+/** Overzicht van alle nog te controleren regels (voor de eigenaar). */
+export function reviewOverview(): { version: string; total: number; verified: number; items: ReviewItem[] } {
+  const items = CALLINGS.filter((c) => c.ruleStatus !== "GEVERIFIEERD" || c.reviewNotes.length > 0).map((c) => ({
+    code: c.code, name: c.name, category: c.category, status: c.ruleStatus, notes: c.reviewNotes,
+  }));
+  return { version: CATALOG_VERSION, total: CALLINGS.length, verified: CALLINGS.filter((c) => c.ruleStatus === "GEVERIFIEERD").length, items };
+}
+
+/** Markdown-overzicht van alle nog te controleren regels (docs/CATALOGUS-CONTROLE.md; wordt door een test actueel gehouden). */
+export function renderReviewMarkdown(): string {
+  const o = reviewOverview();
+  const group = (status: RuleStatus) => o.items.filter((i) => i.status === status);
+  const table = (items: ReviewItem[]) =>
+    ["| Functie | Categorie | Te controleren |", "|---|---|---|", ...items.map((i) => `| ${i.name} | ${i.category} | ${i.notes.map((n) => n.replace(/\|/g, "/")).join(" ")} |`)].join("\n");
+  return [
+    "# Catalogus roepingen – te controleren regels",
+    "",
+    "> Automatisch gegenereerd uit `src/lib/catalog/callings.ts` (`npm run catalog:review`). Niet handmatig aanpassen; wijzig de catalogus en genereer opnieuw.",
+    "",
+    `Cataloguversie **${o.version}** · ${o.total} functies · ${o.verified} met geverifieerde regel · ${o.items.length} met een controlepunt.`,
+    "",
+    "**Betekenis:** *geverifieerd* = de regel staat expliciet in het handboek (30.8.3, zoals aangeleverd). *Te beoordelen* = onbekend; Ringtools kent geen bevoegdheden toe, toont \"menselijke controle nodig\" en vraagt bij gebruik een bevestiging van de bevoegde leiding.",
+    "*Bijzonder* = procedure buiten Ringtools. De bevoegdheidsregels zijn gebaseerd op een samenvatting van het handboek en staan ter controle bij de eigenaar.",
+    "",
+    `## Te beoordelen (${group("TE_BEOORDELEN").length})`,
+    "",
+    table(group("TE_BEOORDELEN")),
+    "",
+    `## Bijzondere procedure buiten Ringtools (${group("BIJZONDER").length})`,
+    "",
+    table(group("BIJZONDER")),
+    "",
+    `## Geverifieerd, maar met een controlepunt (${group("GEVERIFIEERD").length})`,
+    "",
+    table(group("GEVERIFIEERD")),
+    "",
+  ].join("\n");
 }

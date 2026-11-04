@@ -1,6 +1,6 @@
 import { prisma } from "../prisma";
 import { isStaff } from "../rbac";
-import { CATALOG_VERSION, CATEGORIES, getCatalogEntry, searchCatalog, type CatalogEntry } from "../catalog/callings";
+import { CATALOG_VERSION, CATEGORIES, getCatalogEntry, requiresProcedureConfirmation, searchCatalog, type CatalogEntry } from "../catalog/callings";
 import {
   createCustomCalling, createUnit, eligibleAppointers, getRingSetup, listCustomCallings, listUnits, updateCustomCalling, updateUnit,
 } from "../ringSetup";
@@ -80,6 +80,7 @@ function standard(e: CatalogEntry) {
     approvalRoute: e.approvalRoute, ringtoolsProcess: e.ringtoolsProcess, extraApproval: e.extraApproval, grantedBy: e.grantedBy,
     appointedBy: e.appointedBy, supportVenue: e.supportVenue, appointment: e.appointment, releaseFollowUps: e.releaseFollowUps,
     warning: e.warning, reviewNotes: e.reviewNotes, active: e.active, catalogVersion: e.catalogVersion,
+    ruleStatus: e.ruleStatus as string, requiresProcedureConfirmation: requiresProcedureConfirmation(e),
   };
 }
 
@@ -93,7 +94,7 @@ export async function catalogFor(userId: string, ringId: string, q: string, cate
     .map((c) => ({
       code: c.id, source: "EIGEN" as const, name: c.name, aliases: [] as string[], category: c.category, type: "OVERIG", handbook: [] as string[],
       approvalRoute: null, ringtoolsProcess: true, extraApproval: null, grantedBy: null, appointedBy: null, supportVenue: null, appointment: null,
-      releaseFollowUps: [] as string[], active: true, catalogVersion: null,
+      releaseFollowUps: [] as string[], active: true, catalogVersion: null, ruleStatus: "EIGEN" as string, requiresProcedureConfirmation: true,
       warning: "Eigen roeping: er worden geen bevoegdheden of bijzondere kerkelijke procedures afgeleid. Bevestig bij gebruik dat de bevoegde leiding de procedure heeft gecontroleerd.",
       reviewNotes: [] as string[],
     }));

@@ -1,74 +1,183 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import type { DraftView } from "@shared/api-types";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
 import { ErrorState, Spinner } from "../components/ui";
 import { CallingPicker, type PickedCalling } from "../components/CallingPicker";
 
-type Key = "roepenAssigneeId" | "ondersteunenAssigneeId" | "aanstellenAssigneeId";
-const TASKS: { key: Key; label: string }[] = [
-  { key: "roepenAssigneeId", label: "Roepen" },
-  { key: "ondersteunenAssigneeId", label: "Ondersteunen (bekendmaken)" },
-  { key: "aanstellenAssigneeId", label: "Aanstellen" },
-];
+type TaskKey = "roepen" | "ondersteunen" | "aanstellen";
 
-/** Nieuw roepingsvoorstel in de actieve ring. De server controleert bevoegdheid en ringlidmaatschap. */
+/**
+ * Nieuw voorstel in vijf stappen: naam (handmatig) → wijk/gemeente → roeping (catalogus of eigen) → verantwoordelijken controleren → concept opslaan of indienen.
+ * Alles wordt als concept op de server bewaard (onvolledig mag); indienen valideert op de server opnieuw en is idempotent.
+ * Er is geen koppeling met een ledenregister of LCR: de naam wordt altijd ingevoerd.
+ */
 export function NewCalling() {
+  const { id: draftIdParam } = useParams();
   const { api, ring } = useAuth();
   const navigate = useNavigate();
-  const members = useLoad(() => api.ringMembers(ring!.id), [ring?.id]);
+  const [draftId, setDraftId] = useState<string | null>(draftIdParam ?? null);
   const [personName, setPersonName] = useState("");
+  const [unitId, setUnitId] = useState("");
   const [picked, setPicked] = useState<PickedCalling | null>(null);
-  const functionTitle = picked?.name ?? "";
-  const [assignees, setAssignees] = useState<Record<Key, string>>({ roepenAssigneeId: "", ondersteunenAssigneeId: "", aanstellenAssigneeId: "" });
+  const [assignees, setAssignees] = useState<Record<TaskKey, string>>({ roepen: "", ondersteunen: "", aanstellen: "" });
+  const [external, setExternal] = useState<{ roepen: string; aanstellen: string }>({ roepen: "", aanstellen: "" });
+  const [view, setView] = useState<DraftView | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const submitting = useRef(false); // voorkomt dubbel tikken
+  const units = useLoad(() => api.units(ring!.id), [ring?.id]);
+  const members = useLoad(() => api.ringMembers(ring!.id), [ring?.id]);
+  const loaded = useRef(false);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (busy) return;
+  // Bestaand concept laden (alleen bij het openen).
+  useEffect(() => {
+    if (!draftIdParam || loaded.current) return;
+    loaded.current = true;
+    api.draft(draftIdParam).then((v) => {
+      setView(v);
+      setPersonName(v.draft.personName ?? "");
+      setUnitId(v.draft.unitId ?? "");
+      if (v.draft.functionCode && (v.draft.functionSource === "STANDAARD" || v.draft.functionSource === "EIGEN") && v.procedure) {
+        setPicked({ code: v.procedure.code, source: v.procedure.source, name: v.procedure.name, category: v.procedure.category, customConfirmed: v.draft.procedureConfirmed, requiresConfirmation: v.procedure.requiresConfirmation });
+      }
+      setAssignees({ roepen: v.draft.roepenAssigneeId ?? "", ondersteunen: v.draft.ondersteunenAssigneeId ?? "", aanstellen: v.draft.aanstellenAssigneeId ?? "" });
+      setExternal({ roepen: v.draft.roepenExternalName ?? "", aanstellen: v.draft.aanstellenExternalName ?? "" });
+    }).catch((err) => setMessage(err instanceof ApiRequestError ? err.message : "Het concept kon niet worden geladen."));
+  }, [api, draftIdParam]);
+
+  const payload = useCallback(() => ({
+    personName: personName.trim() || null,
+    unitId: unitId || null,
+    functionSource: picked?.source ?? null,
+    functionCode: picked?.code ?? null,
+    procedureConfirmed: picked?.customConfirmed ?? false,
+    roepenAssigneeId: assignees.roepen || null, ondersteunenAssigneeId: assignees.ondersteunen || null, aanstellenAssigneeId: assignees.aanstellen || null,
+    roepenExternalName: external.roepen.trim() || null, aanstellenExternalName: external.aanstellen.trim() || null,
+  }), [personName, unitId, picked, assignees, external]);
+
+  async function save(): Promise<string> {
+    const body = payload();
+    if (draftId) {
+      await api.updateDraft(draftId, body);
+      return draftId;
+    }
+    const created = await api.createDraft(ring!.id, body);
+    setDraftId(created.id);
+    return created.id;
+  }
+
+  // Voorgestelde verantwoordelijken uit de wijk-/gemeentekoppeling, alleen voor zover bevoegd; de gebruiker kan altijd wijzigen.
+  useEffect(() => {
+    if (!picked && !unitId) return;
+    let cancelled = false;
+    api.suggestions(ring!.id, unitId || null, picked?.source ?? null, picked?.code ?? null).then((r) => { if (!cancelled) setView((v) => (r.suggestions ? ({ ...(v ?? ({} as DraftView)), suggestions: r.suggestions } as DraftView) : v)); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [api, ring, unitId, picked?.code, picked?.source]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sug = view?.suggestions ?? null;
+  function applySuggestion(task: TaskKey) {
+    const s = sug?.[task];
+    if (s) setAssignees((a) => ({ ...a, [task]: s.userId }));
+  }
+
+  async function run(fn: () => Promise<void>) {
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setMessage(null);
     try {
-      const created = await api.createCalling(ring!.id, {
-        personName,
-        functionTitle,
-        roepenAssigneeId: assignees.roepenAssigneeId || null,
-        ondersteunenAssigneeId: assignees.ondersteunenAssigneeId || null,
-        aanstellenAssigneeId: assignees.aanstellenAssigneeId || null,
-      });
-      navigate(`/roepingen/${created.id}`, { replace: true });
+      await fn();
     } catch (err) {
       setMessage(err instanceof ApiRequestError ? err.message : "Er ging iets mis.");
+    } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
 
+  const saveDraft = () => run(async () => { await save(); navigate("/voorstellen", { replace: true }); });
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void run(async () => {
+      const id = await save();
+      const res = await api.submitDraft(id); // idempotent: bij herhaling dezelfde uitkomst
+      navigate(`/roepingen/${res.id}`, { replace: true });
+    });
+  };
+  const discard = () => run(async () => { if (draftId) await api.deleteDraft(draftId); navigate("/voorstellen", { replace: true }); });
+
+  const taskSelect = (task: TaskKey, label: string, restricted: boolean) => {
+    const eligible = task === "roepen" ? sug?.eligible.roepen : task === "aanstellen" ? sug?.eligible.aanstellen : undefined;
+    const options = restricted ? (eligible ?? []).map((u) => ({ id: u.id, name: u.name })) : (members.data?.members ?? []).map((m) => ({ id: m.id, name: m.name }));
+    const note = task === "roepen" || task === "aanstellen" ? sug?.notes[task] : null;
+    return (
+      <div key={task} className="stack">
+        <label htmlFor={`as-${task}`}>{label}</label>
+        <select id={`as-${task}`} value={assignees[task]} onChange={(e) => setAssignees((a) => ({ ...a, [task]: e.target.value }))}>
+          <option value="">Nog niet toegewezen</option>
+          {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+        {sug?.[task] && assignees[task] !== sug[task]!.userId && (
+          <button type="button" className="btn btn-ghost" onClick={() => applySuggestion(task)}>
+            Voorstel overnemen: {sug[task]!.name} ({sug[task]!.source === "UNIT_STANDAARD" ? "standaard van de wijk/gemeente" : "verantwoordelijk hogeraadslid"})
+          </button>
+        )}
+        {note && <span className="muted" role="note">{note}</span>}
+        {restricted && (
+          <div>
+            <label htmlFor={`ex-${task}`}>Of: bevoegde externe persoon (handmatig)</label>
+            <input id={`ex-${task}`} value={external[task as "roepen" | "aanstellen"]} maxLength={120} onChange={(e) => setExternal((x) => ({ ...x, [task]: e.target.value }))} />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const needsConfirmation = !!picked?.requiresConfirmation;
+  const ready = personName.trim().length >= 2 && !!picked && (!needsConfirmation || picked.customConfirmed) && (!!unitId || (units.data?.units.filter((u) => u.active).length ?? 0) === 0);
+
   return (
     <form className="stack" onSubmit={submit}>
       <button type="button" className="btn btn-ghost" style={{ alignSelf: "flex-start" }} onClick={() => navigate(-1)}>‹ Terug</button>
-      <h1>Nieuw voorstel</h1>
-      <span className="muted">Ring: {ring?.name}</span>
-      {members.loading && !members.data && <Spinner />}
+      <h1>{draftId ? "Concept voorstel" : "Nieuw voorstel"}</h1>
+      <span className="muted">Ring: {ring?.name}. Een concept is alleen zichtbaar voor ringstaf en verstuurt niets.</span>
+      {(units.loading || members.loading) && !units.data && <Spinner />}
+      {units.error && <ErrorState error={units.error} onRetry={units.reload} />}
       {members.error && <ErrorState error={members.error} onRetry={members.reload} />}
-      {members.data && (
-        <div className="glass card stack">
-          <div><label htmlFor="person">Naam van de persoon</label><input id="person" value={personName} onChange={(e) => setPersonName(e.target.value)} required minLength={2} maxLength={200} /></div>
-          <CallingPicker ringId={ring!.id} value={picked} onChange={setPicked} />
-          {TASKS.map((t) => (
-            <div key={t.key}>
-              <label htmlFor={t.key}>Verantwoordelijke voor {t.label.toLowerCase()} (optioneel)</label>
-              <select id={t.key} value={assignees[t.key]} onChange={(e) => setAssignees((a) => ({ ...a, [t.key]: e.target.value }))}>
-                <option value="">Nog niet toegewezen</option>
-                {members.data?.members.map((m) => <option key={m.id} value={m.id}>{m.name}{m.churchFunction ? ` – ${m.churchFunction}` : ""}</option>)}
-              </select>
-            </div>
-          ))}
-          <button className="btn btn-primary" type="submit" disabled={busy || !picked || (picked.source === "EIGEN" && !picked.customConfirmed)}>{busy ? "Bezig…" : "Voorstel indienen"}</button>
+      <div className="glass card stack">
+        <strong>1. Naam van de persoon</strong>
+        <div><label htmlFor="person">Naam (handmatig invoeren)</label><input id="person" value={personName} onChange={(e) => setPersonName(e.target.value)} minLength={2} maxLength={200} autoComplete="off" /></div>
+      </div>
+      <div className="glass card stack">
+        <strong>2. Wijk of gemeente van herkomst</strong>
+        <div>
+          <label htmlFor="unit">Wijk of gemeente</label>
+          <select id="unit" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+            <option value="">Kies…</option>
+            {(units.data?.units ?? []).filter((u) => u.active).map((u) => <option key={u.id} value={u.id}>{u.kind === "WIJK" ? "Wijk" : "Gemeente"} {u.name}</option>)}
+          </select>
         </div>
-      )}
-      {message && <div role="alert" className="glass panel">{message}</div>}
+      </div>
+      <div className="glass card stack">
+        <strong>3. Roeping</strong>
+        <CallingPicker ringId={ring!.id} value={picked} onChange={setPicked} />
+      </div>
+      <div className="glass card stack">
+        <strong>4. Verantwoordelijken controleren</strong>
+        <span className="muted">Roepen en aanstellen kunnen alleen door aangewezen bevoegde personen worden toegewezen. De steunverlening in de kerkvergadering en de interne ondersteuning door presidium en hoge raad zijn aparte stappen.</span>
+        {taskSelect("roepen", "Wie roept de persoon?", true)}
+        {taskSelect("ondersteunen", "Wie begeleidt de steunverlening?", false)}
+        {taskSelect("aanstellen", "Wie stelt de persoon aan?", true)}
+      </div>
+      {message && <div role="alert" className="glass panel error">{message}</div>}
+      <div className="row">
+        <button type="button" className="btn btn-ghost" disabled={busy} onClick={saveDraft}>Concept opslaan</button>
+        <button className="btn btn-primary" type="submit" disabled={busy || !ready}>{busy ? "Bezig…" : "Voorstel indienen"}</button>
+      </div>
+      {draftId && <button type="button" className="btn btn-ghost" disabled={busy} onClick={discard}>Concept verwijderen</button>}
     </form>
   );
 }

@@ -69,6 +69,8 @@ export type TaskView = {
   task: TaskKey;
   label: string;
   assignee: { id: string; name: string } | null;
+  /** Handmatig geregistreerde bevoegde externe persoon (alleen roepen/aanstellen). */
+  assigneeExternalName: string | null;
   doneAt: string | null;
   doneBy: string | null;
   ondersteunenContext: "AVONDMAALSVERGADERING" | "RINGCONFERENTIE" | null;
@@ -106,6 +108,10 @@ export type CallingDetail = {
   readyToProcess: boolean;
   canDelete: boolean;
   assignableUsers: { id: string; name: string; role: Role }[];
+  /** Vastgelegd bij indienen (Fase C3); leeg voor voorstellen van vóór C3. */
+  function: { source: "STANDAARD" | "EIGEN" | "VRIJE_TEKST" | null; code: string | null; catalogVersion: string | null; ruleStatus: string | null; needsReview: boolean; procedureConfirmed: boolean };
+  unit: { name: string; kind: "WIJK" | "GEMEENTE" | null } | null;
+  eligibleAssignees: { ROEPEN: string[] | null; AANSTELLEN: string[] | null };
   /** Presidium akkoord; wacht op een expliciete vrijgave aan de hoge raad. */
   awaitingRelease: boolean;
   canRelease: boolean;
@@ -201,7 +207,34 @@ export type CatalogCalling = {
   reviewNotes: string[];
   active: boolean;
   catalogVersion: string | null;
+  /** GEVERIFIEERD | TE_BEOORDELEN | BIJZONDER | EIGEN. Alleen GEVERIFIEERD kent bevoegdheden toe; anders is menselijke controle nodig. */
+  ruleStatus: string;
+  /** Moet bij gebruik expliciet worden bevestigd dat de bevoegde leiding de procedure heeft gecontroleerd. */
+  requiresProcedureConfirmation: boolean;
 };
 export type CatalogResult = { version: string; categories: string[]; callings: CatalogCalling[] };
 export type EligibleAppointers = { rule: string | null; appointers: { id: string; name: string; authority: AppointAuthority }[] };
 export type CustomCalling = { id: string; name: string; category: string; active: boolean; source: "EIGEN" };
+
+// ---- Concepten en nieuwe voorstellen (Fase C3) ----
+
+export type FunctionSource = "STANDAARD" | "EIGEN";
+export type DraftData = {
+  id: string; ringId: string; personName: string | null; unitId: string | null; functionSource: FunctionSource | "VRIJE_TEKST" | null; functionCode: string | null;
+  roepenAssigneeId: string | null; ondersteunenAssigneeId: string | null; aanstellenAssigneeId: string | null;
+  roepenExternalName: string | null; aanstellenExternalName: string | null; procedureConfirmed: boolean; submitted: boolean; updatedAt: string;
+};
+export type DraftSuggestion = { userId: string; name: string; source: "UNIT_STANDAARD" | "UNIT_VERANTWOORDELIJKE" } | null;
+export type DraftSuggestions = {
+  unit: { id: string; name: string; kind: UnitKind; responsibleStatus: "OK" | "VACANT" | "INACTIEF" } | null;
+  roepen: DraftSuggestion; ondersteunen: DraftSuggestion; aanstellen: DraftSuggestion;
+  notes: { roepen: string | null; aanstellen: string | null };
+  eligible: { roepen: { id: string; name: string }[]; aanstellen: { id: string; name: string }[] };
+};
+export type DraftView = {
+  draft: DraftData;
+  procedure: { source: FunctionSource; code: string; name: string; category: string; ruleStatus: string; requiresConfirmation: boolean; warning: string; reviewNotes: string[] } | null;
+  suggestions: DraftSuggestions;
+};
+export type DraftListItem = { id: string; personName: string | null; functionCode: string | null; functionSource: string | null; unitName: string | null; updatedAt: string };
+export type ReviewOverview = { version: string; total: number; verified: number; items: { code: string; name: string; category: string; status: string; notes: string[] }[] };

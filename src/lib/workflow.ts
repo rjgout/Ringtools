@@ -158,7 +158,21 @@ const TASK_FIELD_PREFIX: Record<TaskKey, "roepen" | "ondersteunen" | "aanstellen
   AANSTELLEN: "aanstellen",
 };
 
-export async function createCalling(input: {
+export type CallingMeta = {
+  unitId?: string | null;
+  unitNameSnapshot?: string | null;
+  unitKindSnapshot?: "WIJK" | "GEMEENTE" | null;
+  functionSource?: "STANDAARD" | "EIGEN" | "VRIJE_TEKST" | null;
+  functionCode?: string | null;
+  catalogVersion?: string | null;
+  procedureSnapshot?: Prisma.InputJsonValue | null;
+  procedureConfirmedAt?: Date | null;
+  procedureConfirmedById?: string | null;
+  roepenExternalName?: string | null;
+  aanstellenExternalName?: string | null;
+};
+
+export type CreateCallingInput = {
   ringId: string;
   personName: string;
   functionTitle: string;
@@ -166,45 +180,66 @@ export async function createCalling(input: {
   roepenAssigneeId?: string | null;
   ondersteunenAssigneeId?: string | null;
   aanstellenAssigneeId?: string | null;
-}): Promise<Calling> {
-  const assigneeIds = [input.roepenAssigneeId, input.ondersteunenAssigneeId, input.aanstellenAssigneeId].filter(
-    (id): id is string => !!id
-  );
+  /** Vastlegging bij indienen (Fase C3); leeg voor oudere/directe aanroepen. */
+  meta?: CallingMeta;
+};
 
-  const { calling, presidiumIds } = await prisma.$transaction(async (tx) => {
-    // Aanmaker en verantwoordelijken moeten actief lid van DEZE ring zijn.
-    await assertActiveRingMembers(tx, input.ringId, [input.createdById, ...assigneeIds]);
+/**
+ * Maakt het voorstel binnen een bestaande transactie (zodat het indienen van een concept atomair en idempotent kan zijn).
+ * Het voorstel gaat altijd eerst naar het ringpresidium. Meldingen worden pas na het committen verstuurd (afterCallingCreated).
+ */
+export async function createCallingInTx(tx: Db, input: CreateCallingInput): Promise<{ calling: Calling; presidiumIds: string[] }> {
+  const assigneeIds = [input.roepenAssigneeId, input.ondersteunenAssigneeId, input.aanstellenAssigneeId].filter((id): id is string => !!id);
+  // Aanmaker en verantwoordelijken moeten actief lid van DEZE ring zijn.
+  await assertActiveRingMembers(tx, input.ringId, [input.createdById, ...assigneeIds]);
 
-    const presidiumIds = await activeMemberIds(tx, input.ringId, "RINGPRESIDIUM");
-    const now = new Date();
-    const calling = await tx.calling.create({
-      data: {
-        ringId: input.ringId,
-        personName: input.personName.trim(),
-        functionTitle: input.functionTitle.trim(),
-        createdById: input.createdById,
-        status: "PRESIDIUM_VOTING",
-        roepenAssigneeId: input.roepenAssigneeId || null,
-        ondersteunenAssigneeId: input.ondersteunenAssigneeId || null,
-        aanstellenAssigneeId: input.aanstellenAssigneeId || null,
-        eligibleVoters: {
-          create: presidiumIds.map((userId) => ({ stage: "PRESIDIUM" as const, userId, lastInvitedAt: now })),
-        },
+  const presidiumIds = await activeMemberIds(tx, input.ringId, "RINGPRESIDIUM");
+  const now = new Date();
+  const m = input.meta ?? {};
+  const calling = await tx.calling.create({
+    data: {
+      ringId: input.ringId,
+      personName: input.personName.trim(),
+      functionTitle: input.functionTitle.trim(),
+      createdById: input.createdById,
+      status: "PRESIDIUM_VOTING",
+      roepenAssigneeId: input.roepenAssigneeId || null,
+      ondersteunenAssigneeId: input.ondersteunenAssigneeId || null,
+      aanstellenAssigneeId: input.aanstellenAssigneeId || null,
+      unitId: m.unitId ?? null,
+      unitNameSnapshot: m.unitNameSnapshot ?? null,
+      unitKindSnapshot: m.unitKindSnapshot ?? null,
+      functionSource: m.functionSource ?? null,
+      functionCode: m.functionCode ?? null,
+      catalogVersion: m.catalogVersion ?? null,
+      procedureSnapshot: m.procedureSnapshot ?? undefined,
+      procedureConfirmedAt: m.procedureConfirmedAt ?? null,
+      procedureConfirmedById: m.procedureConfirmedById ?? null,
+      roepenExternalName: m.roepenExternalName ?? null,
+      aanstellenExternalName: m.aanstellenExternalName ?? null,
+      eligibleVoters: {
+        create: presidiumIds.map((userId) => ({ stage: "PRESIDIUM" as const, userId, lastInvitedAt: now })),
       },
-    });
-    return { calling, presidiumIds };
+    },
   });
+  return { calling, presidiumIds };
+}
 
+/** Meldingen na het aanmaken: uitnodiging aan het ringpresidium en bericht aan de gekozen taakverantwoordelijken. */
+export async function afterCallingCreated(calling: Calling, presidiumIds: string[]): Promise<void> {
   await notifyParticipants(calling, presidiumIds, { event: "NEW_PROPOSAL" });
-
   for (const [task, assigneeId] of [
-    ["ROEPEN", input.roepenAssigneeId],
-    ["ONDERSTEUNEN", input.ondersteunenAssigneeId],
-    ["AANSTELLEN", input.aanstellenAssigneeId],
+    ["ROEPEN", calling.roepenAssigneeId],
+    ["ONDERSTEUNEN", calling.ondersteunenAssigneeId],
+    ["AANSTELLEN", calling.aanstellenAssigneeId],
   ] as const) {
     if (assigneeId) await notifyTaskAssignee(calling.id, task, assigneeId);
   }
+}
 
+export async function createCalling(input: CreateCallingInput): Promise<Calling> {
+  const { calling, presidiumIds } = await prisma.$transaction((tx) => createCallingInTx(tx, input));
+  await afterCallingCreated(calling, presidiumIds);
   return calling;
 }
 

@@ -6,8 +6,10 @@ import { resolveOpenLink } from "../openLinks";
 import { authenticate, type ApiAuth } from "./auth";
 import { ApiError, jsonResponse, errorResponse, readJson, str } from "./http";
 import * as svc from "./service";
+import { reviewOverview } from "../catalog/callings";
 import * as mgmt from "./management";
 import * as setup from "./setup";
+import * as drafts from "./drafts";
 
 /** Verhoog bij een niet-achterwaarts-compatibele wijziging; de app toont dan een update-melding. */
 export const API_VERSION = 1;
@@ -119,7 +121,15 @@ authedRoute("GET", "/dashboard", async (ctx) => svc.getDashboard(ctx.auth.user.i
 authedRoute("GET", "/callings", async (ctx) => ({
   callings: await svc.listCallingsFor(ctx.auth.user.id, ringOf(ctx), ctx.query.get("filter") || "alle"),
 }));
-authedRoute("POST", "/callings", async (ctx) => svc.createCallingFor(ctx.auth.user.id, ringOf(ctx), ctx.body));
+// Nieuwe voorstellen lopen uitsluitend via concepten (server-side validatie bij indienen; idempotent).
+authedRoute("GET", "/drafts", async (ctx) => drafts.listDraftsFor(ctx.auth.user.id, ringOf(ctx)));
+authedRoute("POST", "/drafts", async (ctx) => drafts.createDraftFor(ctx.auth.user.id, ringOf(ctx), ctx.body));
+authedRoute("GET", "/drafts/suggestions", async (ctx) => drafts.suggestionsFor(ctx.auth.user.id, ringOf(ctx), ctx.query));
+authedRoute("GET", "/drafts/:id", async ({ auth, params }) => drafts.getDraftFor(auth.user.id, params.id));
+authedRoute("POST", "/drafts/:id", async ({ auth, params, body }) => drafts.updateDraftFor(auth.user.id, params.id, body));
+authedRoute("POST", "/drafts/:id/delete", async ({ auth, params }) => drafts.deleteDraftFor(auth.user.id, params.id));
+authedRoute("POST", "/drafts/:id/submit", async ({ auth, params }) => drafts.submitDraftFor(auth.user.id, params.id));
+authedRoute("GET", "/catalog/review", async () => reviewOverview());
 authedRoute("GET", "/callings/:id", async ({ auth, params }) => svc.getCallingView(auth.user.id, params.id));
 
 authedRoute("GET", "/rings/:id/members", async ({ auth, params }) => svc.listRingMembersFor(auth.user.id, params.id));
@@ -140,7 +150,7 @@ authedRoute("POST", "/callings/:id/release", async ({ auth, params }) => svc.rel
 authedRoute("POST", "/callings/:id/group-decision", async ({ auth, params, body }) => svc.groupDecisionFor(auth.user.id, params.id, body));
 authedRoute("POST", "/callings/:id/process", async ({ auth, params }) => svc.markProcessedFor(auth.user.id, params.id));
 authedRoute("POST", "/callings/:id/tasks/:task/assign", async ({ auth, params, body }) =>
-  svc.assignTaskFor(auth.user.id, params.id, params.task, str(body.assigneeId) || null)
+  svc.assignTaskFor(auth.user.id, params.id, params.task, str(body.assigneeId) || null, str(body.externalName) || null)
 );
 authedRoute("POST", "/callings/:id/tasks/:task/complete", async ({ auth, params, body }) =>
   svc.completeTaskFor(auth.user.id, params.id, params.task, body)
@@ -208,6 +218,7 @@ adminRoute("POST", "/admin/units/:id", async ({ auth, params, body }) => setup.u
 adminRoute("GET", "/admin/rings/:id/custom-callings", async ({ auth, params }) => setup.customCallingsFor(auth, params.id));
 adminRoute("POST", "/admin/rings/:id/custom-callings", async ({ auth, params, body }) => setup.createCustomCallingFor(auth, params.id, body));
 adminRoute("POST", "/admin/custom-callings/:id", async ({ auth, params, body }) => setup.updateCustomCallingFor(auth, params.id, body));
+adminRoute("GET", "/admin/catalog/review", async () => reviewOverview());
 adminRoute("GET", "/admin/users", async ({ query }) => mgmt.searchUsersFor(query.get("q") || ""));
 
 function match(route: Route, method: string, segments: string[]): Record<string, string> | null {

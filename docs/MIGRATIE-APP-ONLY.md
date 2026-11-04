@@ -94,3 +94,29 @@ coördineren; **LCR blijft de officiële bron**, Ringtools houdt geen blijvend p
   ingelogde gebruikers worden als geactiveerd gemarkeerd; niets wordt verwijderd.
 - **App**: tabblad "Inrichting" (ringbeheerder) en in het ringbeheer van de webmin; roepingenkiezer (zoeken, organisatie automatisch voorgesteld, eigen roeping toevoegen) in "Nieuw voorstel".
 - Open bij C2: opslaan van catalogus-/unitkeuze op het voorstel, automatische voorinvulling van verantwoordelijken en procesvoorstellen (C3); toesteltest.
+
+### C3 – Concepten en nieuw roepingsproces (gerealiseerd)
+- **Correctie catalogus (C2)**: `entry()` kent geen ruimste standaardbevoegdheid meer toe. Elke functie heeft een `ruleStatus`: **GEVERIFIEERD** (expliciet genoemd in handboek 30.8.3: o.a.
+  ringadministrateur/-secretaris en assistenten, hogeraadslid, organisatiepresidenten en hun raadgevers/secretarissen, verificateur, seminarie-/instituutsleerkracht, welzijnsdeskundige,
+  tolkencoördinator – 32 functies), **TE_BEOORDELEN** (onbekend: `ONBEKEND` voor roepen/aanstellen/aanstellingsplicht, steunverlening `NADER_BEPALEN`; 55 functies) en **BIJZONDER**
+  (buiten Ringtools). Bij onbekende regels worden **geen** bevoegdheden aan personen toegekend, staat er "Menselijke controle nodig" en is bij gebruik een bevestiging van de bevoegde leiding
+  verplicht. Alle controlepunten (`reviewNotes`) zijn behouden; overzicht: [`CATALOGUS-CONTROLE.md`](CATALOGUS-CONTROLE.md) (gegenereerd, door een test actueel gehouden) en `GET /catalog/review`.
+- **Nieuw voorstel in vijf stappen** (app): naam (handmatig) → wijk/gemeente → roeping (catalogus of eigen) → verantwoordelijken controleren → concept opslaan of indienen. Geen koppeling met een
+  ledenregister of LCR-persoonsgegevens.
+- **Alleen via concepten**: `POST /callings` bestaat niet meer; `POST /drafts` (onvolledig mag), `POST /drafts/:id` (bewerken), `POST /drafts/:id/delete`, `GET /drafts`, `POST /drafts/:id/submit`.
+  Een concept is alleen zichtbaar voor ringstaf van de eigen, actieve ring, start geen ronde, stuurt geen melding/e-mail/push.
+- **Indienen** (`submitDraft`): valideert alles opnieuw server-side (naam, unit van déze ring en actief, functie bestaat en is op te starten, eigen roeping hoort bij deze ring, verantwoordelijken
+  actief in deze ring, bevoegdheid, bevestiging), is atomair en idempotent (rij-lock; dubbel tikken/netwerkherhaling/gelijktijdig → exact één voorstel en één set meldingen). Daarna worden de
+  persoonsgegevens uit het concept gewist.
+- **Server-side vastgelegd op het voorstel**: unit (id + naam/soort-snapshot), functiebron (STANDAARD/EIGEN; VRIJE_TEKST alleen in de overgangswebapp), stabiele functiecode, Nederlandse functienaam bij
+  indienen, cataloguversie, procedure-snapshot (regels + verificatiestatus + handboekverwijzing + controlepunten), taakverantwoordelijken, externe bevoegde personen en wie/wanneer de
+  procedurecontrole bevestigde. Latere catalogus- of unitwijzigingen veranderen een bestaand voorstel niet van betekenis. Voorstellen van vóór C3 hebben deze velden niet en blijven ongewijzigd geldig.
+- **Eigen roepingen**: servercontrole verplicht (zonder bevestiging geweigerd); alleen binnen de eigen ring; nooit afgeleide bevoegdheden. Dezelfde bevestiging geldt voor niet-geverifieerde standaardroepingen.
+- **Voorgestelde verantwoordelijken** uit de wijk-/gemeentekoppeling (`buildSuggestions`): alleen voor zover bevoegd; een wijktoewijzing geeft nooit zelf bevoegdheid. Roepen en aanstellen kunnen
+  alleen aan expliciet aangewezen personen (geverifieerde regel) of aan een handmatig geregistreerde bevoegde externe persoon; ook bij achteraf wijzigen (`assignTaskGuarded`, ook in de overgangswebapp).
+  Ondersteunen (steunverlening) kent geen bevoegdheidsregel. Intern ondersteunen (presidium/hoge raad), roepen, steunverlening en aanstellen blijven gescheiden.
+- **Overgangswebapp**: vrije tekst blijft mogelijk maar vereist een expliciete procedurebevestiging en wordt als `VRIJE_TEKST` vastgelegd (geen catalogusregels).
+- **Opruimregels concepten**: verlaten concepten (30 dagen niet gewijzigd) worden verwijderd; ingediende concepten behouden alleen een sleutel (zonder persoonsgegevens) en worden na 7 dagen verwijderd
+  (nachtelijke cron, `deleteStaleDrafts`). Concepten zijn tijdelijke persoonsgegevens en vallen onder de bestaande bewaartermijnen.
+- **Migratie** `20261109100000_c3_concepten` (additief): enum `FunctionSource`, kolommen op `Calling` (alle nullable), tabel `CallingDraft`; niets wordt verwijderd.
+- **C1 blijft intact**: ingediend voorstel → ringpresidium → akkoord wacht op expliciete vrijgave → geen automatische doorstart; lege hoge raad keurt nooit goed; individueel en gezamenlijk akkoord werken beide.

@@ -142,7 +142,9 @@ describe("API: ondersteuningsprocedure", () => {
   it("een presidiumlid ziet het voorstel, brengt ondersteuning uit en de ronde schuift door", async () => {
     const { ring, users } = await ringWith("RINGPRESIDIUM", "HOGERAAD");
     const token = await login(users[0].id);
-    const created = await call("POST", `/callings?ring=${ring.id}`, { token, body: { personName: "Jan Jansen", functionTitle: "Leraar" } });
+    const draft = await call("POST", `/drafts?ring=${ring.id}`, { token, body: { personName: "Jan Jansen", functionSource: "STANDAARD", functionCode: "ringadministrateur" } });
+    expect(draft.status).toBe(200);
+    const created = await call("POST", `/drafts/${draft.body.id}/submit`, { token });
     expect(created.status).toBe(200);
 
     const dash = await call("GET", `/dashboard?ring=${ring.id}`, { token });
@@ -176,7 +178,10 @@ describe("API: ondersteuningsprocedure", () => {
   it("validatie: vote vereist een boolean, een nieuw voorstel vereist een naam", async () => {
     const { ring, users } = await ringWith("RINGPRESIDIUM");
     const token = await login(users[0].id);
-    expect((await call("POST", `/callings?ring=${ring.id}`, { token, body: { personName: "J", functionTitle: "" } })).status).toBe(400);
+    const incomplete = await call("POST", `/drafts?ring=${ring.id}`, { token, body: { personName: "J" } }); // een concept mag onvolledig zijn
+    expect(incomplete.status).toBe(200);
+    expect((await call("POST", `/drafts/${incomplete.body.id}/submit`, { token })).status).toBe(400); // indienen valideert opnieuw
+    expect((await call("POST", `/callings?ring=${ring.id}`, { token, body: { personName: "Jan Jansen", functionTitle: "Vrije tekst" } })).status).toBe(405); // geen directe aanmaak buiten concepten om
     const calling = await createCalling({ ringId: ring.id, personName: "Jan", functionTitle: "F", createdById: users[0].id });
     expect((await call("POST", `/callings/${calling.id}/vote`, { token, body: { support: "ja" } })).status).toBe(400);
   });
@@ -380,11 +385,12 @@ describe("API: ledenlijst voor verantwoordelijken (Fase A)", () => {
     const outsiderRing = await createTestRing("Ring B");
     const outsider = await createTestUser("RINGPRESIDIUM", "Vreemd", { ringId: outsiderRing.id });
     const staff = await login(users[0].id);
-    const bad = await call("POST", `/callings?ring=${ring.id}`, { token: staff, body: { personName: "Jan Test", functionTitle: "Leraar", roepenAssigneeId: outsider.id } });
-    expect(bad.status).toBeGreaterThanOrEqual(400);
-    const ok = await call("POST", `/callings?ring=${ring.id}`, { token: staff, body: { personName: "Jan Test", functionTitle: "Leraar", roepenAssigneeId: users[1].id } });
+    const base = { personName: "Jan Test", functionSource: "STANDAARD", functionCode: "ringadministrateur" };
+    expect((await call("POST", `/drafts?ring=${ring.id}`, { token: staff, body: { ...base, ondersteunenAssigneeId: outsider.id } })).status).toBeGreaterThanOrEqual(400);
+    const ok = await call("POST", `/drafts?ring=${ring.id}`, { token: staff, body: { ...base, ondersteunenAssigneeId: users[1].id } });
     expect(ok.status).toBe(200);
+    expect((await call("POST", `/drafts/${ok.body.id}/submit`, { token: staff })).status).toBe(200);
     const plain = await login(users[1].id);
-    expect((await call("POST", `/callings?ring=${ring.id}`, { token: plain, body: { personName: "Piet Test", functionTitle: "Leraar" } })).status).toBe(403);
+    expect((await call("POST", `/drafts?ring=${ring.id}`, { token: plain, body: base })).status).toBe(403);
   });
 });

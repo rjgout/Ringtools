@@ -78,25 +78,6 @@ describe("Fase A: staf-acties vanuit de app (iOS en Android gebruiken dezelfde c
     expect(screen.queryByText("Administratief verwerkt")).toBeNull();
   });
 
-  it("nieuw voorstel: kiest een roeping uit de catalogus en verantwoordelijken uit de ring en dient in", async () => {
-    const createCalling = vi.fn(async () => ({ id: "nieuw" }));
-    const catalog = vi.fn(async () => ({ version: "x", categories: ["Muziek"], callings: [
-      { code: "muziekdeskundige", source: "STANDAARD", name: "Muziekdeskundige", aliases: [], category: "Muziek", type: "DESKUNDIGE", handbook: [], approvalRoute: "RINGPRESIDIUM_HOGE_RAAD", ringtoolsProcess: true, extraApproval: null, grantedBy: null, appointedBy: null, supportVenue: null, appointment: null, releaseFollowUps: [], warning: null, reviewNotes: [], active: true, catalogVersion: "x" },
-    ] }));
-    auth.value = { api: { ringMembers: vi.fn(async () => ({ members: [{ id: "u1", name: "Anna", role: "HOGERAAD", churchFunction: "Bisschop" }] })), createCalling, catalog }, ring: { id: "r1", name: "Ring" } };
-    render(<MemoryRouter initialEntries={["/voorstellen/nieuw"]}><Routes>
-      <Route path="/voorstellen/nieuw" element={<NewCalling />} /><Route path="/roepingen/:id" element={<div>detail</div>} />
-    </Routes></MemoryRouter>);
-    fireEvent.change(await screen.findByLabelText("Naam van de persoon"), { target: { value: "Jan Jansen" } });
-    const submit = screen.getByRole("button", { name: "Voorstel indienen" }) as HTMLButtonElement;
-    expect(submit.disabled).toBe(true); // zonder gekozen roeping kan niets worden ingediend
-    fireEvent.click(await screen.findByRole("option", { name: /Muziekdeskundige/ }));
-    fireEvent.change(screen.getByLabelText(/Verantwoordelijke voor roepen/), { target: { value: "u1" } });
-    expect(submit.disabled).toBe(false);
-    fireEvent.click(submit);
-    await waitFor(() => expect(createCalling).toHaveBeenCalledWith("r1", expect.objectContaining({ personName: "Jan Jansen", functionTitle: "Muziekdeskundige", roepenAssigneeId: "u1", aanstellenAssigneeId: null })));
-    expect(await screen.findByText("detail")).toBeTruthy();
-  });
 });
 
 describe("C1: vrijgave en gezamenlijk akkoord", () => {

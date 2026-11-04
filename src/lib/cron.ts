@@ -3,6 +3,7 @@ import { env } from "./env";
 import { sendDue30DayReminders, deleteDueProcessedCallings } from "./workflow";
 import { deleteExpiredAuthData } from "./auth";
 import { deleteExpiredOpenLinks } from "./openLinks";
+import { deleteStaleDrafts } from "./proposals";
 
 let started = false;
 
@@ -44,6 +45,9 @@ async function runOnce(): Promise<void> {
   if (expired.sessions + expired.magicLinks + links > 0) {
     console.log(`[cron] Opgeruimd: ${expired.sessions} sessie(s), ${expired.magicLinks} inloglink(s), ${links} koppeling(en).`);
   }
+
+  const drafts = await deleteStaleDrafts();
+  if (drafts > 0) console.log(`[cron] ${drafts} verlaten of ingediend concept(en) opgeruimd.`);
 
   const deleted = await deleteDueProcessedCallings();
   if (deleted > 0) console.log(`[cron] ${deleted} verwerkte roeping(en) na 30 dagen verwijderd.`);

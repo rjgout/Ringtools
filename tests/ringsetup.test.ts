@@ -194,6 +194,12 @@ describe("Aanstellingsbevoegdheid (expliciete aanwijzing)", () => {
     expect(await names("ringadministrateur")).toEqual([s.president.id, s.counselor.id].sort()); // ringpresident of raadgever
     expect(await names("seminarieleerkracht")).toEqual([s.president.id, s.counselor.id, s.ha1.id].sort()); // + aangewezen hogeraadslid
     expect(await names("ringpresident")).toEqual([]); // bijzondere procedure: handmatige registratie van een bevoegd persoon
+    // Niet-geverifieerde regel: nooit een uitvoerder, ook niet als er een aangewezen ringpresident is.
+    for (const code of ["muziekdeskundige", "instituutshoofd", "ringtolk", "eerste-raadgever-in-de-bisschap", "kampleider-jongemannen"]) {
+      expect(await names(code), code).toEqual([]);
+      expect((await eligibleAppointers(s.ring.id, code, "grantedBy")).appointers, code).toEqual([]);
+    }
+    expect((await eligibleAppointers(s.ring.id, "ringadministrateur", "grantedBy")).appointers).toHaveLength(2);
     expect((await eligibleAppointers(s.ring.id, null)).appointers).toEqual([]); // eigen roeping: geen afgeleide bevoegdheden
     expect((await eligibleAppointers(s.ring.id, "id-van-een-eigen-roeping")).appointers).toEqual([]);
   });

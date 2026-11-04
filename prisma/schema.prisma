@@ -44,6 +44,13 @@ enum AppointAuthority {
   AANGEWEZEN_HOGERAADSLID
 }
 
+// Herkomst van de functie op een voorstel: standaardroeping uit de catalogus, eigen roeping van de ring of (alleen overgangswebapp) vrije tekst.
+enum FunctionSource {
+  STANDAARD
+  EIGEN
+  VRIJE_TEKST
+}
+
 enum UnitKind {
   WIJK
   GEMEENTE
@@ -113,6 +120,7 @@ model User {
   groupDecisionsRegistered GroupDecision[] @relation("GroupDecisionRegisteredBy")
   groupDecisionsPresided   GroupDecision[] @relation("GroupDecisionPresiding")
   callingAudits            CallingAudit[]  @relation("CallingAuditActor")
+  callingDrafts            CallingDraft[]  @relation("DraftCreatedBy")
   unitsResponsible         RingUnit[]      @relation("UnitResponsible")
   unitsDefaultRoepen       RingUnit[]      @relation("UnitDefaultRoepen")
   unitsDefaultOndersteunen RingUnit[]      @relation("UnitDefaultOndersteunen")
@@ -319,6 +327,21 @@ model Calling {
   groupDecisions          GroupDecision[]
   audits                  CallingAudit[]
 
+  // Vastlegging bij indienen (Fase C3): wat er op dat moment gold, zodat latere wijzigingen in catalogus of unitnaam
+  // een bestaand voorstel niet van betekenis veranderen. Alle velden zijn leeg bij voorstellen van vóór C3.
+  unitId                 String?
+  unit                   RingUnit?       @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  unitNameSnapshot       String?
+  unitKindSnapshot       UnitKind?
+  functionSource         FunctionSource?
+  functionCode           String?
+  catalogVersion         String?
+  procedureSnapshot      Json?
+  procedureConfirmedAt   DateTime?
+  procedureConfirmedById String?
+  roepenExternalName     String?
+  aanstellenExternalName String?
+
   // Taak: Roepen
   roepenAssigneeId String?
   roepenAssignee   User?     @relation("RoepenAssignee", fields: [roepenAssigneeId], references: [id])
@@ -476,6 +499,7 @@ model Ring {
   customCallings RingCustomCalling[]
   callings       Calling[]
   notifications  Notification[]
+  callingDrafts  CallingDraft[]
 }
 
 // Lidmaatschap van een gebruiker in een ring. `role` is de workflowrol binnen
@@ -564,6 +588,8 @@ model RingUnit {
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
+  callings Calling[]
+
   @@unique([ringId, name])
   @@index([ringId, active])
 }
@@ -582,4 +608,33 @@ model RingCustomCalling {
 
   @@unique([ringId, name])
   @@index([ringId, active])
+}
+
+// Concept van een roepingsvoorstel (Fase C3): mag onvolledig zijn, is alleen zichtbaar voor ringstaf van de eigen ring en
+// heeft géén ondersteuningsronde en stuurt géén meldingen. Verlaten concepten worden na 30 dagen zonder wijziging verwijderd;
+// na indienen worden de persoonsgegevens direct gewist en blijft alleen een korte sleutel (idempotentie) tot de opruiming.
+model CallingDraft {
+  id                     String          @id @default(cuid())
+  ringId                 String
+  ring                   Ring            @relation(fields: [ringId], references: [id], onDelete: Cascade)
+  createdById            String
+  createdBy              User            @relation("DraftCreatedBy", fields: [createdById], references: [id])
+  personName             String?
+  unitId                 String?
+  functionSource         FunctionSource?
+  functionCode           String?
+  functionName           String?
+  roepenAssigneeId       String?
+  ondersteunenAssigneeId String?
+  aanstellenAssigneeId   String?
+  roepenExternalName     String?
+  aanstellenExternalName String?
+  procedureConfirmed     Boolean         @default(false)
+  submittedCallingId     String?
+  submittedAt            DateTime?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  @@index([ringId, updatedAt])
+  @@index([submittedAt])
 }

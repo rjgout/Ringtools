@@ -113,6 +113,7 @@ function Shell() {
             <Route path="/" element={<Home />} />
             <Route path="/voorstellen" element={<Callings />} />
             <Route path="/voorstellen/nieuw" element={<NewCalling />} />
+            <Route path="/voorstellen/concept/:id" element={<NewCalling />} />
             <Route path="/roepingen/:id" element={<CallingDetail />} />
             <Route path="/open/:token" element={<OpenLink />} />
             {ring.isRingManager && <Route path="/inrichting" element={<div className="stack"><h1>{ring.name}</h1><RingSetup ringId={ring.id} /></div>} />}

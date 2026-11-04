@@ -13,13 +13,11 @@ import {
 } from "../queries";
 import { isReadyToProcess, phaseLabel, TASK_ASSIGNEE_FIELD, type TaskKey } from "../status";
 import {
-  createCalling,
   castVote,
   reinviteVoter,
   remindParticipants,
   removeParticipantFromRound,
   deleteCalling,
-  assignTask,
   completeTask,
   markProcessed,
   releaseToHogeraad,
@@ -28,7 +26,8 @@ import {
   WorkflowError,
   AuthorizationError,
 } from "../workflow";
-import { createCallingSchema } from "../validation";
+import { assignTaskGuarded } from "../proposals";
+import { eligibleAppointers } from "../ringSetup";
 import { ApiError } from "./http";
 import { hashToken } from "../crypto";
 import { listSessionsForUser, destroySessionById } from "../auth";
@@ -258,6 +257,7 @@ export async function getCallingView(userId: string, callingId: string) {
           task,
           label: TASK_LABELS[task],
           assignee: assignee ? { id: assignee.id, name: assignee.name } : null,
+          assigneeExternalName: task === "ROEPEN" ? calling.roepenExternalName : task === "AANSTELLEN" ? calling.aanstellenExternalName : null,
           doneAt: doneAt?.toISOString() ?? null,
           doneBy: doneBy?.name ?? null,
           ondersteunenContext: task === "ONDERSTEUNEN" ? calling.ondersteunenContext : null,
@@ -283,6 +283,17 @@ export async function getCallingView(userId: string, callingId: string) {
     readyToProcess: staff && isReadyToProcess(calling),
     canDelete: staff && calling.status !== "PROCESSED" && !calling.processedAt,
     assignableUsers: assignable.map((u) => ({ id: u.id, name: u.name, role: u.role })),
+    function: {
+      source: calling.functionSource,
+      code: calling.functionCode,
+      catalogVersion: calling.catalogVersion,
+      ruleStatus: ((calling.procedureSnapshot as { ruleStatus?: string } | null)?.ruleStatus ?? null) as string | null,
+      needsReview: !!calling.functionSource && calling.functionSource !== "VRIJE_TEKST" && ((calling.procedureSnapshot as { ruleStatus?: string } | null)?.ruleStatus ?? "EIGEN") !== "GEVERIFIEERD",
+      procedureConfirmed: !!calling.procedureConfirmedAt,
+    },
+    unit: calling.unitNameSnapshot ? { name: calling.unitNameSnapshot, kind: calling.unitKindSnapshot } : null,
+    // null = geen beperking (voorstel van vóór de bevoegdheidscontrole); anders alleen deze personen (leeg = niemand aangewezen).
+    eligibleAssignees: await eligibleAssigneesFor(calling),
     awaitingRelease: calling.status === "PRESIDIUM_APPROVED",
     canRelease: staff && calling.status === "PRESIDIUM_APPROVED",
     groupDecisions: staff ? await groupDecisionViews(calling.id) : [],
@@ -291,6 +302,16 @@ export async function getCallingView(userId: string, callingId: string) {
       HOGERAAD: staff && (calling.status === "HOGERAAD_VOTING" || calling.status === "HOGERAAD_PAUSED") && !(await hasGroupDecision(calling.id, "HOGERAAD")),
     },
   };
+}
+
+async function eligibleAssigneesFor(calling: { ringId: string; functionSource: string | null; functionCode: string | null }) {
+  if (calling.functionSource !== "STANDAARD" && calling.functionSource !== "EIGEN") return { ROEPEN: null, AANSTELLEN: null };
+  if (calling.functionSource === "EIGEN" || !calling.functionCode) return { ROEPEN: [] as string[], AANSTELLEN: [] as string[] };
+  const [granted, appointed] = await Promise.all([
+    eligibleAppointers(calling.ringId, calling.functionCode, "grantedBy"),
+    eligibleAppointers(calling.ringId, calling.functionCode, "appointedBy"),
+  ]);
+  return { ROEPEN: granted.appointers.map((a) => a.id), AANSTELLEN: appointed.appointers.map((a) => a.id) };
 }
 
 async function hasGroupDecision(callingId: string, stage: "PRESIDIUM" | "HOGERAAD") {
@@ -339,15 +360,6 @@ async function staffForCalling(userId: string, callingId: string) {
   return { calling, membership };
 }
 
-export async function createCallingFor(userId: string, ringId: string, body: Record<string, unknown>) {
-  const membership = await requireMembership(userId, ringId);
-  if (!isStaff(membership.role)) throw new ApiError(403, "Je hebt hiervoor geen bevoegdheid.", "forbidden");
-  const parsed = createCallingSchema.safeParse(body);
-  if (!parsed.success) throw new ApiError(400, parsed.error.issues[0]?.message || "Controleer de ingevulde gegevens.", "validation");
-  const calling = await mapErrors(() => createCalling({ ...parsed.data, ringId, createdById: userId }));
-  return { id: calling.id };
-}
-
 export async function castVoteFor(userId: string, callingId: string, support: boolean) {
   await mapErrors(() => castVote({ callingId, userId, support }));
   return { ok: true };
@@ -382,9 +394,11 @@ function parseTask(raw: string): TaskKey {
   return task;
 }
 
-export async function assignTaskFor(userId: string, callingId: string, taskRaw: string, assigneeId: string | null) {
+export async function assignTaskFor(userId: string, callingId: string, taskRaw: string, assigneeId: string | null, externalName: string | null = null) {
   await staffForCalling(userId, callingId);
-  await mapErrors(() => assignTask({ callingId, task: parseTask(taskRaw), assigneeId }));
+  const task = parseTask(taskRaw);
+  // Bevoegdheidscontrole (roepen/aanstellen) en handmatige registratie van een externe bevoegde persoon.
+  await mapErrors(() => assignTaskGuarded({ actorId: userId, callingId, task, assigneeId, externalName }));
   return { ok: true };
 }
 

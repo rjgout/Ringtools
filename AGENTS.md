@@ -47,6 +47,7 @@ Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet ·
 | Ringbeheer: ringen aanmaken/wijzigen/(de)activeren (alleen webmin) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ (aanmaken/wijzigen; activeren alleen in de app) |
 | Eerste ringbeheerder van een nieuwe ring aanwijzen (webmin) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ |
 | Wijken/gemeenten, hogeraadskoppeling, ringinrichting, roepingencatalogus, eigen roepingen, aanstellingsbevoegdheid | ✅ C2 (toesteltest open) | ✅ C2 (toesteltest open) | — | ✅ (via app-beheer) |
+| Nieuw voorstel via concept (naam → unit → roeping → verantwoordelijken), servercontrole bevoegdheden en eigen roepingen | ✅ C3 (toesteltest open) | ✅ C3 (toesteltest open) | — | — |
 | Uitnodigen en activeren van nieuwe gebruikers | 🔧 C | 🔧 C | — | — |
 | Ontheffingen (aparte module) | 🔧 D | 🔧 D | — | — |
 | Meldingen in de app (bel) | ✅ | ✅ | ⚠ | — |
@@ -132,6 +133,10 @@ bijwerken van deze tabel en van `docs/MOBILE.md`.
   automatisch (status `PRESIDIUM_APPROVED` → expliciete, idempotente vrijgave met audit); gezamenlijke besluiten leggen een werkelijk genomen besluit vast
   en maken nooit reacties namens anderen aan; negatieve reacties worden nooit stilzwijgend overschreven. LCR blijft de bron voor ledengegevens en
   roepingen: bewaar geen blijvend personenregister en importeer nooit persoonsgegevens uit LCR (alleen functietitels).
+
+- **Catalogus en bevoegdheden.** Onbekende regels zijn `ONBEKEND`/`TE_BEOORDELEN`, nooit de ruimste standaardbevoegdheid; alleen `GEVERIFIEERD` kent (expliciet aangewezen) personen bevoegdheid toe, en
+  een Ringtools-rol of kerkelijke functie is nooit een machtiging. Nieuwe voorstellen lopen uitsluitend via concepten (`/drafts`) met server-side validatie bij indienen (idempotent); een eigen of niet-geverifieerde
+  roeping vereist altijd de bevestigde procedurecontrole. Wijzigingen aan de catalogus: draai `npm run catalog:review` (test bewaakt `docs/CATALOGUS-CONTROLE.md`).
 
 ## Design
 

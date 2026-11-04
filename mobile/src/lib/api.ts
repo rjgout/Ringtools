@@ -2,6 +2,8 @@ import type {
   AdminRing,
   AppointAuthority,
   CatalogResult,
+  DraftListItem,
+  DraftView,
   CustomCalling,
   EligibleAppointers,
   ApiMeta,
@@ -36,6 +38,12 @@ export class ApiRequestError extends Error {
     return this.status === 0;
   }
 }
+
+export type DraftInput = Partial<{
+  personName: string | null; unitId: string | null; functionSource: "STANDAARD" | "EIGEN" | null; functionCode: string | null;
+  roepenAssigneeId: string | null; ondersteunenAssigneeId: string | null; aanstellenAssigneeId: string | null;
+  roepenExternalName: string | null; aanstellenExternalName: string | null; procedureConfirmed: boolean;
+}>;
 
 export type ApiClientOptions = {
   baseUrl: string;
@@ -163,17 +171,38 @@ export class ApiClient {
   completeTask(id: string, task: TaskKey, opts: { doneAt?: string; ondersteunenContext?: "AVONDMAALSVERGADERING" | "RINGCONFERENTIE" } = {}) {
     return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/tasks/${task.toLowerCase()}/complete`, opts);
   }
-  assignTask(id: string, task: TaskKey, assigneeId: string | null) {
-    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/tasks/${task.toLowerCase()}/assign`, { assigneeId });
+  assignTask(id: string, task: TaskKey, assigneeId: string | null, externalName?: string) {
+    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/tasks/${task.toLowerCase()}/assign`, { assigneeId, externalName });
   }
   ringMembers(ringId: string) {
     return this.request<{ members: RingMemberInfo[] }>("GET", `/rings/${encodeURIComponent(ringId)}/members`);
   }
-  createCalling(
-    ringId: string,
-    input: { personName: string; functionTitle: string; roepenAssigneeId?: string | null; ondersteunenAssigneeId?: string | null; aanstellenAssigneeId?: string | null }
-  ) {
-    return this.request<{ id: string }>("POST", `/callings?ring=${encodeURIComponent(ringId)}`, input);
+  // ---- Concepten en nieuwe voorstellen: alleen via concepten (server valideert bij indienen; idempotent) ----
+  createDraft(ringId: string, input: DraftInput) {
+    return this.request<{ id: string }>("POST", `/drafts?ring=${encodeURIComponent(ringId)}`, input);
+  }
+  updateDraft(id: string, input: DraftInput) {
+    return this.request<{ ok: boolean }>("POST", `/drafts/${encodeURIComponent(id)}`, input);
+  }
+  draft(id: string) {
+    return this.request<DraftView>("GET", `/drafts/${encodeURIComponent(id)}`);
+  }
+  drafts(ringId: string) {
+    return this.request<{ drafts: DraftListItem[] }>("GET", `/drafts?ring=${encodeURIComponent(ringId)}`);
+  }
+  deleteDraft(id: string) {
+    return this.request<{ ok: boolean }>("POST", `/drafts/${encodeURIComponent(id)}/delete`, {});
+  }
+  /** Dient een concept in. Herhaald aanroepen (dubbel tikken, netwerkherhaling) maakt nooit een tweede voorstel. */
+  submitDraft(id: string) {
+    return this.request<{ id: string; alreadySubmitted: boolean }>("POST", `/drafts/${encodeURIComponent(id)}/submit`, {});
+  }
+  suggestions(ringId: string, unitId: string | null, source: string | null, code: string | null) {
+    const q = new URLSearchParams({ ring: ringId });
+    if (unitId) q.set("unit", unitId);
+    if (source) q.set("source", source);
+    if (code) q.set("code", code);
+    return this.request<{ suggestions: DraftView["suggestions"] | null }>("GET", `/drafts/suggestions?${q.toString()}`);
   }
   /** Herinnert één deelnemer (userId) of iedereen die nog niet heeft gereageerd. */
   remind(id: string, userId?: string) {

@@ -12,7 +12,7 @@ afterEach(cleanup);
 
 const entry = (over: Record<string, unknown>) => ({
   code: "x", source: "STANDAARD", name: "X", aliases: [], category: "Muziek", type: "OVERIG", handbook: [], approvalRoute: "RINGPRESIDIUM_HOGE_RAAD", ringtoolsProcess: true,
-  extraApproval: null, grantedBy: null, appointedBy: null, supportVenue: null, appointment: null, releaseFollowUps: [], warning: null, reviewNotes: [], active: true, catalogVersion: "1", ...over,
+  extraApproval: null, grantedBy: null, appointedBy: null, supportVenue: null, appointment: null, releaseFollowUps: [], warning: null, reviewNotes: [], active: true, catalogVersion: "1", ruleStatus: "GEVERIFIEERD", requiresProcedureConfirmation: false, ...over,
 });
 
 describe("ApiClient: ringinrichting", () => {
@@ -93,7 +93,7 @@ describe("CallingPicker: zoeken en selecteren", () => {
     fireEvent.click(presidentOption);
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("option", { name: /Ringtolk/ }));
-    expect(onChange).toHaveBeenCalledWith({ code: "ringtolk", source: "STANDAARD", name: "Ringtolk", category: "Technologie", customConfirmed: false });
+    expect(onChange).toHaveBeenCalledWith({ code: "ringtolk", source: "STANDAARD", name: "Ringtolk", category: "Technologie", customConfirmed: false, requiresConfirmation: false });
     await waitFor(() => expect((screen.getByLabelText("Organisatie") as HTMLSelectElement).value).toBe("Technologie")); // automatisch voorgesteld
     fireEvent.change(screen.getByLabelText("Roeping zoeken"), { target: { value: "tolk" } });
     await waitFor(() => expect(catalog).toHaveBeenLastCalledWith("r1", "tolk", "Technologie"));
@@ -101,7 +101,7 @@ describe("CallingPicker: zoeken en selecteren", () => {
 
   it("een eigen roeping vereist expliciete bevestiging van de bevoegde leiding", async () => {
     auth.value = { api: { catalog, createCustomCalling: vi.fn() } };
-    let current: Record<string, unknown> | null = { code: "eigen-1", source: "EIGEN", name: "Koorleider", category: "Muziek", customConfirmed: false };
+    let current: Record<string, unknown> | null = { code: "eigen-1", source: "EIGEN", name: "Koorleider", category: "Muziek", customConfirmed: false, requiresConfirmation: true };
     const onChange = vi.fn((v) => { current = v; });
     const { rerender } = render(<CallingPicker ringId="r1" value={current as never} onChange={onChange} />);
     fireEvent.click(await screen.findByLabelText(/bevoegde leiding heeft de procedure/));
@@ -120,6 +120,6 @@ describe("CallingPicker: zoeken en selecteren", () => {
     fireEvent.change(screen.getByLabelText("Categorie"), { target: { value: "Activiteiten en sporten" } });
     fireEvent.click(screen.getAllByRole("button", { name: "Toevoegen" })[0]);
     await waitFor(() => expect(createCustomCalling).toHaveBeenCalledWith("r1", { name: "Fietscoördinator", category: "Activiteiten en sporten" }));
-    await waitFor(() => expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ code: "nieuw-id", source: "EIGEN", customConfirmed: false })));
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ code: "nieuw-id", source: "EIGEN", customConfirmed: false, requiresConfirmation: true })));
   });
 });

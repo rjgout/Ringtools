@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/session";
 import { requireRingRole, getActiveMembership } from "@/lib/ringContext";
 import { STAFF_ROLES } from "@/lib/rbac";
 import { createCallingSchema } from "@/lib/validation";
+import { assignTaskGuarded } from "@/lib/proposals";
 import {
   createCalling,
   castVote,
@@ -13,7 +14,6 @@ import {
   remindParticipants,
   removeParticipantFromRound,
   deleteCalling,
-  assignTask,
   completeTask,
   markProcessed,
   releaseToHogeraad,
@@ -57,9 +57,16 @@ export async function createCallingAction(_prev: ActionResult | null, formData: 
     return { ok: false, message: parsed.error.issues[0]?.message || "Controleer de ingevulde gegevens." };
   }
 
+  // Overgangswebapp: vrije tekst kent geen catalogusregels. De bevoegde leiding moet de procedure expliciet bevestigen (zoals bij een eigen roeping).
+  if (formData.get("procedureConfirmed") !== "on") {
+    return { ok: false, message: "Bevestig dat de bevoegde leiding de procedure voor deze roeping heeft gecontroleerd. Gebruik de app voor de catalogus met bevoegdheidsregels." };
+  }
   let callingId: string;
   try {
-    const calling = await createCalling({ ...parsed.data, ringId: ctx.ring.id, createdById: ctx.user.id });
+    const calling = await createCalling({
+      ...parsed.data, ringId: ctx.ring.id, createdById: ctx.user.id,
+      meta: { functionSource: "VRIJE_TEKST", procedureConfirmedAt: new Date(), procedureConfirmedById: ctx.user.id },
+    });
     callingId = calling.id;
   } catch (err) {
     if (err instanceof WorkflowError) return { ok: false, message: err.message };
@@ -180,13 +187,14 @@ export async function deleteCallingAction(formData: FormData): Promise<void> {
 
 export async function assignTaskAction(formData: FormData): Promise<void> {
   const callingId = String(formData.get("callingId"));
-  await requireStaffForCalling(callingId);
+  const { user } = await requireStaffForCalling(callingId);
   const task = String(formData.get("task")) as TaskKey;
   const assigneeId = String(formData.get("assigneeId") || "") || null;
 
   try {
-    await assignTask({ callingId, task, assigneeId });
+    await assignTaskGuarded({ actorId: user.id, callingId, task, assigneeId });
   } catch (err) {
+    if (err instanceof AuthorizationError) redirect("/geen-toegang");
     if (!(err instanceof WorkflowError)) throw err;
   }
   backToCalling(callingId);

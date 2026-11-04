@@ -66,6 +66,12 @@ export function CallingDetail() {
             <h1>{data.personName}</h1>
             <span className="muted">{data.functionTitle} · {data.ring.name}</span>
             <div><span className="badge ok">{data.phase}</span></div>
+            {data.unit && <div className="muted">{data.unit.kind === "GEMEENTE" ? "Gemeente" : "Wijk"} {data.unit.name}</div>}
+            {data.function?.needsReview && (
+              <div className="badge bad" role="note" style={{ whiteSpace: "normal", borderRadius: 12, marginTop: 6 }}>
+                Menselijke controle nodig: voor deze {data.function.source === "EIGEN" ? "eigen " : ""}roeping zijn de bevoegdheden niet geverifieerd{data.function.procedureConfirmed ? "; de bevoegde leiding heeft de procedure als gecontroleerd bevestigd" : ""}.
+              </div>
+            )}
           </div>
           {data.rounds.map((r) => (
             <section key={r.stage} className="glass card stack" aria-label={r.title}>
@@ -129,8 +135,13 @@ export function CallingDetail() {
             <section className="glass card stack" aria-label="Taken">
               <strong>Taken</strong>
               {data.tasks.map((t) => (
-                <TaskRow key={t.task} task={t} busy={busy} users={data.assignableUsers}
+                <TaskRow key={t.task} task={t} busy={busy}
+                  users={t.task === "ONDERSTEUNEN" || !data.eligibleAssignees || data.eligibleAssignees[t.task as "ROEPEN" | "AANSTELLEN"] === null
+                    ? data.assignableUsers
+                    : data.assignableUsers.filter((u) => data.eligibleAssignees[t.task as "ROEPEN" | "AANSTELLEN"]!.includes(u.id))}
+                  restricted={t.task !== "ONDERSTEUNEN" && !!data.eligibleAssignees && data.eligibleAssignees[t.task as "ROEPEN" | "AANSTELLEN"] !== null}
                   onAssign={(assigneeId) => act(() => api.assignTask(id, t.task, assigneeId), "Verantwoordelijke bijgewerkt.")}
+                  onExternal={(name) => act(() => api.assignTask(id, t.task, null, name), "Externe bevoegde persoon geregistreerd.")}
                   onComplete={(opts) => act(() => api.completeTask(id, t.task, opts), "Taak geregistreerd.")} />
               ))}
             </section>
@@ -161,11 +172,13 @@ export function CallingDetail() {
   );
 }
 
-function TaskRow({ task, users, busy, onAssign, onComplete }: {
+function TaskRow({ task, users, busy, restricted = false, onAssign, onExternal, onComplete }: {
   task: TaskView;
   users: { id: string; name: string }[];
   busy: boolean;
+  restricted?: boolean;
   onAssign: (assigneeId: string | null) => void;
+  onExternal?: (name: string) => void;
   onComplete: (opts: { doneAt?: string; ondersteunenContext?: "AVONDMAALSVERGADERING" | "RINGCONFERENTIE" }) => void;
 }) {
   const [context, setContext] = useState<"AVONDMAALSVERGADERING" | "RINGCONFERENTIE" | "">("");
@@ -186,7 +199,10 @@ function TaskRow({ task, users, busy, onAssign, onComplete }: {
           </select>
         </div>
       ) : (
-        <span className="muted">Verantwoordelijke: {task.assignee?.name ?? "niet toegewezen"}</span>
+        <span className="muted">Verantwoordelijke: {task.assignee?.name ?? task.assigneeExternalName ?? "niet toegewezen"}</span>
+      )}
+      {task.canAssign && !task.doneAt && restricted && (
+        <ExternalPerson current={task.assigneeExternalName} busy={busy} onSave={(n) => onExternal?.(n)} id={task.task} hint={users.length === 0 ? "Er is niemand aangewezen die dit voor deze functie mag; registreer zo nodig een bevoegde externe persoon." : "Alleen aangewezen bevoegde personen zijn te kiezen."} />
       )}
       {task.canComplete && !task.doneAt && (
         <>
@@ -274,5 +290,17 @@ function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
       {stage === "PRESIDIUM" && <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={releaseNow} onChange={(e) => setReleaseNow(e.target.checked)} /> Direct vrijgeven aan de hoge raad</label>}
       <div className="row"><button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>Annuleren</button><button className="btn btn-primary" disabled={busy || !valid}>Besluit vastleggen</button></div>
     </form>
+  );
+}
+
+function ExternalPerson({ id, current, busy, hint, onSave }: { id: string; current: string | null; busy: boolean; hint: string; onSave: (name: string) => void }) {
+  const [name, setName] = useState(current ?? "");
+  return (
+    <div className="stack">
+      <span className="muted">{hint}</span>
+      <label htmlFor={`ext-${id}`}>Bevoegde externe persoon (handmatig)</label>
+      <input id={`ext-${id}`} value={name} maxLength={120} onChange={(e) => setName(e.target.value)} />
+      <button type="button" className="btn btn-ghost" disabled={busy || name.trim().length < 2} onClick={() => onSave(name.trim())}>Externe persoon registreren</button>
+    </div>
   );
 }

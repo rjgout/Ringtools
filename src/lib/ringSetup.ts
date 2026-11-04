@@ -189,8 +189,9 @@ const ALLOWED: Record<AuthorityRule, AppointAuthority[]> = {
   RINGPRESIDENT: ["RINGPRESIDENT"],
   RINGPRESIDENT_OF_RAADGEVER: ["RINGPRESIDENT", "AANGEWEZEN_RAADGEVER"],
   RINGPRESIDENT_RAADGEVER_OF_HOGERAADSLID: ["RINGPRESIDENT", "AANGEWEZEN_RAADGEVER", "AANGEWEZEN_HOGERAADSLID"],
-  // Bijzondere procedure: geen automatische uitvoerders; een bevoegde externe persoon wordt handmatig geregistreerd.
+  // Bijzondere procedure of onbekende regel: geen automatische uitvoerders; een bevoegde externe persoon wordt handmatig geregistreerd.
   BIJZONDER: [],
+  ONBEKEND: [],
 };
 
 /**
@@ -198,16 +199,18 @@ const ALLOWED: Record<AuthorityRule, AppointAuthority[]> = {
  * aangewezen (Ringtools-rol of kerkelijke functie is op zichzelf geen machtiging) én nu actief is. Voor een eigen roeping
  * of een bijzondere procedure is de lijst leeg (handmatige registratie van een bevoegde uitvoerder).
  */
-export async function eligibleAppointers(ringId: string, catalogCode: string | null) {
+export async function eligibleAppointers(ringId: string, catalogCode: string | null, which: "appointedBy" | "grantedBy" = "appointedBy") {
   const entry = catalogCode ? getCatalogEntry(catalogCode) : null;
-  const allowed = entry ? ALLOWED[entry.appointedBy] : [];
-  if (allowed.length === 0) return { rule: entry?.appointedBy ?? null, appointers: [] as { id: string; name: string; authority: AppointAuthority }[] };
+  const rule = entry ? entry[which] : null;
+  // Alleen geverifieerde regels kennen bevoegdheden toe; onbekend/bijzonder/eigen = nooit automatisch.
+  const allowed = entry && entry.ruleStatus === "GEVERIFIEERD" && rule ? ALLOWED[rule] : [];
+  if (allowed.length === 0) return { rule: rule ?? null, appointers: [] as { id: string; name: string; authority: AppointAuthority }[] };
   const rows = await prisma.ringMembership.findMany({
     where: { ringId, active: true, user: { active: true }, ring: { active: true }, appointAuthority: { in: allowed } },
     include: { user: true },
     orderBy: { user: { name: "asc" } },
   });
-  return { rule: entry!.appointedBy, appointers: rows.map((m) => ({ id: m.userId, name: m.user.name, authority: m.appointAuthority })) };
+  return { rule, appointers: rows.map((m) => ({ id: m.userId, name: m.user.name, authority: m.appointAuthority })) };
 }
 
 // ---- Ringinrichting: voortgangsoverzicht ----

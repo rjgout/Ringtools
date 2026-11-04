@@ -3,7 +3,7 @@ import type { CatalogCalling, CatalogResult } from "@shared/api-types";
 import { useAuth } from "../lib/auth";
 import { ApiRequestError } from "../lib/api";
 
-export type PickedCalling = { code: string; source: "STANDAARD" | "EIGEN"; name: string; category: string; customConfirmed: boolean };
+export type PickedCalling = { code: string; source: "STANDAARD" | "EIGEN"; name: string; category: string; customConfirmed: boolean; requiresConfirmation: boolean };
 
 /**
  * Zoeken en selecteren uit de Nederlandse roepingencatalogus (standaardroepingen + eigen roepingen van deze ring).
@@ -36,7 +36,7 @@ export function CallingPicker({ ringId, value, onChange, canAddCustom = true }: 
 
   const pick = (c: CatalogCalling) => {
     if (!c.ringtoolsProcess) return;
-    onChange({ code: c.code, source: c.source, name: c.name, category: c.category, customConfirmed: false });
+    onChange({ code: c.code, source: c.source, name: c.name, category: c.category, customConfirmed: false, requiresConfirmation: c.requiresProcedureConfirmation });
     // De organisatie wordt automatisch voorgesteld op basis van de gekozen roeping.
     setCategory(c.category);
   };
@@ -45,7 +45,7 @@ export function CallingPicker({ ringId, value, onChange, canAddCustom = true }: 
     e.preventDefault();
     try {
       const created = await api.createCustomCalling(ringId, { name: newName, category: newCategory });
-      onChange({ code: created.id, source: "EIGEN", name: newName.trim(), category: newCategory.trim(), customConfirmed: false });
+      onChange({ code: created.id, source: "EIGEN", name: newName.trim(), category: newCategory.trim(), customConfirmed: false, requiresConfirmation: true });
       setAdding(false);
       setNewName("");
       setQ(newName);
@@ -69,9 +69,10 @@ export function CallingPicker({ ringId, value, onChange, canAddCustom = true }: 
         <div className="glass panel" role="status">
           <strong>Gekozen: {value.name}</strong> <span className="muted">· {value.category}</span>
           {selected?.warning && <div className="muted">{selected.warning}</div>}
+          {selected?.ruleStatus === "TE_BEOORDELEN" && <div className="muted" role="note">Menselijke controle nodig: de regels voor deze roeping zijn niet geverifieerd.</div>}
           {selected?.reviewNotes.length ? <div className="muted">Let op: een of meer regels staan nog ter controle bij de beheerder.</div> : null}
-          {value.source === "EIGEN" && (
-            <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={value.customConfirmed} onChange={(e) => onChange({ ...value, customConfirmed: e.target.checked })} /> De bevoegde leiding heeft de procedure voor deze eigen roeping gecontroleerd</label>
+          {value.requiresConfirmation && (
+            <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={value.customConfirmed} onChange={(e) => onChange({ ...value, customConfirmed: e.target.checked })} /> De bevoegde leiding heeft de procedure voor deze roeping gecontroleerd{value.source === "EIGEN" ? " (eigen roeping)" : " (bevoegdheden niet geverifieerd)"}</label>
           )}
           <button type="button" className="btn btn-ghost" onClick={() => onChange(null)}>Andere roeping kiezen</button>
         </div>
