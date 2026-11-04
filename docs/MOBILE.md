@@ -187,6 +187,12 @@ Alle routes onder `/api/mobile/v1`, bearer-sessie met MFA-gate; webmin krijgt ov
 
 `POST /callings/:id/group-decision` (fase `PRESIDIUM`): `presentUserIds` (leden van het ringpresidium die het besluit namen) is verplicht; secretaris/administrateur registreren alleen.
 
+## Uitnodigingen en native MFA (C5)
+- Beheer (bearer, ringbeheerder eigen ring; webmin via `/admin/...`; verse herverificatie vereist): `GET/POST /rings/:id/invitations`, `POST /invitations/:id` (wijzigen), `/invitations/:id/resend`, `/invitations/:id/revoke`. De lijst bevat nooit token of code.
+- Ontvanger (geen sessie): `POST /invitations/preview {token}` en `POST /invitations/activate {token}` of `{email, code}`. Het token staat in de body, nooit in de URL. Activeren geeft geen sessie; het antwoord is `{ ok, email, ringName, mfaRequired }`.
+- Link in de uitnodigingsmail: `https://<host>/uitnodiging/<token>` (Universal Link/App Link; AASA en `AndroidManifest.xml` bevatten het pad `/uitnodiging/`; `check:native-config` bewaakt dat). Zonder werkende link: handmatige invoer van e-mailadres + activeringscode in de app.
+- Native passkeys (functievlag `NATIVE_PASSKEYS_ENABLED`, standaard uit): `POST /auth/login` geeft voor MFA-accounts `{ mfaRequired, pendingToken }`, daarna `/auth/mfa/passkey/options|verify` en `/auth/mfa/cancel`; zie `docs/PASSKEYS-NATIVE.md`.
+
 ## Kerkelijke functies en catalogus (C4.5)
 - Gebruikersbeheer (`/rings/:id/users`, `/memberships/:id`) kent `churchFunctionCode` (functie, los van de Ringtools-rol) en `appointAuthority` (machtiging: alleen `AANGEWEZEN_RAADGEVER` bij eerste/tweede raadgever en `AANGEWEZEN_HOGERAADSLID` bij hogeraadslid; `RINGPRESIDENT` wordt geweigerd: de functie volstaat).
   Zonder `churchFunctionCode` blijft de bestaande functie behouden.

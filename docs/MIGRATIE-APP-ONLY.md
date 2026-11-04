@@ -10,7 +10,7 @@ technische beheeromgeving voor `webmin` blijft via het web bestaan. **Deze migra
 |---|---|---|
 | A | Alle roepings- en taakfunctionaliteit in de app | gebouwd en getest (CI); toesteltest iPhone/Android open |
 | B | Gebruikers- en ringbeheer; veilige webmin-login in de app | gebouwd en getest (lokaal); toesteltest open |
-| C | Native passkeys; uitnodigings- en activatieprocedure | gepland |
+| C | Native passkeys; uitnodigings- en activatieprocedure | C5.1 (uitnodigen/activeren) gebouwd en getest; C5.2 (native passkeys) voorbereid, functievlag UIT, toesteltest open; zie "C5" |
 | D | Ontheffingen (eigen module en datamodel) | gebouwd en getest (C4, lokaal/CI); toesteltest open; zie "C4" en "Open vragen" |
 | E | Publieke informatieve website; voorbereiding uitschakelen web-login (feature flag, standaard UIT) | gepland |
 | F | Live acceptatie iPhone/Android; daarna eventuele storepublicatie | gepland (handmatig, eigenaar) |
@@ -196,6 +196,27 @@ Afgebakend: Ringtools ondersteunt uitsluitend roepingen en ontheffingen; organis
 - **Niet volledig groen:** de latere push-run op `main` (`41884854396`, zelfde commit) was **niet** volledig groen. Backend, client/native-configuratie, Android en de Docker-build (`41884854406`) slaagden; de iOS-simulatorjob faalde eerst
   door een SwiftPM-fout ("Could not resolve package dependencies": cachemap van `capacitor-swift-pm` ontbrak op de runner) en de herstart werd na 15 minuten geannuleerd omdat er geen macOS-runner beschikbaar kwam. Dit is een runner-/infrastructuurprobleem, geen bevinding in de code;
   er is bewust geen derde poging gedaan. Voor `main` is dus geen eigen geslaagde iOS-run beschikbaar; het iOS-bewijs berust op de dispatch-run hierboven.
+
+### C5 – Uitnodigingen en native MFA (gebouwd/voorbereid)
+**C5.1 Uitnodigen en activeren (gebouwd; toesteltest open).**
+- Model `RingInvitation` + `RingInvitationAudit` (migratie `20261114100000_c5_uitnodigingen`, uitsluitend toevoegend; geverifieerd op een schone database en op een database met bestaande gegevens: aantallen en inhoud ongewijzigd, geen schema-afwijking).
+- Ringbeheerder (eigen ring) of webmin nodigt uit met naam, e-mailadres, Ringtools-rol, optioneel functie en ringbeheerder-ja/nee (verse herverificatie vereist). Geen machtiging in de uitnodiging; die legt de beheerder na activatie vast.
+- Veiligheid: token (256 bit) en activeringscode (12 tekens, ~60 bit) alleen als hash; 7 dagen geldig; eenmalig en atomair verbruikt (ring-lock + `updateMany`); max. 5 codepogingen per uitnodiging; rate limits per IP/e-mailadres/uitnodiger; geen dubbele open uitnodigingen (ring-lock);
+  opnieuw versturen/herinneren vervangt token en code (oude link vervalt), met 5 minuten wachttijd en maximaal 10 verzendingen; intrekken is idempotent; wijzigen van rol/functie kan zolang de uitnodiging openstaat.
+- Bestaand account (ook in een andere ring, of nog niet geactiveerd) krijgt géén tweede account; het antwoord aan de uitnodiger is identiek voor bekende en onbekende adressen. Beheerdersaccount en gedeactiveerde accounts kunnen niet via een uitnodiging worden geactiveerd of overgenomen.
+- Functieconflict bij activatie (bijv. ringpresident intussen vergeven) → geen functie, dus geen bevoegdheid (fail-closed). Deactiveren van een lid trekt openstaande uitnodigingen in; een uitnodiging kan een daarna bewust gedeactiveerd lid niet heractiveren.
+- Status in de app: niet verstuurd · verstuurd · verlopen · ingetrokken · account geactiveerd. Opruiming van afgeronde/verlopen uitnodigingen na 90 dagen (cron). Audittrail: aangemaakt, verstuurd, mislukt, gewijzigd, ingetrokken, geactiveerd, geweigerd, foute code (zonder tokens/e-mailadressen).
+- E-mail: bestaande SMTP-infrastructuur; Nederlandstalige mail met link + activeringscode + geldigheid; zonder rol, functie of namen van anderen. Ontheffingen blijven volledig uitgesloten van e-mail.
+**C5.3 Gebruiksgemak (gebouwd; toesteltest open).** Activatiescherm zonder sessie (link `/uitnodiging/<token>` als universele link/app-link, ook koude start; terugval: "Ik heb een uitnodiging" met e-mailadres + code); duidelijke teksten bij verlopen/gebruikt/geen verbinding/onderbroken activatie;
+daarna inloggen met het e-mailadres. Informatieve landingspagina op de website (verbruikt niets, geen referrer). In de Personal Team-testbuild werkt de universele link niet; de handmatige code is daar de route.
+**C5.2 Native passkeys (voorbereid, NIET geactiveerd).** Zie `docs/PASSKEYS-NATIVE.md`: pending-login, passkey-API, origin-allowlist, lockout en 21 backendtests met echte WebAuthn-verificatie zijn klaar; geen native plug-in gekoppeld, functievlag uit, productie-entitlements en `App-PersonalTeam` ongewijzigd.
+Externe vereisten vóór activering: Apple Team-ID en Associated Domains met `webcredentials:`, Android-vingerafdrukken, plug-inkeuze en toesteltests (lijst in het document).
+
+### Open punten voor een latere review (vastgelegd, niet gebouwd)
+- **A. Uitleg over namen bij ontheffingen.** In de huidige app staat een verwarrende tekst over het niet zichtbaar zijn van namen. De namen van betrokkenen mogen binnen het dossier zichtbaar zijn voor bevoegde leden van het ringpresidium en de hoge raad.
+  Dit verandert niets aan de toegangsbeveiliging of de uitsluiting van de betrokkene. De ontheffingsprocedure is hiervoor niet gewijzigd; alleen de uitleg wordt later aangepast.
+- **B. Bevoegde uitvoerders bij niet-geverifieerde roepingen.** Zie "Open vragen", punt 7: een bevoegde persoon uit de eigen ring moet in de toekomst als interne uitvoerder kunnen worden vastgelegd nadat de bevoegde leiding de procedure heeft gecontroleerd.
+  De huidige beperking blijft bestaan; de procedurecontrole is niet uitgeschakeld en er worden geen bevoegdheden verzonnen.
 
 ### Open vragen voor de eigenaar (niet zelf beslist)
 1. **Deelname van een betrokken hogeraadslid na kennisgeving.** Hoe neemt de betrokkene daarna deel aan de eigen behandeling, of wordt hij daarvan uitgesloten? Er is geen kerkelijke regel verzonnen: een gekoppeld account blijft

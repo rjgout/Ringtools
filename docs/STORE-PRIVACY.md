@@ -18,6 +18,7 @@ trackingfunctionaliteit.
 | Sessietoken (gehasht op server; Keychain/Keystore op toestel), apparaatnaam/user-agent | Ingelogd blijven, apparaten beheren | PostgreSQL / toestel | 60 dagen inactiviteit, 180 dagen absoluut |
 | Pushtoken (APNs/FCM), platform, installatie-ID | Pushmeldingen | PostgreSQL | Tot uitloggen/uitschakelen of ongeldig token |
 | Web-push-abonnement (PWA) | Pushmeldingen web | PostgreSQL | Tot afmelden |
+| Uitnodigingen (naam, e-mailadres, rol/functie, status; token en code alleen als hash) en audittrail | Accountactivatie | PostgreSQL | Tot 90 dagen na activatie/verlopen/intrekken; daarna automatisch verwijderd |
 | Passkey-publieke sleutels, TOTP-geheim (versleuteld), herstelcodes (gehasht), beveiligingslogboek | MFA | PostgreSQL | Zolang account |
 | E-mails (inlogcodes/-links, meldingen) | Communicatie | Eigen SMTP | Volgens mailprovider |
 

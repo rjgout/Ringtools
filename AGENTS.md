@@ -38,7 +38,7 @@ Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet ·
 |---|---|---|---|---|
 | Informatie over Ringtools, privacy, contact, accountverwijdering | ✅ (links) | ✅ (links) | 🔧 E | — |
 | Inloggen met e-mailcode | ✅ | ✅ | — (na omschakeling) | — |
-| Native passkeys / volledige MFA voor gebruikers | 🔧 C | 🔧 C | — | — |
+| Native passkeys / volledige MFA voor gebruikers | 🔧 C5.2 voorbereid: server/API/tests klaar, functievlag UIT, geen plug-in gekoppeld (niet in PersonalTeam) | 🔧 C5.2 voorbereid (idem) | — | — |
 | Webmin-login: wachtwoord + verplichte TOTP | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ |
 | Roepingen bekijken, ondersteunen (stemmen) | ✅ | ✅ | ⚠ | — |
 | Nieuw voorstel, verantwoordelijken, herinneren, opnieuw vragen, rondes beheren | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ⚠ | — |
@@ -49,7 +49,7 @@ Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet ·
 | Wijken/gemeenten, hogeraadskoppeling, ringinrichting, roepingencatalogus, eigen roepingen, aanstellingsbevoegdheid | ✅ C2 (toesteltest open) | ✅ C2 (toesteltest open) | — | ✅ (via app-beheer) |
 | Nieuw voorstel via concept (naam → unit → roeping → verantwoordelijken), servercontrole bevoegdheden en eigen roepingen | ✅ C3 (toesteltest open) | ✅ C3 (toesteltest open) | — | — |
 | Gestructureerde kerkelijke functies (ringpresident, eerste/tweede raadgever, …), machtigingen, voorgestelde bevoegde uitvoerders, catalogusoverzicht onder Inrichting | ✅ C4.5 (toesteltest open) | ✅ C4.5 (toesteltest open) | — | ✅ (via app-beheer) |
-| Uitnodigen en activeren van nieuwe gebruikers | 🔧 C | 🔧 C | — | — |
+| Uitnodigen en activeren van nieuwe gebruikers (ringbeheerder nodigt uit; activatie met link of e-mail + code; geen sessie bij activatie) | ✅ C5.1 (toesteltest open) | ✅ C5.1 (toesteltest open) | informatieve landingspagina `/uitnodiging/<token>` | ✅ (webmin, via app-beheer) |
 | Ontheffingen (aparte module; vertrouwelijk, betrokkene heeft geen toegang) | ✅ C4 (toesteltest open) | ✅ C4 (toesteltest open) | — | — |
 | Meldingen in de app (bel) | ✅ | ✅ | ⚠ | — |
 | Native push (APNs/FCM) | ✅ (niet in PersonalTeam) | ✅ | — | — |
@@ -150,6 +150,10 @@ bijwerken van deze tabel en van `docs/MOBILE.md`.
   handboekprocedure mogelijk is; de ringpresident is op grond van zijn functie bevoegd, een aangewezen raadgever/hogeraadslid heeft daarnaast een expliciete machtiging (`appointAuthority`) nodig. Alles wat onzeker is (functie `ONBEKEND`, functie die niet
   bij de rol past, ontbrekende machtiging) is niet bevoegd (fail-closed); bevoegdheid wordt nooit automatisch toegekend, ook niet bij migratie. Een wijkkoppeling van een hogeraadslid is nooit een machtiging. Bevoegde leden en externe uitvoerders (zonder Ringtools-account)
   blijven gescheiden. Gebruik uitsluitend `eligibleForRule`/`authorityClassOf` voor bevoegdheidsvragen.
+- **Uitnodigingen (C5.1).** Eén accountsysteem: een uitnodiging (`RingInvitation`, alleen hashes van token en code, 7 dagen geldig) maakt bij activatie een gewoon account + lidmaatschap aan of koppelt een bestaand account aan een extra ring, zonder naam, e-mail of beveiliging van dat account te wijzigen.
+  Een uitnodiging legt alleen rol, functie en ringbeheerder vast en kent **nooit** een machtiging toe; activeren geeft **nooit** een sessie (inloggen en MFA verlopen via de bestaande routes). Ringbeheerders voegen niet meer rechtstreeks toe (alleen via uitnodiging; bestaand account koppelen blijft aan de webmin).
+  Antwoorden verraden nooit of een e-mailadres al bestaat. Een uitnodiging vervalt zodra de uitnodiger niet meer bevoegd is, de ring inactief is of het lidmaatschap bewust is gedeactiveerd. Tokens en codes nooit loggen of tonen in beheerschermen.
+- **Native passkeys (C5.2).** Pending-login (`mfaAt = null`) werkt uitsluitend op `/auth/mfa/*`; volledige sessie pas na een door de server geverifieerde assertion. Functievlag `NATIVE_PASSKEYS_ENABLED` blijft UIT tot toesteltests (zie `docs/PASSKEYS-NATIVE.md`); de Personal Team-build heeft de capability nooit. Toegestane origins: web alleen `APP_BASE_URL`; native + expliciete Android-`apk-key-hash`.
 - **Afbakening:** Ringtools ondersteunt uitsluitend roepingen en ontheffingen. Organisatorische aanwijzingen en taakverdelingen krijgen geen afzonderlijke workflow. Registreren van een presidiumakkoord en vrijgeven aan de hoge raad blijven twee aparte, expliciete handelingen.
 
 ## Design
