@@ -55,6 +55,7 @@ jobs:
           java-version: 21
       # De runner heeft de Android SDK al (ANDROID_HOME); Gradle haalt ontbrekende onderdelen zelf op.
       - run: npm ci
+      - run: npm run build
       - run: npx cap sync android
       - name: Debug-APK bouwen
         working-directory: mobile/android
