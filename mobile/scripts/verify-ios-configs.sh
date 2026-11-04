@@ -36,7 +36,12 @@ build_and_inspect() { # scheme config expect(standard|personal-team)
   [ -n "$app" ] || fail "$cfg: App.app niet gevonden"
   grep -q "profile:\"$expect\"" "$app/public/ringtools-build.js" || fail "$cfg: buildprofiel in de bundel is niet '$expect' ($(cat "$app/public/ringtools-build.js" 2>/dev/null))"
   codesign -v "$app" 2>/dev/null || fail "$cfg: app is niet (ad-hoc) ondertekend; entitlements zijn dan niet te controleren"
-  local ent; ent="$(codesign -d --entitlements :- "$app" 2>/dev/null || true)"
+  # Voor simulatorbuilds legt Xcode de entitlements vast in een .xcent-bestand en in de Mach-O-sectie __TEXT,__entitlements;
+  # de handtekening zelf bevat ze niet altijd. Lees daarom alle drie de bronnen.
+  local xcent; xcent="$(find "$dd/Build/Intermediates.noindex" -name '*.xcent' -exec cat {} + 2>/dev/null || true)"
+  local ent; ent="$(codesign -d --entitlements :- "$app" 2>/dev/null || true)
+$xcent
+$(strings -a "$app/App" 2>/dev/null | grep -E 'aps-environment|associated-domains|applinks:' || true)"
   if [ "$expect" = standard ]; then
     echo "$ent" | grep -q 'aps-environment' || fail "$cfg: aps-environment ontbreekt in de effectieve entitlements"
     echo "$ent" | grep -q 'com.apple.developer.associated-domains' || fail "$cfg: associated-domains ontbreekt in de effectieve entitlements"
@@ -44,7 +49,6 @@ build_and_inspect() { # scheme config expect(standard|personal-team)
   else
     ! echo "$ent" | grep -q 'aps-environment' || fail "$cfg: aps-environment staat in de effectieve entitlements"
     ! echo "$ent" | grep -q 'associated-domains' || fail "$cfg: associated-domains staat in de effectieve entitlements"
-    ! strings -a "$app/App" | grep -q 'com.apple.developer.associated-domains' || fail "$cfg: associated-domains zit in de binary"
   fi
   echo "ok  $cfg gebouwd en gecontroleerd (profiel $expect; effectieve entitlements: $(echo "$ent" | grep -c '<key>') sleutel(s))"
 }
