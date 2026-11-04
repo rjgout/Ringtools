@@ -16,7 +16,7 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function assertMembershipRole(role: Role): void {
+export function assertMembershipRole(role: Role): void {
   if (!ASSIGNABLE_ROLES.includes(role)) {
     throw new RingError("Deze rol kan niet binnen een ring worden toegekend.");
   }
@@ -42,7 +42,7 @@ export async function assertCanManageRing(db: Db, actorId: string, ringId: strin
   return actor;
 }
 
-async function lockRing(tx: Db, ringId: string): Promise<void> {
+export async function lockRing(tx: Db, ringId: string): Promise<void> {
   await tx.$queryRaw`SELECT "id" FROM "Ring" WHERE "id" = ${ringId} FOR UPDATE`;
 }
 
@@ -102,7 +102,7 @@ export type AppointAuthorityValue = "NONE" | "RINGPRESIDENT" | "AANGEWEZEN_RAADG
  *   meer: de functie ringpresident volstaat.
  * - Gedeactiveerde leden hebben geen machtiging.
  */
-async function resolveFunctionAndAuthority(
+export async function resolveFunctionAndAuthority(
   tx: Db,
   q: {
     ringId: string;

@@ -11,6 +11,7 @@ import * as mgmt from "./management";
 import * as setup from "./setup";
 import * as drafts from "./drafts";
 import * as ontheffingen from "./ontheffingen";
+import * as invitations from "./invitations";
 
 /** Verhoog bij een niet-achterwaarts-compatibele wijziging; de app toont dan een update-melding. */
 export const API_VERSION = 1;
@@ -82,6 +83,11 @@ publicRoute("POST", "/admin/auth/totp", async ({ request, body }) => {
   if (!token) throw new ApiError(401, "Je inlogsessie is verlopen. Log opnieuw in.", "unauthenticated");
   return mgmt.adminVerifyTotp(token, body);
 });
+
+// Uitnodigingen (ontvanger): voorvertoning en activatie. Token of code staan in de body, nooit in de URL. Een activatie geeft geen sessie.
+const clientKeyOf = (request: Request) => request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "onbekend";
+publicRoute("POST", "/invitations/preview", async ({ request, body }) => invitations.previewInvitationApi(body, clientKeyOf(request)));
+publicRoute("POST", "/invitations/activate", async ({ request, body }) => invitations.activateInvitationApi(body, clientKeyOf(request)));
 
 // Versie en capaciteiten van de API; de app controleert hiermee of ze nog compatibel is.
 publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION }));
@@ -189,6 +195,11 @@ authedRoute("POST", "/auth/reauth", async ({ auth, body }) => mgmt.userReauth(au
 authedRoute("GET", "/rings/:id/users", async ({ auth, params }) => mgmt.listUsersFor(auth, params.id));
 authedRoute("POST", "/rings/:id/users", async ({ auth, params, body }) => mgmt.addUserFor(auth, params.id, body));
 authedRoute("POST", "/memberships/:id", async ({ auth, params, body }) => mgmt.updateUserFor(auth, params.id, body));
+authedRoute("GET", "/rings/:id/invitations", async ({ auth, params }) => invitations.listInvitationsFor(auth, params.id));
+authedRoute("POST", "/rings/:id/invitations", async ({ auth, params, body }) => invitations.createInvitationFor(auth, params.id, body));
+authedRoute("POST", "/invitations/:id/resend", async ({ auth, params }) => invitations.resendInvitationFor(auth, params.id));
+authedRoute("POST", "/invitations/:id/revoke", async ({ auth, params }) => invitations.revokeInvitationFor(auth, params.id));
+authedRoute("POST", "/invitations/:id", async ({ auth, params, body }) => invitations.updateInvitationFor(auth, params.id, body));
 
 // ---- Ringinrichting en catalogus (ringbeheerder: eigen ring; webmin via /admin) ----
 
@@ -224,6 +235,11 @@ adminRoute("POST", "/admin/rings/:id/active", async ({ auth, params, body }) => 
 adminRoute("GET", "/admin/rings/:id/users", async ({ auth, params }) => mgmt.listUsersFor(auth, params.id));
 adminRoute("POST", "/admin/rings/:id/users", async ({ auth, params, body }) => mgmt.addUserFor(auth, params.id, body));
 adminRoute("POST", "/admin/memberships/:id", async ({ auth, params, body }) => mgmt.updateUserFor(auth, params.id, body));
+adminRoute("GET", "/admin/rings/:id/invitations", async ({ auth, params }) => invitations.listInvitationsFor(auth, params.id));
+adminRoute("POST", "/admin/rings/:id/invitations", async ({ auth, params, body }) => invitations.createInvitationFor(auth, params.id, body));
+adminRoute("POST", "/admin/invitations/:id/resend", async ({ auth, params }) => invitations.resendInvitationFor(auth, params.id));
+adminRoute("POST", "/admin/invitations/:id/revoke", async ({ auth, params }) => invitations.revokeInvitationFor(auth, params.id));
+adminRoute("POST", "/admin/invitations/:id", async ({ auth, params, body }) => invitations.updateInvitationFor(auth, params.id, body));
 adminRoute("GET", "/admin/rings/:id/setup", async ({ auth, params }) => setup.setupFor(auth, params.id));
 adminRoute("GET", "/admin/rings/:id/units", async ({ auth, params }) => setup.unitsFor(auth, params.id));
 adminRoute("POST", "/admin/rings/:id/units", async ({ auth, params, body }) => setup.createUnitFor(auth, params.id, body));

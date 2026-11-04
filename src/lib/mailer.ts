@@ -156,3 +156,30 @@ export function supportReminderEmail(opts: { name: string; personName: string; f
     ].join("\n"),
   };
 }
+
+/** Uitnodiging voor een nieuwe of bestaande gebruiker. Bewust zonder rol- of functiegegevens en zonder namen van anderen. */
+export function invitationEmail(opts: { name: string; ringName: string; link: string; code: string; expiresAt: Date }) {
+  const days = Math.max(1, Math.round((opts.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+  return {
+    subject: "Ringtools – je bent uitgenodigd",
+    text: [
+      `Beste ${opts.name},`,
+      "",
+      `Je bent uitgenodigd om Ringtools te gebruiken voor ${opts.ringName}.`,
+      "",
+      "Zo activeer je je account:",
+      "1. Installeer de Ringtools-app op je telefoon (of open hem als hij al is geïnstalleerd).",
+      "2. Tik op de onderstaande link. De app opent en je account wordt geactiveerd.",
+      "",
+      opts.link,
+      "",
+      "Opent de app niet? Kies dan in de app op het inlogscherm 'Ik heb een uitnodiging' en vul dit e-mailadres en deze activeringscode in:",
+      opts.code,
+      "",
+      "Daarna log je in met je e-mailadres: je ontvangt dan een code van 8 cijfers.",
+      "",
+      `De uitnodiging is ${days} dagen geldig en kan maar één keer worden gebruikt.`,
+      "Heb je deze uitnodiging niet verwacht? Dan kun je deze e-mail negeren; er gebeurt niets zonder jouw activatie.",
+    ].join("\n"),
+  };
+}

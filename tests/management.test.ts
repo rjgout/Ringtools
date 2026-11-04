@@ -149,8 +149,10 @@ describe("Gebruikersbeheer in de app", () => {
   it("beheerder voegt een gebruiker toe, wijzigt rol/functie en deactiveert; alleen binnen de eigen ring", async () => {
     const { ringA, ringB, manager, foreign } = await setup();
     const token = await login(manager.id);
-    const added = await call("POST", `/rings/${ringA.id}/users`, { token, body: { name: "Nieuw Lid", email: "nieuw@test.ringapeldoorn.nl", churchFunction: "Ringsraadgever", role: "RINGSECRETARIS", isRingManager: false } });
-    expect(added.status).toBe(200);
+    // Een ringbeheerder voegt niet meer rechtstreeks toe, maar nodigt uit (C5.1); het geactiveerde lid verschijnt daarna in de lijst.
+    const direct = await call("POST", `/rings/${ringA.id}/users`, { token, body: { name: "Nieuw Lid", email: "nieuw@test.ringapeldoorn.nl", churchFunction: "Ringsraadgever", role: "RINGSECRETARIS", isRingManager: false } });
+    expect(direct.status).toBe(403);
+    await createTestUser("RINGSECRETARIS", "Nieuw Lid", { ringId: ringA.id, churchFunction: "Ringsraadgever", email: "nieuw@test.ringapeldoorn.nl" });
     const list = await call("GET", `/rings/${ringA.id}/users`, { token });
     const nieuw = list.body.users.find((u: { name: string }) => u.name === "Nieuw Lid");
     expect(nieuw).toMatchObject({ role: "RINGSECRETARIS", churchFunction: "Ringsraadgever", isRingManager: false, active: true });
@@ -197,14 +199,14 @@ describe("Gebruikersbeheer in de app", () => {
     const { ringA, manager } = await setup();
     const token = await stale(await login(manager.id));
     const body = { name: "Laat Lid", email: "laat@test.ringapeldoorn.nl", churchFunction: "Functie", role: "HOGERAAD", isRingManager: false };
-    const denied = await call("POST", `/rings/${ringA.id}/users`, { token, body });
+    const denied = await call("POST", `/rings/${ringA.id}/invitations`, { token, body });
     expect(denied.body.code).toBe("reauth-required");
     expect((await call("POST", "/auth/reauth", { token, body: { code: "00000000" } })).status).toBe(401);
     const { createMagicLinkToken } = await import("@/lib/auth");
     const { code } = await createMagicLinkToken(manager.id, { withCode: true });
     const re = await call("POST", "/auth/reauth", { token, body: { code } });
     expect(re.status).toBe(200);
-    expect((await call("POST", `/rings/${ringA.id}/users`, { token: re.body.token, body })).status).toBe(200);
+    expect((await call("POST", `/rings/${ringA.id}/invitations`, { token: re.body.token, body })).status).toBe(200);
   });
 });
 

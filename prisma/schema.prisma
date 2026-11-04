@@ -121,6 +121,8 @@ model User {
   recoveryCodes       RecoveryCode[]
   securityEvents      SecurityEvent[]
   memberships         RingMembership[]
+  invitationsCreated  RingInvitation[]     @relation("InvitationCreatedBy")
+  invitationsAccepted RingInvitation[]     @relation("InvitationAcceptedBy")
   openLinkTokens      OpenLinkToken[]
   devicePushTokens    DevicePushToken[]
 
@@ -528,6 +530,7 @@ model Ring {
   updatedAt DateTime @updatedAt
 
   memberships    RingMembership[]
+  invitations    RingInvitation[]
   units          RingUnit[]
   customCallings RingCustomCalling[]
   callings       Calling[]
@@ -861,4 +864,65 @@ model OntheffingAudit {
   detail       String?
 
   @@index([ontheffingId, createdAt])
+}
+
+// ---- C5.1: uitnodigingen en accountactivatie ----
+
+// Een uitnodiging legt vooraf vast wat een bevoegde ringbeheerder toekent (rol, functie, ringbeheerder ja/nee). Een machtiging
+// (appointAuthority) maakt nooit deel uit van een uitnodiging: die wordt na activatie expliciet door de ringbeheerder vastgelegd.
+// Alleen hashes van token en code worden bewaard; de ruwe waarden staan uitsluitend in de verstuurde e-mail.
+// Status wordt afgeleid: acceptedAt → geactiveerd, revokedAt → ingetrokken, expiresAt < nu → verlopen, sentAt leeg → niet verstuurd.
+model RingInvitation {
+  id                 String             @id @default(cuid())
+  ringId             String
+  ring               Ring               @relation(fields: [ringId], references: [id], onDelete: Cascade)
+  email              String // genormaliseerd (kleine letters)
+  name               String
+  role               Role
+  churchFunction     String             @default("")
+  churchFunctionCode ChurchFunctionCode @default(ONBEKEND)
+  isRingManager      Boolean            @default(false)
+  createdById        String?
+  createdBy          User?              @relation("InvitationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  tokenHash          String             @unique
+  codeHash           String
+  codeAttempts       Int                @default(0)
+  expiresAt          DateTime
+  sentAt             DateTime?
+  sendCount          Int                @default(0)
+  revokedAt          DateTime?
+  acceptedAt         DateTime?
+  acceptedById       String?
+  acceptedBy         User?              @relation("InvitationAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  audit RingInvitationAudit[]
+
+  @@index([ringId, email])
+  @@index([expiresAt])
+}
+
+enum InvitationAuditAction {
+  CREATED
+  SENT
+  SEND_FAILED
+  UPDATED
+  REVOKED
+  ACCEPTED
+  ACCEPT_REFUSED
+  CODE_FAILED
+}
+
+// Audittrail van uitnodigingen. `detail` bevat nooit tokens, codes of e-mailadressen.
+model RingInvitationAudit {
+  id           String                @id @default(cuid())
+  invitationId String
+  invitation   RingInvitation        @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+  action       InvitationAuditAction
+  actorUserId  String?
+  detail       String?
+  createdAt    DateTime              @default(now())
+
+  @@index([invitationId, createdAt])
 }

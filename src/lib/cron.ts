@@ -4,6 +4,7 @@ import { sendDue30DayReminders, deleteDueProcessedCallings, retryPendingCreation
 import { deleteExpiredAuthData } from "./auth";
 import { deleteExpiredOpenLinks } from "./openLinks";
 import { deleteStaleDrafts } from "./proposals";
+import { deleteOldInvitations } from "./invitations";
 import { deleteDueOntheffingen, remindStaleOntheffingen, retryPendingOntheffingNotifications } from "./ontheffingen";
 
 let started = false;
@@ -68,6 +69,9 @@ async function runOnce(): Promise<void> {
 
   const ontheffingen = await deleteDueOntheffingen();
   if (ontheffingen > 0) console.log(`[cron] ${ontheffingen} ontheffingsdossier(s) volgens de bewaarregels verwijderd.`);
+
+  const invitations = await deleteOldInvitations();
+  if (invitations > 0) console.log(`[cron] ${invitations} oude uitnodiging(en) opgeruimd.`);
 
   const deleted = await deleteDueProcessedCallings();
   if (deleted > 0) console.log(`[cron] ${deleted} verwerkte roeping(en) na 30 dagen verwijderd.`);

@@ -146,6 +146,8 @@ export async function listUsersFor(auth: ApiAuth, ringId: string) {
 export async function addUserFor(auth: ApiAuth, ringId: string, body: Record<string, unknown>) {
   requireFreshAuth(auth);
   await assertCanSeeRingUsers(auth.user, ringId);
+  // Ringbeheerders nodigen uit (C5.1): zo kan niemand zonder instemming aan een ring worden gekoppeld en lekt er niets over bestaande accounts.
+  if (auth.user.role !== "ADMIN") throw new ApiError(403, "Nodig iemand uit via 'Uitnodigen'.", "use-invitation");
   const parsed = addMemberSchema.safeParse({ ...body, ringId });
   if (!parsed.success) throw new ApiError(400, parsed.error.issues[0]?.message || "Controleer de ingevulde gegevens.", "validation");
   const { user, joinedRounds } = await ringErrors(() => addMember({ actorId: auth.user.id, ...parsed.data }));
