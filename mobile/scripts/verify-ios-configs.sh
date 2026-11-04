@@ -8,7 +8,7 @@ cd "$(dirname "$0")/../ios"
 PROJECT=App/App.xcodeproj
 fail() { echo "FOUT: $*" >&2; exit 1; }
 
-settings() { xcodebuild -project "$PROJECT" -scheme "$1" -configuration "$2" -sdk iphonesimulator -showBuildSettings 2>/dev/null; }
+settings() { xcodebuild -project "$PROJECT" -scheme "$1" -configuration "$2" -sdk iphonesimulator -showBuildSettings 2>&1; }
 
 echo "== Build settings =="
 for cfg in Debug Release; do
@@ -18,8 +18,9 @@ for cfg in Debug Release; do
   echo "ok  $cfg"
 done
 s="$(settings App-PersonalTeam Debug-PersonalTeam)"
-echo "$s" | grep -qE '^\s*CODE_SIGN_ENTITLEMENTS =\s*$' || fail "Debug-PersonalTeam: CODE_SIGN_ENTITLEMENTS moet leeg zijn"
-echo "$s" | grep -qE '^\s*RINGTOOLS_BUILD_PROFILE = personal-team$' || fail "Debug-PersonalTeam: buildprofiel ontbreekt"
+value="$(echo "$s" | sed -n 's/^ *CODE_SIGN_ENTITLEMENTS = *//p' | tr -d '[:space:]')"
+if [ -n "$value" ]; then echo "$s" | grep -E 'CODE_SIGN_ENTITLEMENTS|RINGTOOLS_BUILD_PROFILE|PRODUCT_BUNDLE_IDENTIFIER' >&2 || true; fail "Debug-PersonalTeam: CODE_SIGN_ENTITLEMENTS moet leeg zijn (nu: '$value')"; fi
+echo "$s" | grep -qE '^\s*RINGTOOLS_BUILD_PROFILE = personal-team$' || { echo "$s" | grep -E 'RINGTOOLS|CODE_SIGN' >&2 || true; fail "Debug-PersonalTeam: buildprofiel ontbreekt"; }
 echo "$s" | grep -qE '^\s*PRODUCT_BUNDLE_IDENTIFIER = nl\.ringapeldoorn\.ringtools\.dev$' || fail "Debug-PersonalTeam: onverwachte bundle-ID"
 echo "ok  Debug-PersonalTeam"
 
