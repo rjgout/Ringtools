@@ -182,7 +182,7 @@ describe("Taaktoewijzing en openstaande acties", () => {
     const presidium = await createTestUser("RINGPRESIDIUM", "President Een");
     const assignee = await createTestUser("RINGSECRETARIS", "Secretaris Een");
     await prisma.pushSubscription.create({
-      data: { userId: assignee.id, endpoint: "https://push.example/t1", p256dh: "a", auth: "b" },
+      data: { userId: assignee.id, endpoint: "https://fcm.googleapis.com/fcm/send/t1", p256dh: "a", auth: "b" },
     });
 
     const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium.id });

@@ -141,6 +141,7 @@ export type TotpEnrollmentView = { qrDataUrl: string; secret: string };
 /** Start een nieuwe TOTP-inschrijving vanuit /profiel/beveiliging (admin, altijd een vers secret). */
 export async function startTotpReenrollmentAction(): Promise<TotpEnrollmentView> {
   const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  if (session.user.role !== "ADMIN") throw new Error("Niet beschikbaar voor dit account.");
   const { uri, secret } = await startTotpEnrollment(session.user.id, session.user.email, true);
   const qrDataUrl = await QRCode.toDataURL(uri, { margin: 1, width: 240 });
   return { qrDataUrl, secret };
@@ -153,6 +154,9 @@ export async function confirmTotpReenrollmentAction(_prev: TotpEnrollResult | nu
 
   const parsed = totpCodeSchema.safeParse(formData.get("code"));
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Ongeldige code." };
+
+  const { allowed } = rateLimit(`totp-reenroll:${session.user.id}`, 10, 15 * 60 * 1000);
+  if (!allowed) return { ok: false, message: "Te veel pogingen. Probeer het later opnieuw." };
 
   const result = await confirmTotpEnrollment(session.user.id, session.user.email, parsed.data);
   if (!result.ok) {

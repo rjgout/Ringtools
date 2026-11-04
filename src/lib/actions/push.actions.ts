@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { isAllowedPushEndpoint, isValidPushKey, MAX_PUSH_SUBSCRIPTIONS_PER_USER } from "@/lib/pushEndpoint";
 import { sendPushToUser, isPushConfigured, PushNotConfiguredError } from "@/lib/push";
 
 export type ActionResult = { ok: boolean; message: string };
@@ -16,6 +17,14 @@ export async function subscribePushAction(input: SubscriptionInput, userAgent?: 
   const user = await requireUser();
   if (!isPushConfigured()) {
     return { ok: false, message: "Pushnotificaties zijn niet geconfigureerd door de beheerder." };
+  }
+
+  if (!isAllowedPushEndpoint(input?.endpoint) || !isValidPushKey(input.keys?.p256dh, 200) || !isValidPushKey(input.keys?.auth, 100)) {
+    return { ok: false, message: "Dit apparaat kan niet worden geregistreerd voor pushnotificaties." };
+  }
+  const existing = await prisma.pushSubscription.count({ where: { userId: user.id, NOT: { endpoint: input.endpoint } } });
+  if (existing >= MAX_PUSH_SUBSCRIPTIONS_PER_USER) {
+    return { ok: false, message: "Je hebt het maximale aantal apparaten voor pushnotificaties bereikt." };
   }
 
   await prisma.pushSubscription.upsert({

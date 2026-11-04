@@ -37,8 +37,8 @@ describe("sendPushToUser", () => {
     const user = await createTestUser("HOGERAAD", "Hogeraadslid Een");
     await prisma.pushSubscription.createMany({
       data: [
-        { userId: user.id, endpoint: "https://push.example/iphone", p256dh: "a", auth: "b", userAgent: "iPhone" },
-        { userId: user.id, endpoint: "https://push.example/ipad", p256dh: "c", auth: "d", userAgent: "iPad" },
+        { userId: user.id, endpoint: "https://fcm.googleapis.com/fcm/send/iphone", p256dh: "a", auth: "b", userAgent: "iPhone" },
+        { userId: user.id, endpoint: "https://fcm.googleapis.com/fcm/send/ipad", p256dh: "c", auth: "d", userAgent: "iPad" },
       ],
     });
 
@@ -46,7 +46,7 @@ describe("sendPushToUser", () => {
 
     expect(sendNotification).toHaveBeenCalledTimes(2);
     const endpoints = sendNotification.mock.calls.map((call) => (call[0] as { endpoint: string }).endpoint);
-    expect(endpoints.sort()).toEqual(["https://push.example/iphone", "https://push.example/ipad"].sort());
+    expect(endpoints.sort()).toEqual(["https://fcm.googleapis.com/fcm/send/iphone", "https://fcm.googleapis.com/fcm/send/ipad"].sort());
   });
 
   it("stuurt niets naar een gebruiker zonder geregistreerde apparaten", async () => {
@@ -58,7 +58,7 @@ describe("sendPushToUser", () => {
   it("stuurt nooit naar een gedeactiveerde gebruiker, ook niet met geldige subscriptions", async () => {
     const user = await createTestUser("HOGERAAD", "Hogeraadslid Een");
     await prisma.pushSubscription.create({
-      data: { userId: user.id, endpoint: "https://push.example/x", p256dh: "a", auth: "b" },
+      data: { userId: user.id, endpoint: "https://fcm.googleapis.com/fcm/send/x", p256dh: "a", auth: "b" },
     });
     await prisma.user.update({ where: { id: user.id }, data: { active: false } });
 
@@ -69,7 +69,7 @@ describe("sendPushToUser", () => {
   it("ruimt een verlopen/ongeldige subscription automatisch op (HTTP 410)", async () => {
     const user = await createTestUser("HOGERAAD", "Hogeraadslid Een");
     const sub = await prisma.pushSubscription.create({
-      data: { userId: user.id, endpoint: "https://push.example/verlopen", p256dh: "a", auth: "b" },
+      data: { userId: user.id, endpoint: "https://fcm.googleapis.com/fcm/send/verlopen", p256dh: "a", auth: "b" },
     });
     sendNotification.mockRejectedValueOnce(Object.assign(new Error("Gone"), { statusCode: 410 }));
 
@@ -81,7 +81,7 @@ describe("sendPushToUser", () => {
   it("een mislukte verzending (niet 404/410) gooit geen fout en laat de subscription staan", async () => {
     const user = await createTestUser("HOGERAAD", "Hogeraadslid Een");
     const sub = await prisma.pushSubscription.create({
-      data: { userId: user.id, endpoint: "https://push.example/tijdelijke-storing", p256dh: "a", auth: "b" },
+      data: { userId: user.id, endpoint: "https://fcm.googleapis.com/fcm/send/tijdelijke-storing", p256dh: "a", auth: "b" },
     });
     sendNotification.mockRejectedValueOnce(Object.assign(new Error("Server error"), { statusCode: 500 }));
 
@@ -94,7 +94,7 @@ describe("Geen vertrouwelijke gegevens in pushmeldingen", () => {
   it("de pushsjablonen bevatten nooit namen, functies of stemresultaten", async () => {
     const user = await createTestUser("RINGPRESIDIUM", "President Geheim");
     await prisma.pushSubscription.create({
-      data: { userId: user.id, endpoint: "https://push.example/pres", p256dh: "a", auth: "b" },
+      data: { userId: user.id, endpoint: "https://fcm.googleapis.com/fcm/send/pres", p256dh: "a", auth: "b" },
     });
 
     const vertrouwelijkeTermen = ["President Geheim", "Hogeraadslid", "Bisschop", "ondersteunt", "steunt niet"];
@@ -123,7 +123,7 @@ describe("Pushmeldingen in de workflow", () => {
   it("een nieuw voorstel stuurt een pushmelding naar het ringpresidium", async () => {
     const presidium = await createTestUser("RINGPRESIDIUM", "President Een");
     await prisma.pushSubscription.create({
-      data: { userId: presidium.id, endpoint: "https://push.example/p1", p256dh: "a", auth: "b" },
+      data: { userId: presidium.id, endpoint: "https://fcm.googleapis.com/fcm/send/p1", p256dh: "a", auth: "b" },
     });
 
     await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium.id });
@@ -136,7 +136,7 @@ describe("Pushmeldingen in de workflow", () => {
     const presidium = await createTestUser("RINGPRESIDIUM", "President Een");
     const assignee = await createTestUser("RINGSECRETARIS", "Secretaris Een");
     await prisma.pushSubscription.create({
-      data: { userId: assignee.id, endpoint: "https://push.example/s1", p256dh: "a", auth: "b" },
+      data: { userId: assignee.id, endpoint: "https://fcm.googleapis.com/fcm/send/s1", p256dh: "a", auth: "b" },
     });
 
     const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium.id });
@@ -151,7 +151,7 @@ describe("Pushmeldingen in de workflow", () => {
     const presidium1 = await createTestUser("RINGPRESIDIUM", "President Een");
     const presidium2 = await createTestUser("RINGPRESIDIUM", "President Twee");
     await prisma.pushSubscription.create({
-      data: { userId: presidium1.id, endpoint: "https://push.example/p1b", p256dh: "a", auth: "b" },
+      data: { userId: presidium1.id, endpoint: "https://fcm.googleapis.com/fcm/send/p1b", p256dh: "a", auth: "b" },
     });
 
     const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium1.id });
@@ -171,7 +171,7 @@ describe("sendPushToUsers", () => {
   it("stuurt geen dubbele meldingen bij hetzelfde aanroepmoment", async () => {
     const user = await createTestUser("HOGERAAD", "Hogeraadslid Een");
     await prisma.pushSubscription.create({
-      data: { userId: user.id, endpoint: "https://push.example/x", p256dh: "a", auth: "b" },
+      data: { userId: user.id, endpoint: "https://fcm.googleapis.com/fcm/send/x", p256dh: "a", auth: "b" },
     });
     await sendPushToUsers([user.id], { title: "Ringtools", body: "Testbericht" });
     expect(sendNotification).toHaveBeenCalledTimes(1);

@@ -1,3 +1,4 @@
+import { isAllowedPushEndpoint } from "./pushEndpoint";
 import webpush from "web-push";
 import { prisma } from "./prisma";
 import { env } from "./env";
@@ -83,6 +84,8 @@ async function sendExpoPush(tokens: { id: string; token: string }[], payload: Pu
   }
 }
 
+const WEB_PUSH_TIMEOUT_MS = 10_000;
+
 /**
  * Stuurt een pushnotificatie naar alle geregistreerde apparaten van een gebruiker:
  * webbrowsers/PWA (Web Push) en de native app (Expo Push). Verlopen/ongeldige
@@ -108,10 +111,16 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
 
   await Promise.all(
     user.pushSubscriptions.map(async (sub) => {
+      // Bestaande rijen met een niet-toegestaan endpoint worden nooit aangeroepen en opgeruimd.
+      if (!isAllowedPushEndpoint(sub.endpoint)) {
+        await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
+        return;
+      }
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          body
+          body,
+          { timeout: WEB_PUSH_TIMEOUT_MS }
         );
         delivered += 1;
       } catch (err) {

@@ -37,19 +37,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [ringId, setRingId] = useState<string | null>(null);
 
+  const flushRef = useRef<() => Promise<void>>(async () => {});
+
   const clearSession = useCallback(async () => {
+    // Onthoud het push-token tot de server het heeft afgemeld (ook bij 401 of geen verbinding).
+    const pushToken = await storage.getPushToken();
+    if (pushToken) await storage.setPendingUnregister(pushToken);
     tokenRef.current = null;
     setMe(null);
     setRingId(null);
     setStatus("signedOut");
     await storage.clear();
     await setBadge(0);
+    void flushRef.current();
   }, []);
 
   const api = useMemo(
     () => new ApiClient({ baseUrl: API_URL, getToken: () => tokenRef.current, onUnauthorized: () => void clearSession() }),
     [clearSession]
   );
+
+  useEffect(() => {
+    flushRef.current = async () => {
+      const pending = await storage.getPendingUnregister();
+      if (!pending) return;
+      try {
+        await api.unregisterDevice(pending);
+        await storage.clearPendingUnregister();
+      } catch {
+        /* geen verbinding: bij de volgende start of terugkeer opnieuw proberen */
+      }
+    };
+    void flushRef.current();
+  }, [api]);
 
   const applyMe = useCallback(async (next: Me) => {
     setMe(next);
@@ -79,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Bij terugkeren naar de app: sessie verlengen en zo nodig het token vernieuwen.
   useEffect(() => {
     const sub = AppState.addEventListener("change", async (state) => {
+      if (state === "active") void flushRef.current();
       if (state !== "active" || !tokenRef.current) return;
       try {
         const result = await api.refresh();

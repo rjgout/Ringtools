@@ -43,7 +43,7 @@ async function setup() {
 
 async function addDevice(userId: string) {
   await prisma.pushSubscription.create({
-    data: { userId, endpoint: `https://push.example/${userId}/${Math.random()}`, p256dh: "p", auth: "a" },
+    data: { userId, endpoint: `https://fcm.googleapis.com/fcm/send/${userId}/${Math.random()}`, p256dh: "p", auth: "a" },
   });
 }
 

@@ -413,6 +413,11 @@ export async function registerDevice(userId: string, token: string, platform: st
   return { ok: true };
 }
 
+export async function unregisterDeviceToken(token: string) {
+  if (EXPO_TOKEN.test(token)) await prisma.devicePushToken.deleteMany({ where: { token } });
+  return { ok: true };
+}
+
 export async function unregisterDevice(userId: string, token: string) {
   await prisma.devicePushToken.deleteMany({ where: { userId, token } });
   return { ok: true };

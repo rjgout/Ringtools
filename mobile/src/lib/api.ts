@@ -60,6 +60,10 @@ export class ApiClient {
   refresh() {
     return this.request<{ rotated: boolean; token?: string; expiresAt?: string }>("POST", "/auth/refresh", {});
   }
+  /** Meldt een push-token af zonder sessie (het token zelf is het geheim); werkt dus ook na een 401. */
+  unregisterDevice(token: string) {
+    return this.request<{ ok: boolean }>("POST", "/devices/unregister", { token }, null);
+  }
   logout(pushToken?: string) {
     return this.request<{ ok: boolean }>("POST", "/auth/logout", { pushToken });
   }

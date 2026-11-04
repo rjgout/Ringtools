@@ -26,34 +26,47 @@ function currentCounter(): number {
   return Math.floor(Date.now() / 1000 / PERIOD_SECONDS);
 }
 
+const PENDING_SECRET_TTL_MS = 30 * 60 * 1000;
+
 /**
- * Maakt (of overschrijft) een nog niet bevestigde TOTP-inschrijving voor een
- * gebruiker en geeft de otpauth://-URI (voor de QR-code) en het leesbare
- * secret terug. Een reeds bevestigde inschrijving wordt pas definitief
- * vervangen zodra de nieuwe code succesvol bevestigd wordt
- * (`confirmTotpEnrollment`); tot die tijd blijft de oude, bevestigde
- * instelling (indien aanwezig) intact en bruikbaar om in te loggen.
+ * Maakt een TOTP-inschrijving en geeft de otpauth://-URI (voor de QR-code) en
+ * het leesbare secret terug.
+ *
+ * - Nog geen (bevestigde) TOTP: de rij zelf blijft onbevestigd tot de code klopt
+ *   (login-inschrijving; het wachtwoord alleen is dan al de enige factor).
+ * - `forceNew` bij een BEVESTIGDE TOTP (opnieuw instellen): het nieuwe secret wordt
+ *   apart in `pendingSecretEncrypted` bewaard. Het werkende secret en
+ *   `confirmedAt` blijven onaangeroerd, zodat een niet afgeronde herinschrijving
+ *   de login nooit terugbrengt tot alleen een wachtwoord. Pas
+ *   `confirmTotpEnrollment` wisselt het secret om.
  */
 export async function startTotpEnrollment(userId: string, label: string, forceNew = false): Promise<{ uri: string; secret: string }> {
-  // Hergebruik een al lopende, nog niet bevestigde inschrijving zodat de
-  // QR-code niet verandert bij het verversen van de pagina — tenzij
-  // `forceNew` is gevraagd (expliciet opnieuw instellen vanuit het profiel).
   const existing = await prisma.totpCredential.findUnique({ where: { userId } });
-  if (!forceNew && existing && !existing.confirmedAt) {
+
+  if (existing?.confirmedAt) {
+    // Een bevestigde TOTP wordt hier alleen via een expliciet opnieuw instellen (forceNew) aangeraakt.
+    if (!forceNew) throw new Error("TOTP is al bevestigd.");
+    const secret = new OTPAuth.Secret({ size: 20 });
+    await prisma.totpCredential.update({
+      where: { userId },
+      data: { pendingSecretEncrypted: encryptSecret(secret.base32), pendingCreatedAt: new Date() },
+    });
+    return { uri: buildTotp(secret.base32, label).toString(), secret: secret.base32 };
+  }
+
+  // Hergebruik een al lopende, nog niet bevestigde inschrijving zodat de QR-code niet verandert.
+  if (!forceNew && existing) {
     const secretBase32 = decryptSecret(existing.secretEncrypted);
     return { uri: buildTotp(secretBase32, label).toString(), secret: secretBase32 };
   }
 
   const secret = new OTPAuth.Secret({ size: 20 });
-  const totp = buildTotp(secret.base32, label);
-
   await prisma.totpCredential.upsert({
     where: { userId },
-    update: { secretEncrypted: encryptSecret(secret.base32), confirmedAt: null, lastUsedCounter: null, failedAttempts: 0, lockedUntil: null },
+    update: { secretEncrypted: encryptSecret(secret.base32), confirmedAt: null, lastUsedCounter: null, failedAttempts: 0, lockedUntil: null, pendingSecretEncrypted: null, pendingCreatedAt: null },
     create: { userId, secretEncrypted: encryptSecret(secret.base32) },
   });
-
-  return { uri: totp.toString(), secret: secret.base32 };
+  return { uri: buildTotp(secret.base32, label).toString(), secret: secret.base32 };
 }
 
 export type TotpOutcome = "OK" | "INVALID" | "LOCKED" | "NOT_CONFIGURED";
@@ -101,6 +114,42 @@ export async function verifyTotpCode(userId: string, label: string, code: string
 
 /** Bevestigt een lopende TOTP-inschrijving en genereert nieuwe herstelcodes. */
 export async function confirmTotpEnrollment(userId: string, label: string, code: string): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; outcome: TotpOutcome }> {
+  const credential = await prisma.totpCredential.findUnique({ where: { userId } });
+  const pendingValid =
+    !!credential?.pendingSecretEncrypted && !!credential.pendingCreatedAt && Date.now() - credential.pendingCreatedAt.getTime() <= PENDING_SECRET_TTL_MS;
+
+  if (credential && pendingValid) {
+    // Opnieuw instellen: de code moet kloppen met het NIEUWE secret; dat vervangt dan het oude.
+    if (credential.lockedUntil && credential.lockedUntil.getTime() > Date.now()) return { ok: false, outcome: "LOCKED" };
+    const pendingBase32 = decryptSecret(credential.pendingSecretEncrypted as string);
+    const delta = buildTotp(pendingBase32, label).validate({ token: code.trim(), window: 1 });
+    if (delta === null) {
+      const failedAttempts = credential.failedAttempts + 1;
+      const lockedUntil = failedAttempts >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCKOUT_MS) : null;
+      await prisma.totpCredential.update({ where: { userId }, data: { failedAttempts, lockedUntil } });
+      await logSecurityEvent({ userId, type: lockedUntil ? "TOTP_LOCKED" : "TOTP_FAILED_ATTEMPT", detail: "Ongeldige code (opnieuw instellen)" });
+      return { ok: false, outcome: lockedUntil ? "LOCKED" : "INVALID" };
+    }
+    await prisma.totpCredential.update({
+      where: { userId },
+      data: {
+        secretEncrypted: credential.pendingSecretEncrypted as string,
+        pendingSecretEncrypted: null,
+        pendingCreatedAt: null,
+        confirmedAt: new Date(),
+        lastUsedCounter: currentCounter() + delta,
+        failedAttempts: 0,
+        lockedUntil: null,
+      },
+    });
+    const recoveryCodes = await regenerateRecoveryCodes(userId);
+    await logSecurityEvent({ userId, type: "TOTP_ENROLLED" });
+    return { ok: true, recoveryCodes };
+  }
+
+  // Eerste inschrijving: bevestig het (onbevestigde) secret van de rij zelf. Een al
+  // bevestigde TOTP zonder lopende herinschrijving is hier niets te bevestigen.
+  if (credential?.confirmedAt) return { ok: false, outcome: "INVALID" };
   const outcome = await verifyTotpCode(userId, label, code);
   if (outcome !== "OK") return { ok: false, outcome };
 
@@ -109,6 +158,7 @@ export async function confirmTotpEnrollment(userId: string, label: string, code:
   await logSecurityEvent({ userId, type: "TOTP_ENROLLED" });
   return { ok: true, recoveryCodes };
 }
+
 
 export async function isTotpConfirmed(userId: string): Promise<boolean> {
   const credential = await prisma.totpCredential.findUnique({ where: { userId } });

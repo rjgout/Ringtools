@@ -59,6 +59,14 @@ publicRoute("POST", "/auth/login", async ({ body }) => {
   return { token: session.rawToken, expiresAt: session.expiresAt.toISOString(), ...(await svc.getMe(user.id)) };
 });
 
+// Het Expo-token is een geheim van het toestel; wie het kent mag het afmelden. Zo kan de app het
+// ook afmelden als de sessie al is verlopen of ingetrokken (401).
+publicRoute("POST", "/devices/unregister", async ({ body }) => {
+  const token = str(body.token);
+  if (token) await svc.unregisterDeviceToken(token);
+  return { ok: true };
+});
+
 publicRoute("GET", "/open/:token", async ({ params }) => {
   const info = await resolveOpenLink(params.token);
   return info.valid ? { valid: true, callingId: info.callingId } : { valid: false };

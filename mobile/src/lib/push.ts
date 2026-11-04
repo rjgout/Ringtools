@@ -37,6 +37,7 @@ export async function registerForPush(api: ApiClient): Promise<PushResult> {
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
     await api.registerDevice(token, Platform.OS === "ios" ? "ios" : "android");
     await storage.setPushToken(token);
+    await storage.clearPendingUnregister();
     return "registered";
   } catch (err) {
     console.warn("[push] Registreren mislukt:", err);
