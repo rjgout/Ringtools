@@ -284,6 +284,18 @@ export async function getCallingView(userId: string, callingId: string) {
   };
 }
 
+/** Actieve leden van de eigen ring, voor het kiezen van verantwoordelijken. Alleen voor staf; strikt per ring. */
+export async function listRingMembersFor(userId: string, ringId: string) {
+  const membership = await requireMembership(userId, ringId);
+  if (!isStaff(membership.role)) throw new ApiError(403, "Je hebt hiervoor geen bevoegdheid.", "forbidden");
+  const members = await prisma.ringMembership.findMany({
+    where: { ringId, active: true, user: { active: true } },
+    include: { user: true },
+    orderBy: { user: { name: "asc" } },
+  });
+  return { members: members.map((m) => ({ id: m.userId, name: m.user.name, role: m.role as Role, churchFunction: m.churchFunction })) };
+}
+
 // ---- Acties (autorisatie zit in de lib; hier alleen toegang en vertaling) ----
 
 async function staffForCalling(userId: string, callingId: string) {

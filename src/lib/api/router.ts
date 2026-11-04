@@ -105,6 +105,8 @@ authedRoute("GET", "/callings", async (ctx) => ({
 authedRoute("POST", "/callings", async (ctx) => svc.createCallingFor(ctx.auth.user.id, ringOf(ctx), ctx.body));
 authedRoute("GET", "/callings/:id", async ({ auth, params }) => svc.getCallingView(auth.user.id, params.id));
 
+authedRoute("GET", "/rings/:id/members", async ({ auth, params }) => svc.listRingMembersFor(auth.user.id, params.id));
+
 // ---- Ondersteuningsprocedure ----
 
 authedRoute("POST", "/callings/:id/vote", async ({ auth, params, body }) => {

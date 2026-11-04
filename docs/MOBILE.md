@@ -28,7 +28,8 @@ aangemelde toestellen bekijken/intrekken, deep links (universele links, App Link
 Android-terugknop, veilige schermranden, dark mode, native statusbar/splash/toetsenbord.
 
 ### Nog niet geïmplementeerd (bewust)
-- Staf-acties in de app: nieuw voorstel, herinneren, taken, verwerken, verwijderen (nu in de webapp; API-routes bestaan al).
+- Gebruikers- en ringbeheer, webmin-login, ontheffingen, uitnodigingen in de app: zie `docs/MIGRATIE-APP-ONLY.md` (Fasen B–D).
+- _Fase A is gerealiseerd_ (nieuw voorstel, verantwoordelijken, herinneren, opnieuw vragen, ronde-deelnemers, taken, verwerken, verwijderen): nog op een fysiek toestel te testen.
 - Passkeys/WebAuthn in de app en inloggen voor gebruikers met passkey-verificatie of het beheerdersaccount: gebruik voorlopig de webapp. Er is **geen** advies om MFA uit te schakelen. Plan en tests: [`docs/PASSKEYS-NATIVE.md`](PASSKEYS-NATIVE.md).
 - Biometrische ontgrendeling, offline cache van voorstellen, native delen in de UI (plugin is aanwezig, nog niet gebruikt).
 - Eenmalige browser→app-authenticatieoverdracht: niet nodig; e-maillinks openen de app direct en de code-login werkt zonder cookies.

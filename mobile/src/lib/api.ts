@@ -7,6 +7,8 @@ import type {
   DeviceInfo,
   LoginResult,
   Me,
+  RemindResult,
+  RingMemberInfo,
   SessionInfo,
   TaskKey,
 } from "@shared/api-types";
@@ -103,8 +105,36 @@ export class ApiClient {
   vote(id: string, support: boolean) {
     return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/vote`, { support });
   }
-  completeTask(id: string, task: TaskKey) {
-    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/tasks/${task.toLowerCase()}/complete`, {});
+  completeTask(id: string, task: TaskKey, opts: { doneAt?: string; ondersteunenContext?: "AVONDMAALSVERGADERING" | "RINGCONFERENTIE" } = {}) {
+    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/tasks/${task.toLowerCase()}/complete`, opts);
+  }
+  assignTask(id: string, task: TaskKey, assigneeId: string | null) {
+    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/tasks/${task.toLowerCase()}/assign`, { assigneeId });
+  }
+  ringMembers(ringId: string) {
+    return this.request<{ members: RingMemberInfo[] }>("GET", `/rings/${encodeURIComponent(ringId)}/members`);
+  }
+  createCalling(
+    ringId: string,
+    input: { personName: string; functionTitle: string; roepenAssigneeId?: string | null; ondersteunenAssigneeId?: string | null; aanstellenAssigneeId?: string | null }
+  ) {
+    return this.request<{ id: string }>("POST", `/callings?ring=${encodeURIComponent(ringId)}`, input);
+  }
+  /** Herinnert één deelnemer (userId) of iedereen die nog niet heeft gereageerd. */
+  remind(id: string, userId?: string) {
+    return this.request<RemindResult>("POST", `/callings/${encodeURIComponent(id)}/remind`, { userId });
+  }
+  reinvite(id: string, userId: string) {
+    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/reinvite`, { userId });
+  }
+  removeParticipant(id: string, userId: string) {
+    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/remove-participant`, { userId });
+  }
+  markProcessed(id: string) {
+    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/process`, {});
+  }
+  deleteCalling(id: string, confirmed: boolean) {
+    return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/delete`, { confirmed });
   }
   notifications(ringId: string) {
     return this.request<{ notifications: AppNotification[]; unreadCount: number }>("GET", `/notifications?ring=${encodeURIComponent(ringId)}`);

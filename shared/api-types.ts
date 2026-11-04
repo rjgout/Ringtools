@@ -92,6 +92,11 @@ export type CallingDetail = {
   assignableUsers: { id: string; name: string; role: Role }[];
 };
 
+/** Actief lid van de eigen ring (alleen zichtbaar voor staf), o.a. om verantwoordelijken te kiezen. */
+export type RingMemberInfo = { id: string; name: string; role: Role; churchFunction: string };
+
+export type RemindResult = { sent: number; skippedRecent: number };
+
 export type AppNotification = {
   id: string;
   type: string;

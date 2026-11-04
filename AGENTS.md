@@ -41,8 +41,8 @@ Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet ·
 | Native passkeys / volledige MFA voor gebruikers | 🔧 C | 🔧 C | — | — |
 | Webmin-login: wachtwoord + verplichte TOTP | 🔧 B | 🔧 B | — | ✅ |
 | Roepingen bekijken, ondersteunen (stemmen) | ✅ | ✅ | ⚠ | — |
-| Nieuw voorstel, verantwoordelijken, herinneren, opnieuw vragen, rondes beheren | 🔧 A | 🔧 A | ⚠ | — |
-| Taken toewijzen/afronden, verwerken, definitief verwijderen | 🔧 A | 🔧 A | ⚠ | — |
+| Nieuw voorstel, verantwoordelijken, herinneren, opnieuw vragen, rondes beheren | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ⚠ | — |
+| Taken toewijzen/afronden, verwerken, definitief verwijderen | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ⚠ | — |
 | Gebruikersbeheer binnen eigen ring (ringbeheerder) | 🔧 B | 🔧 B | ⚠ | — |
 | Ringbeheer: ringen aanmaken/wijzigen/(de)activeren (alleen webmin) | 🔧 B | 🔧 B | — | ✅ |
 | Eerste ringbeheerder van een nieuwe ring aanwijzen (webmin) | 🔧 B | 🔧 B | — | ✅ |

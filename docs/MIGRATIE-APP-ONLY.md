@@ -8,7 +8,7 @@ technische beheeromgeving voor `webmin` blijft via het web bestaan. **Deze migra
 
 | Fase | Inhoud | Status |
 |---|---|---|
-| A | Alle roepings- en taakfunctionaliteit in de app | in uitvoering |
+| A | Alle roepings- en taakfunctionaliteit in de app | gebouwd en getest (CI); toesteltest iPhone/Android open |
 | B | Gebruikers- en ringbeheer; veilige webmin-login in de app | gepland |
 | C | Native passkeys; uitnodigings- en activatieprocedure | gepland |
 | D | Ontheffingen (eigen module en datamodel) | gepland |
@@ -23,3 +23,9 @@ betrouwbare herstelprocedure bij verlies van een toestel.
 
 ## Resterende blokkades per fase
 Wordt na elke fase bijgewerkt (zie hieronder).
+
+### Fase A
+- Gebouwd: scherm "Nieuw voorstel" (ringleden via `GET /rings/:id/members`, alleen staf, alleen eigen ring), staf-acties in het voorstel
+  (iedereen/individueel herinneren, opnieuw vragen, uit ronde halen), taken toewijzen en afronden (incl. gelegenheid bij Ondersteunen en datum),
+  administratief verwerken en definitief verwijderen met bevestiging. Alle acties roepen de bestaande `workflow.ts`-functies aan.
+- Blokkade: geen fysieke toesteltest; echte pushlevering ongetest (zie `docs/MOBILE.md`).

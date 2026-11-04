@@ -345,3 +345,38 @@ describe("API-contract (gedeelde types in shared/api-types.ts)", () => {
     expect(err.code).toBe("unauthenticated");
   });
 });
+
+describe("API: ledenlijst voor verantwoordelijken (Fase A)", () => {
+  it("staf ziet alleen actieve leden van de eigen ring; niet-staf en andere ringen krijgen niets", async () => {
+    const { ring, users } = await ringWith("RINGPRESIDIUM", "HOGERAAD");
+    const otherRing = await createTestRing("Ring B");
+    const other = { ring: otherRing, users: [await createTestUser("RINGPRESIDIUM", "Vreemd", { ringId: otherRing.id })] };
+    await prisma.ringMembership.updateMany({ where: { userId: users[1].id, ringId: ring.id }, data: { active: false } });
+    const staffToken = await login(users[0].id);
+    const res = await call("GET", `/rings/${ring.id}/members`, { token: staffToken });
+    expect(res.status).toBe(200);
+    expect(res.body.members.map((m: { id: string }) => m.id)).toEqual([users[0].id]);
+    // gedeactiveerd lid blijft buiten beeld; geen e-mailadressen in het antwoord
+    expect(JSON.stringify(res.body)).not.toContain("@");
+    // andere ring: 404, geen lek
+    expect((await call("GET", `/rings/${other.ring.id}/members`, { token: staffToken })).status).toBe(404);
+    // reguliere (niet-staf) gebruiker: 403
+    await prisma.ringMembership.updateMany({ where: { userId: users[1].id, ringId: ring.id }, data: { active: true } });
+    const plain = await login(users[1].id);
+    expect((await call("GET", `/rings/${ring.id}/members`, { token: plain })).status).toBe(403);
+    expect((await call("GET", `/rings/${ring.id}/members`)).status).toBe(401);
+  });
+
+  it("nieuw voorstel via de API: alleen staf, en verantwoordelijken moeten leden van dezelfde ring zijn", async () => {
+    const { ring, users } = await ringWith("RINGPRESIDIUM", "HOGERAAD");
+    const outsiderRing = await createTestRing("Ring B");
+    const outsider = await createTestUser("RINGPRESIDIUM", "Vreemd", { ringId: outsiderRing.id });
+    const staff = await login(users[0].id);
+    const bad = await call("POST", `/callings?ring=${ring.id}`, { token: staff, body: { personName: "Jan Test", functionTitle: "Leraar", roepenAssigneeId: outsider.id } });
+    expect(bad.status).toBeGreaterThanOrEqual(400);
+    const ok = await call("POST", `/callings?ring=${ring.id}`, { token: staff, body: { personName: "Jan Test", functionTitle: "Leraar", roepenAssigneeId: users[1].id } });
+    expect(ok.status).toBe(200);
+    const plain = await login(users[1].id);
+    expect((await call("POST", `/callings?ring=${ring.id}`, { token: plain, body: { personName: "Piet Test", functionTitle: "Leraar" } })).status).toBe(403);
+  });
+});

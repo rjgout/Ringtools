@@ -11,6 +11,7 @@ import { ErrorState, Spinner, TabBar } from "./components/ui";
 import { Login } from "./screens/Login";
 import { Home } from "./screens/Home";
 import { Callings } from "./screens/Callings";
+import { NewCalling } from "./screens/NewCalling";
 import { CallingDetail } from "./screens/CallingDetail";
 import { Notifications } from "./screens/Notifications";
 import { Profile } from "./screens/Profile";
@@ -105,6 +106,7 @@ function Shell() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/voorstellen" element={<Callings />} />
+            <Route path="/voorstellen/nieuw" element={<NewCalling />} />
             <Route path="/roepingen/:id" element={<CallingDetail />} />
             <Route path="/open/:token" element={<OpenLink />} />
             <Route path="/meldingen" element={<Notifications onChanged={refreshUnread} />} />
