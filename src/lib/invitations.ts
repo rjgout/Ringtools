@@ -388,6 +388,9 @@ export async function activateInvitation(credentials: Credentials, clientKey: st
       : await tx.user.create({ data: { name: inv.name, email: inv.email, role: inv.role, active: true, activatedAt: now } });
 
     const membership = await tx.ringMembership.findUnique({ where: { userId_ringId: { userId: user.id, ringId: inv.ringId } } });
+    // Een lidmaatschap dat ná het aanmaken van de uitnodiging is gewijzigd en nu inactief is, is bewust door een beheerder gedeactiveerd:
+    // een oude uitnodiging mag dat nooit ongedaan maken.
+    if (membership && !membership.active && membership.updatedAt.getTime() > inv.createdAt.getTime()) throw new RollbackWithAudit(inv.id);
     if (membership?.active) {
       // Intussen al lid (bijvoorbeeld via de webmin): de uitnodiging verleent niets extra's.
       await tx.ringInvitation.update({ where: { id: inv.id }, data: { acceptedById: user.id } });

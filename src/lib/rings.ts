@@ -328,6 +328,11 @@ export async function updateMember(input: {
 
     await assertHasActiveManager(tx, before.ringId);
 
+    // Wie wordt gedeactiveerd, mag niet via een nog openstaande uitnodiging terugkeren.
+    if (before.active && !after.active) {
+      await tx.ringInvitation.updateMany({ where: { ringId: before.ringId, email: before.user.email, acceptedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
+    }
+
     const otherActive = await tx.ringMembership.count({
       where: { userId: before.userId, active: true, NOT: { id: before.id } },
     });

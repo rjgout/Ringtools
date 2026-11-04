@@ -20,6 +20,8 @@ on:
       - "src/lib/notifications.ts"
       - "src/lib/openLinks.ts"
       - "src/lib/loginMail.ts"
+      - "src/lib/invitations.ts"
+      - "src/lib/mailer.ts"
       - "src/lib/safePath.ts"
       - "src/lib/rings.ts"
       - "src/lib/workflow.ts"
@@ -34,6 +36,7 @@ on:
       - "src/app/api/mobile/**"
       - "src/app/.well-known/**"
       - "src/app/open/**"
+      - "src/app/uitnodiging/**"
       - "prisma/**"
       - "tests/**"
       - "AGENTS.md"
@@ -57,6 +60,8 @@ on:
       - "src/lib/notifications.ts"
       - "src/lib/openLinks.ts"
       - "src/lib/loginMail.ts"
+      - "src/lib/invitations.ts"
+      - "src/lib/mailer.ts"
       - "src/lib/safePath.ts"
       - "src/lib/rings.ts"
       - "src/lib/workflow.ts"
@@ -71,6 +76,7 @@ on:
       - "src/app/api/mobile/**"
       - "src/app/.well-known/**"
       - "src/app/open/**"
+      - "src/app/uitnodiging/**"
       - "prisma/**"
       - "tests/**"
       - "AGENTS.md"
@@ -121,6 +127,7 @@ jobs:
           tests/rings.test.ts tests/hardening.test.ts tests/notifications.test.ts
           tests/proposals.test.ts tests/ontheffingen.test.ts tests/release.test.ts tests/catalog.test.ts
           tests/ringsetup.test.ts tests/management.test.ts tests/workflow.test.ts tests/churchfunctions.test.ts
+          tests/invitations.test.ts tests/nativeMfa.test.ts
 
   client:
     name: Client en native configuratie

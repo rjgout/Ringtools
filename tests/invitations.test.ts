@@ -388,3 +388,41 @@ describe("Uitnodigen en activeren", () => {
     expect((await call("POST", `/rings/${s.ringA.id}/invitations`, { token: s.token, body: body({ email: "geen-mail" }) })).status).toBe(400);
   });
 });
+
+describe("Uitnodigingen en deactiveren", () => {
+  it("deactiveren van een lid trekt openstaande uitnodigingen voor dat adres in; een oude uitnodiging heractiveert nooit een bewust gedeactiveerd lid", async () => {
+    const s = await setup();
+    const member = await createTestUser("HOGERAAD", "Terugkeerder", { ringId: s.ringA.id, email: "terug@test.ringapeldoorn.nl" });
+    await prisma.ringMembership.updateMany({ where: { userId: member.id }, data: { active: false } });
+    // Uitnodiging voor een inactief lid mag (heractiveren door de beheerder is een bewuste keuze) ...
+    const { token } = await invite(s, { email: "terug@test.ringapeldoorn.nl", role: "HOGERAAD", churchFunctionCode: "HOGERAADSLID" });
+    // ... maar wordt het lidmaatschap daarna opnieuw (bewust) gewijzigd/gedeactiveerd, dan vervalt de uitnodiging.
+    const m = await prisma.ringMembership.findFirstOrThrow({ where: { userId: member.id } });
+    await prisma.ringMembership.update({ where: { id: m.id }, data: { churchFunction: "Later gewijzigd" } });
+    expect((await call("POST", "/invitations/activate", { body: { token } })).status).toBe(400);
+    expect((await prisma.ringMembership.findFirstOrThrow({ where: { userId: member.id } })).active).toBe(false);
+    expect((await prisma.ringInvitation.findFirstOrThrow()).acceptedAt).toBeNull();
+
+    // Deactiveren via het beheer trekt een open uitnodiging voor datzelfde adres direct in.
+    await resetDatabase();
+    const t = await setup();
+    const active = await createTestUser("HOGERAAD", "Actief Lid", { ringId: t.ringA.id, email: "actief@test.ringapeldoorn.nl" });
+    await prisma.ringInvitation.create({ data: { ringId: t.ringA.id, email: "actief@test.ringapeldoorn.nl", name: "Actief Lid", role: "HOGERAAD", createdById: t.manager.id, tokenHash: "h".repeat(64), codeHash: "c", expiresAt: new Date(Date.now() + 1e6) } });
+    const mem = await prisma.ringMembership.findFirstOrThrow({ where: { userId: active.id } });
+    const upd = await call("POST", `/memberships/${mem.id}`, { token: t.token, body: { churchFunction: "Functie", role: "HOGERAAD", isRingManager: false, active: false } });
+    expect(upd.status).toBe(200);
+    expect((await prisma.ringInvitation.findFirstOrThrow()).revokedAt).not.toBeNull();
+  });
+
+  it("de log bevat nooit het token: geen console-uitvoer bij een gewone uitnodiging en activatie", async () => {
+    const s = await setup();
+    const spies = [vi.spyOn(console, "log"), vi.spyOn(console, "error"), vi.spyOn(console, "warn"), vi.spyOn(console, "info")].map((x) => x.mockImplementation(() => {}));
+    const { token, code } = await invite(s);
+    await call("POST", "/invitations/activate", { body: { token } });
+    await call("POST", "/invitations/activate", { body: { token: "x".repeat(43) } });
+    const logged = spies.flatMap((x) => x.mock.calls).map((c) => c.map(String).join(" ")).join("\n");
+    expect(logged).not.toContain(token);
+    expect(logged).not.toContain(code);
+    spies.forEach((x) => x.mockRestore());
+  });
+});
