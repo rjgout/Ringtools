@@ -15,6 +15,7 @@ export type Me = {
 export type CallingStatus =
   | "PRESIDIUM_VOTING"
   | "PRESIDIUM_PAUSED"
+  | "PRESIDIUM_APPROVED"
   | "HOGERAAD_VOTING"
   | "HOGERAAD_PAUSED"
   | "APPROVED"
@@ -44,6 +45,7 @@ export type Dashboard = {
     roepenOpen: number;
     ondersteunenOpen: number;
     aanstellenOpen: number;
+    awaitingRelease: number;
   } | null;
   attention: CallingItem[];
   pendingSupport: CallingItem[];
@@ -74,6 +76,20 @@ export type TaskView = {
   canComplete: boolean;
 };
 
+/** Vastgelegd gezamenlijk besluit uit een vergadering (geen individuele reacties). Alleen zichtbaar voor ringstaf. */
+export type GroupDecisionView = {
+  stage: "PRESIDIUM" | "HOGERAAD";
+  decidedOn: string;
+  registeredBy: string;
+  registeredAt: string;
+  note: string | null;
+  presiding: string | null;
+  present: string[];
+  absent: string[];
+  overrodeNegativeVotes: boolean;
+  resolutionNote: string | null;
+};
+
 export type CallingDetail = {
   id: string;
   ring: { id: string; name: string };
@@ -90,6 +106,12 @@ export type CallingDetail = {
   readyToProcess: boolean;
   canDelete: boolean;
   assignableUsers: { id: string; name: string; role: Role }[];
+  /** Presidium akkoord; wacht op een expliciete vrijgave aan de hoge raad. */
+  awaitingRelease: boolean;
+  canRelease: boolean;
+  groupDecisions: GroupDecisionView[];
+  /** Per fase: mag nu een gezamenlijk besluit worden vastgelegd (open fase, nog geen besluit, ringstaf)? */
+  canRegisterGroupDecision: { PRESIDIUM: boolean; HOGERAAD: boolean };
 };
 
 /** Actief lid van de eigen ring (alleen zichtbaar voor staf), o.a. om verantwoordelijken te kiezen. */

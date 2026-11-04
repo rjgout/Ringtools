@@ -16,6 +16,7 @@ import {
   assignTask,
   completeTask,
   markProcessed,
+  releaseToHogeraad,
   WorkflowError,
   AuthorizationError,
 } from "@/lib/workflow";
@@ -113,6 +114,21 @@ export async function remindAction(formData: FormData): Promise<void> {
   } catch (err) {
     if (err instanceof AuthorizationError) redirect("/geen-toegang");
     if (!(err instanceof WorkflowError)) throw err;
+  }
+  backToCalling(callingId, query);
+}
+
+/** Geeft een voorstel met presidiumakkoord expliciet vrij aan de hoge raad (overgangswebapp; de app heeft dezelfde handeling). */
+export async function releaseToHogeraadAction(formData: FormData): Promise<void> {
+  const callingId = String(formData.get("callingId"));
+  const { user } = await requireStaffForCalling(callingId);
+  let query = "";
+  try {
+    await releaseToHogeraad({ callingId, actorId: user.id });
+  } catch (err) {
+    if (err instanceof AuthorizationError) redirect("/geen-toegang");
+    if (!(err instanceof WorkflowError)) throw err;
+    query = "?melding=vrijgave-mislukt";
   }
   backToCalling(callingId, query);
 }

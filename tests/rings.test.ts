@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { resetDatabase, createTestUser, createTestRing, createCalling } from "./setup";
+import { resetDatabase, createTestUser, createTestRing, createCalling, approveCallingFully } from "./setup";
 import { createRing, addMember, updateMember, renameRing, listRingMembers, RingError, AuthorizationError } from "@/lib/rings";
-import { castVote, removeParticipantFromRound, WorkflowError } from "@/lib/workflow";
+import { castVote, releaseToHogeraad, removeParticipantFromRound, WorkflowError } from "@/lib/workflow";
 
 beforeEach(async () => {
   await resetDatabase();
@@ -384,7 +384,8 @@ describe("Lopende ondersteuningsrondes bij nieuwe en gewijzigde leden", () => {
     const afterFirst = await castVote({ callingId: calling.id, userId: president.id, support: true });
     expect(afterFirst.status).toBe("PRESIDIUM_VOTING");
 
-    const done = await castVote({ callingId: calling.id, userId: user.id, support: true });
+    await castVote({ callingId: calling.id, userId: user.id, support: true });
+    const done = await approveCallingFully(calling.id);
     expect(done.status).toBe("APPROVED");
   });
 
@@ -394,6 +395,8 @@ describe("Lopende ondersteuningsrondes bij nieuwe en gewijzigde leden", () => {
     const inPresidium = await createCalling({ ringId: ring.id, personName: "Jan", functionTitle: "F", createdById: president.id });
     const inHogeraad = await createCalling({ ringId: ring.id, personName: "Piet", functionTitle: "F", createdById: president.id });
     await castVote({ callingId: inHogeraad.id, userId: president.id, support: true });
+    expect((await prisma.calling.findUniqueOrThrow({ where: { id: inHogeraad.id } })).status).toBe("PRESIDIUM_APPROVED");
+    await releaseToHogeraad({ callingId: inHogeraad.id, actorId: president.id });
     expect((await prisma.calling.findUniqueOrThrow({ where: { id: inHogeraad.id } })).status).toBe("HOGERAAD_VOTING");
     // president heeft op "inPresidium" nog niet gereageerd
     expect((await prisma.calling.findUniqueOrThrow({ where: { id: inPresidium.id } })).status).toBe("PRESIDIUM_VOTING");
@@ -416,7 +419,8 @@ describe("Lopende ondersteuningsrondes bij nieuwe en gewijzigde leden", () => {
   it("afgeronde rondes worden niet heropend of gewijzigd door een nieuw lid", async () => {
     const { ring, manager, president } = await setup();
     const calling = await createCalling({ ringId: ring.id, personName: "Jan", functionTitle: "F", createdById: president.id });
-    const approved = await castVote({ callingId: calling.id, userId: president.id, support: true });
+    await castVote({ callingId: calling.id, userId: president.id, support: true });
+    const approved = await approveCallingFully(calling.id);
     expect(approved.status).toBe("APPROVED"); // geen hogeraadsleden: direct goedgekeurd
 
     const before = await prisma.eligibleVoter.findMany({ where: { callingId: calling.id } });
@@ -474,7 +478,7 @@ describe("Lopende ondersteuningsrondes bij nieuwe en gewijzigde leden", () => {
 
     const result = await removeParticipantFromRound({ callingId: calling.id, userId: second.id, actorId: president.id });
     expect(await prisma.eligibleVoter.count({ where: { callingId: calling.id, userId: second.id } })).toBe(0);
-    expect(result.status).toBe("HOGERAAD_VOTING"); // overige deelnemer had al ondersteund: ronde rondt expliciet af, volgende fase
+    expect(result.status).toBe("PRESIDIUM_APPROVED"); // overige deelnemer had al ondersteund: ronde rondt af; vrijgave aan de hoge raad blijft een aparte handeling
   });
 });
 

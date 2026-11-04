@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { resetDatabase, createTestUser, createCalling } from "./setup";
+import { resetDatabase, createTestUser, createCalling, approveCallingFully } from "./setup";
 import {
   castVote,
   reinviteVoter,
@@ -61,9 +61,9 @@ describe("Presidiumstemming", () => {
     await castVote({ callingId: calling.id, userId: presidium1.id, support: true });
     const updated = await castVote({ callingId: calling.id, userId: presidium2.id, support: true });
 
-    expect(updated.status).toBe("HOGERAAD_VOTING");
-    const hogeraadEligible = await prisma.eligibleVoter.findMany({ where: { callingId: calling.id, stage: "HOGERAAD" } });
-    expect(hogeraadEligible).toHaveLength(1);
+    // Unaniem presidiumakkoord start de hogeraadronde NIET automatisch (zie tests/release.test.ts).
+    expect(updated.status).toBe("PRESIDIUM_APPROVED");
+    expect(await prisma.eligibleVoter.count({ where: { callingId: calling.id, stage: "HOGERAAD" } })).toBe(0);
   });
 
   it("opnieuw uitnodigen laat de persoon zijn stem wijzigen zonder nieuwe stemming", async () => {
@@ -80,7 +80,7 @@ describe("Presidiumstemming", () => {
 
     // De persoon past zijn eigen stem aan (niet automatisch).
     updated = await castVote({ callingId: calling.id, userId: presidium2.id, support: true });
-    expect(updated.status).toBe("HOGERAAD_VOTING");
+    expect(updated.status).toBe("PRESIDIUM_APPROVED");
 
     const votes = await prisma.vote.findMany({ where: { callingId: calling.id, stage: "PRESIDIUM" } });
     expect(votes).toHaveLength(2); // geen nieuwe stemronde, dezelfde twee records
@@ -118,7 +118,8 @@ describe("Presidiumstemming", () => {
     // Stemming kan nog steeds normaal afgerond worden met de oorspronkelijke twee.
     await castVote({ callingId: calling.id, userId: presidium1.id, support: true });
     const updated = await castVote({ callingId: calling.id, userId: presidium2.id, support: true });
-    expect(updated.status).toBe("APPROVED"); // geen hogeraadsleden aanwezig -> direct goedgekeurd
+    // Een lege hoge raad veroorzaakt nooit goedkeuring: het voorstel wacht op vrijgave.
+    expect(updated.status).toBe("PRESIDIUM_APPROVED");
   });
 });
 
@@ -126,7 +127,8 @@ describe("Uitvoering en verwerken", () => {
   async function approvedCalling() {
     const presidium1 = await createTestUser("RINGPRESIDIUM", "President Een");
     const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium1.id });
-    const approved = await castVote({ callingId: calling.id, userId: presidium1.id, support: true });
+    await castVote({ callingId: calling.id, userId: presidium1.id, support: true });
+    const approved = await approveCallingFully(calling.id);
     expect(approved.status).toBe("APPROVED");
     return { presidium1, calling: approved };
   }
@@ -241,7 +243,8 @@ describe("Herinneringen en automatische opruiming", () => {
   it("verwijdert een roeping pas 30 dagen na verwerking, niet na 30 dagen na aanmaken", async () => {
     const presidium1 = await createTestUser("RINGPRESIDIUM", "President Een");
     const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium1.id });
-    const approved = await castVote({ callingId: calling.id, userId: presidium1.id, support: true });
+    await castVote({ callingId: calling.id, userId: presidium1.id, support: true });
+    const approved = await approveCallingFully(calling.id);
 
     for (const task of ["ROEPEN", "ONDERSTEUNEN", "AANSTELLEN"] as const) {
       await completeTask({

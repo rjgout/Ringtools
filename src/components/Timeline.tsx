@@ -3,10 +3,12 @@ import type { Calling } from "@prisma/client";
 export function Timeline({ calling }: { calling: Calling }) {
   const approved = calling.status === "APPROVED" || calling.status === "PROCESSED";
   const presidiumDone = calling.status !== "PRESIDIUM_VOTING" && calling.status !== "PRESIDIUM_PAUSED";
+  const released = !!calling.hogeraadReleasedAt || approved;
 
   const steps = [
     { label: "Voorstel aangemaakt", done: true },
     { label: "Ringpresidium akkoord", done: presidiumDone },
+    { label: "Vrijgegeven aan de hoge raad", done: released },
     { label: "Hoge raad akkoord", done: approved },
     { label: "Geroepen", done: !!calling.roepenDoneAt },
     { label: "Ondersteund", done: !!calling.ondersteunenDoneAt },

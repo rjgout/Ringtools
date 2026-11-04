@@ -256,11 +256,11 @@ export async function castVote(input: { callingId: string; userId: string; suppo
  * afgesloten.
  */
 async function recomputeCallingState(callingId: string): Promise<Calling> {
-  const { calling, hogeraadVoterIds, justPaused } = await prisma.$transaction(async (tx) => {
+  const { calling, justPaused } = await prisma.$transaction(async (tx) => {
     await lockCalling(tx, callingId);
     const calling = await tx.calling.findUniqueOrThrow({ where: { id: callingId } });
     const stage = stageForStatus(calling.status);
-    if (!stage) return { calling, hogeraadVoterIds: null as string[] | null, justPaused: false };
+    if (!stage) return { calling, justPaused: false };
 
     const [eligibleVoters, votes] = await Promise.all([
       tx.eligibleVoter.findMany({ where: { callingId, stage } }),
@@ -275,44 +275,31 @@ async function recomputeCallingState(callingId: string): Promise<Calling> {
       const pausedStatus = stage === "PRESIDIUM" ? "PRESIDIUM_PAUSED" : "HOGERAAD_PAUSED";
       const wasAlreadyPaused = calling.status === pausedStatus;
       const updated = await tx.calling.update({ where: { id: callingId }, data: { status: pausedStatus } });
-      return { calling: updated, hogeraadVoterIds: null, justPaused: !wasAlreadyPaused };
+      return { calling: updated, justPaused: !wasAlreadyPaused };
     }
 
     if (allPositive) {
       if (stage === "PRESIDIUM") {
-        const hogeraadIds = await activeMemberIds(tx, calling.ringId, "HOGERAAD");
-
-        if (hogeraadIds.length === 0) {
-          // Niemand om ondersteuning aan te vragen in de hoge raad: er is dan
-          // niets om op te wachten, dus de roeping is direct volledig goedgekeurd.
-          const updated = await tx.calling.update({
-            where: { id: callingId },
-            data: { status: "APPROVED", approvedAt: new Date() },
-          });
-          return { calling: updated, hogeraadVoterIds: null, justPaused: false };
-        }
-
-        const now = new Date();
-        await tx.eligibleVoter.createMany({
-          data: hogeraadIds.map((userId) => ({ callingId, stage: "HOGERAAD" as const, userId, lastInvitedAt: now })),
-          skipDuplicates: true,
-        });
-        const updated = await tx.calling.update({ where: { id: callingId }, data: { status: "HOGERAAD_VOTING" } });
-        return { calling: updated, hogeraadVoterIds: hogeraadIds, justPaused: false };
-      } else {
+        // Presidium akkoord: de hogeraadronde start NIET automatisch. Een bevoegde gebruiker geeft het voorstel
+        // later expliciet vrij (releaseToHogeraad). Een lege hoge raad leidt nooit tot goedkeuring.
         const updated = await tx.calling.update({
           where: { id: callingId },
-          data: { status: "APPROVED", approvedAt: new Date() },
+          data: { status: "PRESIDIUM_APPROVED", presidiumApprovedAt: new Date(), presidiumApprovalMethod: "INDIVIDUAL" },
         });
-        return { calling: updated, hogeraadVoterIds: null, justPaused: false };
+        return { calling: updated, justPaused: false };
       }
+      const updated = await tx.calling.update({
+        where: { id: callingId },
+        data: { status: "APPROVED", approvedAt: new Date(), hogeraadApprovalMethod: "INDIVIDUAL" },
+      });
+      return { calling: updated, justPaused: false };
     }
 
     // Niemand heeft aangegeven niet te ondersteunen, maar nog niet iedereen
     // heeft gereageerd: open/hervat.
     const openStatus = stage === "PRESIDIUM" ? "PRESIDIUM_VOTING" : "HOGERAAD_VOTING";
     const updated = await tx.calling.update({ where: { id: callingId }, data: { status: openStatus } });
-    return { calling: updated, hogeraadVoterIds: null, justPaused: false };
+    return { calling: updated, justPaused: false };
   });
 
   // Bewust buiten de transactie: een mislukte melding mag de al opgeslagen
@@ -320,11 +307,196 @@ async function recomputeCallingState(callingId: string): Promise<Calling> {
   if (justPaused) {
     await notifyPaused(calling);
   }
-  if (hogeraadVoterIds) {
-    await notifyParticipants(calling, hogeraadVoterIds, { event: "ADVANCED_TO_HOGERAAD" });
-  }
 
   return calling;
+}
+
+// ---- Vrijgave aan de hoge raad en gezamenlijke besluiten ----
+
+/**
+ * Belemmeringen om een voorstel aan de hoge raad vrij te geven (leeg = vrij te geven). Wordt bij elke vrijgave opnieuw
+ * gecontroleerd; ontheffingen breiden dit uit met de verplichte persoonlijke kennisgeving.
+ */
+async function releaseBlockers(tx: Db, calling: Calling, hogeraadIds: string[]): Promise<string[]> {
+  const blockers: string[] = [];
+  if (hogeraadIds.length === 0) {
+    blockers.push("Er zijn geen actieve hogeraadsleden. Richt eerst de hoge raad in; zonder deelnemers kan er geen ondersteuningsronde starten.");
+  }
+  void tx;
+  void calling;
+  return blockers;
+}
+
+export type ReleaseResult = { calling: Calling; released: boolean; alreadyReleased: boolean };
+
+/**
+ * Geeft een voorstel met presidiumakkoord expliciet vrij aan de hoge raad. Geautoriseerd (ringstaf), idempotent
+ * (een tweede verzoek maakt geen tweede ronde of dubbele uitnodigingen) en met auditregistratie.
+ */
+export async function releaseToHogeraad(input: { callingId: string; actorId: string }): Promise<ReleaseResult> {
+  const first = await prisma.calling.findUniqueOrThrow({ where: { id: input.callingId } });
+  await requireRingStaff(input.actorId, first.ringId);
+
+  const outcome = await prisma.$transaction(async (tx) => {
+    await lockCalling(tx, input.callingId);
+    const calling = await tx.calling.findUniqueOrThrow({ where: { id: input.callingId } });
+    if (calling.hogeraadReleasedAt) return { calling, hogeraadIds: null as string[] | null };
+    if (calling.status !== "PRESIDIUM_APPROVED") {
+      throw new WorkflowError("Dit voorstel heeft geen presidiumakkoord dat op vrijgave wacht.");
+    }
+    const hogeraadIds = await activeMemberIds(tx, calling.ringId, "HOGERAAD");
+    const blockers = await releaseBlockers(tx, calling, hogeraadIds);
+    if (blockers.length > 0) throw new WorkflowError(blockers[0]);
+
+    const now = new Date();
+    await tx.eligibleVoter.createMany({
+      data: hogeraadIds.map((userId) => ({ callingId: calling.id, stage: "HOGERAAD" as const, userId, lastInvitedAt: now })),
+      skipDuplicates: true,
+    });
+    const updated = await tx.calling.update({
+      where: { id: calling.id },
+      data: { status: "HOGERAAD_VOTING", hogeraadReleasedAt: now, hogeraadReleasedById: input.actorId },
+    });
+    await tx.callingAudit.create({ data: { callingId: calling.id, type: "HOGERAAD_RELEASED", actorId: input.actorId } });
+    return { calling: updated, hogeraadIds };
+  });
+
+  // Alleen de aanroep die de overgang daadwerkelijk maakte, verstuurt meldingen (nooit dubbel).
+  if (outcome.hogeraadIds) {
+    await notifyParticipants(outcome.calling, outcome.hogeraadIds, { event: "ADVANCED_TO_HOGERAAD" });
+    return { calling: outcome.calling, released: true, alreadyReleased: false };
+  }
+  return { calling: outcome.calling, released: false, alreadyReleased: true };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function parseMeetingDate(raw: string): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw new WorkflowError("Vul de datum van het besluit in.");
+  const date = new Date(`${raw}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) throw new WorkflowError("Vul de datum van het besluit in.");
+  const todayUtc = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z");
+  if (date.getTime() > todayUtc.getTime() + DAY_MS) throw new WorkflowError("De datum van het besluit mag niet in de toekomst liggen.");
+  if (date.getTime() < todayUtc.getTime() - 90 * DAY_MS) throw new WorkflowError("De datum van het besluit ligt te ver in het verleden.");
+  return date;
+}
+
+export type GroupDecisionInput = {
+  callingId: string;
+  actorId: string;
+  stage: Stage;
+  /** YYYY-MM-DD */
+  decidedOn: string;
+  /** Expliciete verklaring dat het besluit daadwerkelijk akkoord is vastgesteld. */
+  agreed: boolean;
+  note?: string;
+  /** Alleen hoge raad: presiderend lid van het ringpresidium (verplicht). */
+  presidingUserId?: string;
+  presentUserIds?: string[];
+  absentUserIds?: string[];
+  /** Bij bestaande negatieve reacties: expliciete, gemotiveerde afhandeling (de reacties zelf blijven bestaan). */
+  resolveNegative?: boolean;
+  resolutionNote?: string;
+};
+
+/**
+ * Legt een daadwerkelijk in een vergadering genomen gezamenlijk besluit vast (presidium of hoge raad). Er worden NOOIT
+ * individuele reacties namens anderen aangemaakt; afwezigheid geldt nooit als ondersteuning; bestaande negatieve reacties
+ * worden niet overschreven maar vereisen een expliciete, gemotiveerde afhandeling. Idempotent per voorstel en fase.
+ */
+export async function registerGroupDecision(input: GroupDecisionInput): Promise<{ calling: Calling; alreadyRegistered: boolean }> {
+  const first = await prisma.calling.findUniqueOrThrow({ where: { id: input.callingId } });
+  await requireRingStaff(input.actorId, first.ringId); // ringpresident, raadgevers, secretaris, administrateur
+  if (input.agreed !== true) {
+    throw new WorkflowError("Een gezamenlijk besluit kan alleen worden vastgelegd als het daadwerkelijk akkoord is vastgesteld.");
+  }
+  const decidedOn = parseMeetingDate(input.decidedOn);
+  const note = input.note?.trim().slice(0, 500) || null;
+
+  return prisma.$transaction(async (tx) => {
+    await lockCalling(tx, input.callingId);
+    const calling = await tx.calling.findUniqueOrThrow({ where: { id: input.callingId } });
+
+    const existing = await tx.groupDecision.findUnique({ where: { callingId_stage: { callingId: calling.id, stage: input.stage } } });
+    if (existing) return { calling, alreadyRegistered: true };
+
+    if (stageForStatus(calling.status) !== input.stage) {
+      throw new WorkflowError("Voor deze fase kan nu geen gezamenlijk besluit worden vastgelegd.");
+    }
+
+    let presidingUserId: string | null = null;
+    let presentUserIds: string[] = [];
+    let absentUserIds: string[] = [];
+    if (input.stage === "HOGERAAD") {
+      // Volgens het handboek vergadert de hoge raad niet zonder een presiderend lid van het ringpresidium.
+      if (!input.presidingUserId) {
+        throw new WorkflowError("Geef aan welk lid van het ringpresidium de vergadering voorzat. Zonder presiderend lid is dit geen geldige vergadering.");
+      }
+      const presiding = await tx.ringMembership.findFirst({
+        where: { ringId: calling.ringId, userId: input.presidingUserId, role: "RINGPRESIDIUM", active: true, user: { active: true } },
+      });
+      if (!presiding) throw new WorkflowError("De presiderende persoon moet een actief lid van het ringpresidium van deze ring zijn.");
+      presidingUserId = input.presidingUserId;
+
+      presentUserIds = [...new Set(input.presentUserIds ?? [])];
+      absentUserIds = [...new Set(input.absentUserIds ?? [])];
+      if (presentUserIds.length === 0) throw new WorkflowError("Geef aan welke hogeraadsleden aanwezig waren.");
+      if (presentUserIds.some((id) => absentUserIds.includes(id))) throw new WorkflowError("Iemand kan niet tegelijk aanwezig en afwezig zijn.");
+      const eligible = await tx.eligibleVoter.findMany({ where: { callingId: calling.id, stage: "HOGERAAD" }, select: { userId: true } });
+      const eligibleIds = new Set(eligible.map((e) => e.userId));
+      if ([...presentUserIds, ...absentUserIds].some((id) => !eligibleIds.has(id))) {
+        throw new WorkflowError("Aanwezigen en afwezigen moeten deelnemers van de hogeraadsronde van dit voorstel zijn.");
+      }
+    }
+
+    const negatives = await tx.vote.count({ where: { callingId: calling.id, stage: input.stage, support: false } });
+    let resolutionNote: string | null = null;
+    if (negatives > 0) {
+      resolutionNote = input.resolutionNote?.trim().slice(0, 500) || null;
+      if (input.resolveNegative !== true || !resolutionNote || resolutionNote.length < 10) {
+        throw new WorkflowError(
+          "Er is een negatieve reactie. Leg eerst vast hoe die is afgehandeld (bevestiging en toelichting); negatieve reacties worden nooit stilzwijgend overschreven."
+        );
+      }
+    }
+
+    await tx.groupDecision.create({
+      data: {
+        callingId: calling.id,
+        stage: input.stage,
+        decidedOn,
+        registeredById: input.actorId,
+        agreed: true,
+        note,
+        presidingUserId,
+        presentUserIds,
+        absentUserIds,
+        overrodeNegativeVotes: negatives > 0,
+        resolutionNote,
+      },
+    });
+    await tx.callingAudit.create({
+      data: {
+        callingId: calling.id,
+        type: input.stage === "PRESIDIUM" ? "GROUP_DECISION_PRESIDIUM" : "GROUP_DECISION_HOGERAAD",
+        actorId: input.actorId,
+        detail: negatives > 0 ? "met afhandeling van negatieve reactie(s)" : null,
+      },
+    });
+
+    const now = new Date();
+    const updated =
+      input.stage === "PRESIDIUM"
+        ? await tx.calling.update({
+            where: { id: calling.id },
+            data: { status: "PRESIDIUM_APPROVED", presidiumApprovedAt: now, presidiumApprovalMethod: "MEETING" },
+          })
+        : await tx.calling.update({
+            where: { id: calling.id },
+            data: { status: "APPROVED", approvedAt: now, hogeraadApprovalMethod: "MEETING" },
+          });
+    return { calling: updated, alreadyRegistered: false };
+  });
 }
 
 /** Vraagt een persoon opnieuw om ondersteuning (alleen bij een gepauzeerd voorstel); de eerdere reactie blijft staan tot de persoon hem zelf wijzigt. */

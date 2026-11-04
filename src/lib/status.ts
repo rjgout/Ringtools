@@ -23,6 +23,8 @@ export function phaseLabel(calling: Calling): string {
       return "Ondersteuningsronde ringpresidium";
     case "PRESIDIUM_PAUSED":
       return "Gepauzeerd – ringpresidium ondersteunt niet";
+    case "PRESIDIUM_APPROVED":
+      return "Presidium akkoord – wacht op vrijgave aan de hoge raad";
     case "HOGERAAD_VOTING":
       return "Ondersteuningsronde hoge raad";
     case "HOGERAAD_PAUSED":

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { resetDatabase, createTestUser, createCalling, getTestRing } from "./setup";
+import { resetDatabase, createTestUser, createCalling, getTestRing, approveCallingFully } from "./setup";
 
 const sendNotification = vi.fn();
 
@@ -134,7 +134,8 @@ describe("Geen dubbele meldingen bij workflow-gebeurtenissen", () => {
   it("een taak corrigeren na afronding maakt geen tweede TASK_COMPLETED-melding aan", async () => {
     const presidium = await createTestUser("RINGPRESIDIUM", "President Een");
     const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium.id });
-    const approved = await castVote({ callingId: calling.id, userId: presidium.id, support: true });
+    await castVote({ callingId: calling.id, userId: presidium.id, support: true });
+    const approved = await approveCallingFully(calling.id);
 
     await completeTask({ callingId: approved.id, task: "ROEPEN", doneById: presidium.id, doneAt: new Date() });
     expect(await prisma.notification.count({ where: { type: "TASK_COMPLETED", callingId: calling.id } })).toBe(1);
@@ -149,7 +150,8 @@ describe("Opruimen bij verwijderde roepingen", () => {
   it("verwijderde roepingen laten geen gekoppelde meldingen (persoonsgegevens) achter", async () => {
     const presidium = await createTestUser("RINGPRESIDIUM", "President Een");
     const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium.id });
-    const approved = await castVote({ callingId: calling.id, userId: presidium.id, support: true });
+    await castVote({ callingId: calling.id, userId: presidium.id, support: true });
+    const approved = await approveCallingFully(calling.id);
 
     for (const task of ["ROEPEN", "ONDERSTEUNEN", "AANSTELLEN"] as const) {
       await completeTask({

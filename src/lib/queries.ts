@@ -14,7 +14,7 @@ export async function listActiveUsers(ringId: string) {
 
 export async function getStaffDashboardCounts(ringId: string) {
   const base = { ringId };
-  const [presidium, hogeraad, paused, approved, readyToProcess, roepenOpen, ondersteunenOpen, aanstellenOpen] =
+  const [presidium, hogeraad, paused, approved, readyToProcess, roepenOpen, ondersteunenOpen, aanstellenOpen, awaitingRelease] =
     await Promise.all([
       prisma.calling.count({ where: { ...base, status: { in: ["PRESIDIUM_VOTING", "PRESIDIUM_PAUSED"] } } }),
       prisma.calling.count({ where: { ...base, status: { in: ["HOGERAAD_VOTING", "HOGERAAD_PAUSED"] } } }),
@@ -33,14 +33,15 @@ export async function getStaffDashboardCounts(ringId: string) {
       prisma.calling.count({ where: { ...base, status: "APPROVED", roepenDoneAt: null } }),
       prisma.calling.count({ where: { ...base, status: "APPROVED", ondersteunenDoneAt: null } }),
       prisma.calling.count({ where: { ...base, status: "APPROVED", aanstellenDoneAt: null } }),
+      prisma.calling.count({ where: { ...base, status: "PRESIDIUM_APPROVED" } }),
     ]);
 
-  return { presidium, hogeraad, paused, approved, readyToProcess, roepenOpen, ondersteunenOpen, aanstellenOpen };
+  return { presidium, hogeraad, paused, approved, readyToProcess, roepenOpen, ondersteunenOpen, aanstellenOpen, awaitingRelease };
 }
 
 export async function listAttentionCallingsForStaff(ringId: string): Promise<Calling[]> {
   return prisma.calling.findMany({
-    where: { ringId, status: { in: ["PRESIDIUM_PAUSED", "HOGERAAD_PAUSED"] } },
+    where: { ringId, status: { in: ["PRESIDIUM_PAUSED", "HOGERAAD_PAUSED", "PRESIDIUM_APPROVED"] } },
     orderBy: { updatedAt: "desc" },
     take: 10,
   });
@@ -51,6 +52,7 @@ export type CallingFilter =
   | "presidium"
   | "hogeraad"
   | "gepauzeerd"
+  | "vrijgave"
   | "goedgekeurd"
   | "roepen"
   | "ondersteunen"
@@ -65,6 +67,9 @@ export async function listCallings(ringId: string, filter: CallingFilter = "alle
       break;
     case "hogeraad":
       where.status = { in: ["HOGERAAD_VOTING", "HOGERAAD_PAUSED"] };
+      break;
+    case "vrijgave":
+      where.status = "PRESIDIUM_APPROVED";
       break;
     case "gepauzeerd":
       where.status = { in: ["PRESIDIUM_PAUSED", "HOGERAAD_PAUSED"] };

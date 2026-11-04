@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { resetDatabase, createTestUser, createTestRing, createCalling } from "./setup";
-import { castVote, reinviteVoter, remindParticipants, deleteCalling, markProcessed, completeTask, WorkflowError, AuthorizationError } from "@/lib/workflow";
+import { resetDatabase, createTestUser, createTestRing, createCalling, approveCallingFully } from "./setup";
+import { castVote, releaseToHogeraad, reinviteVoter, remindParticipants, deleteCalling, markProcessed, completeTask, WorkflowError, AuthorizationError } from "@/lib/workflow";
 
 beforeEach(async () => {
   await resetDatabase();
@@ -111,6 +111,7 @@ describe("Voorstel verwijderen", () => {
   it("webmin mag verwijderen; verwerkte voorstellen niet", async () => {
     const { calling, members, secretary } = await ringWithPresidium(1);
     await castVote({ callingId: calling.id, userId: members[0].id, support: true });
+    await approveCallingFully(calling.id);
     for (const task of ["ROEPEN", "ONDERSTEUNEN", "AANSTELLEN"] as const) {
       await completeTask({ callingId: calling.id, task, doneById: secretary.id, doneAt: new Date(), ...(task === "ONDERSTEUNEN" ? { ondersteunenContext: "RINGCONFERENTIE" as const } : {}) });
     }
@@ -137,8 +138,11 @@ describe("Volledige ondersteuningsprocedure", () => {
     const { ring, members, calling, secretary } = await ringWithPresidium(2);
     const ha = await createTestUser("HOGERAAD", "Hogeraad 1", { ringId: ring.id });
     for (const m of members) await castVote({ callingId: calling.id, userId: m.id, support: true });
+    expect((await prisma.calling.findUniqueOrThrow({ where: { id: calling.id } })).status).toBe("PRESIDIUM_APPROVED");
+    await releaseToHogeraad({ callingId: calling.id, actorId: members[0].id });
     expect((await prisma.calling.findUniqueOrThrow({ where: { id: calling.id } })).status).toBe("HOGERAAD_VOTING");
-    const done = await castVote({ callingId: calling.id, userId: ha.id, support: true });
+    await castVote({ callingId: calling.id, userId: ha.id, support: true });
+    const done = await approveCallingFully(calling.id);
     expect(done.status).toBe("APPROVED");
     for (const task of ["ROEPEN", "ONDERSTEUNEN", "AANSTELLEN"] as const) {
       await completeTask({ callingId: calling.id, task, doneById: secretary.id, doneAt: new Date(), ...(task === "ONDERSTEUNEN" ? { ondersteunenContext: "RINGCONFERENTIE" as const } : {}) });

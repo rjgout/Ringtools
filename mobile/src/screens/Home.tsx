@@ -30,6 +30,11 @@ export function Home() {
               <div className="glass panel row between">
                 <span>Hoge raad</span><strong>{data.counts.hogeraad}</strong>
               </div>
+              {data.counts.awaitingRelease > 0 && (
+                <div className="glass panel row between">
+                  <span>Presidium akkoord – wacht op vrijgave</span><strong>{data.counts.awaitingRelease}</strong>
+                </div>
+              )}
               <div className="glass panel row between">
                 <span>Gepauzeerd</span><strong>{data.counts.paused}</strong>
               </div>

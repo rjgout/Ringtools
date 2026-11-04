@@ -40,7 +40,9 @@ test("een ringpresidiumlid kan via de detailpagina zelf zijn presidiumondersteun
   await page.waitForLoadState("networkidle");
 
   const updated = await prisma.calling.findUniqueOrThrow({ where: { id: calling.id } });
-  expect(updated.status).toBe("APPROVED"); // enige deelnemer, geen hogeraadsleden -> direct goedgekeurd
+  // Presidium akkoord: nooit automatisch goedgekeurd (ook niet zonder hogeraadsleden) en geen automatische doorstart.
+  expect(updated.status).toBe("PRESIDIUM_APPROVED");
 
-  await expect(page.getByText("Goedgekeurd")).toBeVisible();
+  await expect(page.getByText("Presidium akkoord – wacht op vrijgave aan de hoge raad").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Vrijgeven aan de hoge raad" })).toBeVisible();
 });

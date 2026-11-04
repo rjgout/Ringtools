@@ -11,9 +11,10 @@ import { TaskRow } from "@/components/TaskRow";
 import { WhatsAppShareButton } from "@/components/WhatsAppShareButton";
 import { RingSync } from "@/components/RingSync";
 import { DeleteCallingButton } from "@/components/DeleteCallingButton";
-import { markProcessedAction } from "@/lib/actions/calling.actions";
+import { markProcessedAction, releaseToHogeraadAction } from "@/lib/actions/calling.actions";
 
 const MELDINGEN: Record<string, (q: Record<string, string | undefined>) => string> = {
+  "vrijgave-mislukt": () => "Vrijgeven is niet gelukt. Controleer of er actieve hogeraadsleden zijn ingericht.",
   herinnering: (q) => {
     const sent = Number(q.verstuurd ?? 0);
     const skipped = Number(q.overgeslagen ?? 0);
@@ -124,6 +125,14 @@ export default async function CallingDetailPage({
           </p>
           <WhatsAppShareButton />
         </div>
+      )}
+
+      {staff && calling.status === "PRESIDIUM_APPROVED" && (
+        <form action={releaseToHogeraadAction} className="glass-card space-y-2">
+          <input type="hidden" name="callingId" value={calling.id} />
+          <p className="text-sm">Het presidium is akkoord. De hoge raad ontvangt pas een verzoek nadat je dit voorstel expliciet vrijgeeft.</p>
+          <button className="btn btn-primary">Vrijgeven aan de hoge raad</button>
+        </form>
       )}
 
       <section className="glass-card">

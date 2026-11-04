@@ -178,6 +178,28 @@ export class ApiClient {
   removeParticipant(id: string, userId: string) {
     return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/remove-participant`, { userId });
   }
+  /** Geeft een voorstel met presidiumakkoord expliciet vrij aan de hoge raad (idempotent). */
+  release(id: string) {
+    return this.request<{ ok: boolean; released: boolean; alreadyReleased: boolean }>("POST", `/callings/${encodeURIComponent(id)}/release`, {});
+  }
+  /** Legt een in een vergadering genomen gezamenlijk besluit vast; maakt nooit individuele reacties namens anderen. */
+  groupDecision(
+    id: string,
+    input: {
+      stage: "PRESIDIUM" | "HOGERAAD";
+      decidedOn: string;
+      agreed: boolean;
+      note?: string;
+      presidingUserId?: string;
+      presentUserIds?: string[];
+      absentUserIds?: string[];
+      resolveNegative?: boolean;
+      resolutionNote?: string;
+      releaseNow?: boolean;
+    }
+  ) {
+    return this.request<{ ok: boolean; alreadyRegistered: boolean }>("POST", `/callings/${encodeURIComponent(id)}/group-decision`, input);
+  }
   markProcessed(id: string) {
     return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/process`, {});
   }

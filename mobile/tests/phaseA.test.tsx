@@ -17,7 +17,8 @@ const detail = (over: Record<string, unknown> = {}) => ({
     { userId: "u2", name: "Bert", support: false, lastInvitedAt: "", stillInvolved: true },
   ] }],
   tasks: [task({}), task({ task: "ONDERSTEUNEN", label: "Ondersteunen" })],
-  readyToProcess: true, canDelete: true, assignableUsers: [{ id: "u1", name: "Anna", role: "HOGERAAD" }], ...over,
+  readyToProcess: true, canDelete: true, assignableUsers: [{ id: "u1", name: "Anna", role: "HOGERAAD" }, { id: "p1", name: "President", role: "RINGPRESIDIUM" }],
+  awaitingRelease: false, canRelease: false, groupDecisions: [], canRegisterGroupDecision: { PRESIDIUM: false, HOGERAAD: false }, ...over,
 });
 
 function renderDetail(api: Record<string, unknown>, d = detail()) {
@@ -89,5 +90,47 @@ describe("Fase A: staf-acties vanuit de app (iOS en Android gebruiken dezelfde c
     fireEvent.click(screen.getByRole("button", { name: "Voorstel indienen" }));
     await waitFor(() => expect(createCalling).toHaveBeenCalledWith("r1", expect.objectContaining({ personName: "Jan Jansen", functionTitle: "Leraar", roepenAssigneeId: "u1", aanstellenAssigneeId: null })));
     expect(await screen.findByText("detail")).toBeTruthy();
+  });
+});
+
+describe("C1: vrijgave en gezamenlijk akkoord", () => {
+  it("toont 'wacht op vrijgave' en geeft pas na de knop vrij", async () => {
+    const api = renderDetail({ release: vi.fn(async () => ({ ok: true, released: true, alreadyReleased: false })) }, detail({ status: "PRESIDIUM_APPROVED", awaitingRelease: true, canRelease: true })) as Record<string, ReturnType<typeof vi.fn>>;
+    expect(await screen.findByText(/Presidium akkoord – wacht op vrijgave aan de hoge raad/)).toBeTruthy();
+    expect(api.release).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Vrijgeven aan de hoge raad" }));
+    await waitFor(() => expect(api.release).toHaveBeenCalledWith("c1"));
+  });
+
+  it("legt een gezamenlijk presidiumakkoord vast zonder individuele reacties; bevestiging is verplicht", async () => {
+    const api = renderDetail({ groupDecision: vi.fn(async () => ({ ok: true, alreadyRegistered: false })) }, detail({ canRegisterGroupDecision: { PRESIDIUM: true, HOGERAAD: false } })) as Record<string, ReturnType<typeof vi.fn>>;
+    fireEvent.click(await screen.findByText(/Gezamenlijk akkoord ringpresidium registreren/));
+    const submit = screen.getByRole("button", { name: "Besluit vastleggen" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true); // zonder expliciete verklaring kan niets worden vastgelegd
+    fireEvent.click(screen.getByLabelText(/heeft dit voorstel in de vergadering akkoord bevonden/));
+    // In dit voorbeeld heeft Bert negatief gereageerd: zonder gemotiveerde afhandeling blijft vastleggen geblokkeerd.
+    expect(submit.disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText(/negatieve reactie is in de vergadering afgehandeld/));
+    fireEvent.change(screen.getByLabelText(/Hoe is dit afgehandeld/), { target: { value: "Zorg besproken en weggenomen." } });
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    await waitFor(() => expect(api.groupDecision).toHaveBeenCalledWith("c1", expect.objectContaining({ stage: "PRESIDIUM", agreed: true, releaseNow: false, resolveNegative: true })));
+  });
+
+  it("hoge raad: vereist een voorzitter uit het ringpresidium en aanwezigen; afwezigen worden apart doorgegeven", async () => {
+    const d = detail({ status: "HOGERAAD_VOTING", canRegisterGroupDecision: { PRESIDIUM: false, HOGERAAD: true } });
+    (d.rounds as unknown[]).push({ stage: "HOGERAAD", title: "Hoge raad", state: "open", canRespond: false, myResponse: null, participants: [
+      { userId: "h1", name: "Hans", support: null, lastInvitedAt: "", stillInvolved: true }, { userId: "h2", name: "Hella", support: null, lastInvitedAt: "", stillInvolved: true } ] });
+    const api = renderDetail({ groupDecision: vi.fn(async () => ({ ok: true, alreadyRegistered: false })) }, d) as Record<string, ReturnType<typeof vi.fn>>;
+    fireEvent.click(await screen.findByText(/Gezamenlijk akkoord hoge raad registreren/));
+    fireEvent.click(screen.getByLabelText(/heeft dit voorstel in de vergadering akkoord bevonden/));
+    const submit = screen.getByRole("button", { name: "Besluit vastleggen" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true); // geen voorzitter en geen aanwezigen
+    fireEvent.change(screen.getByLabelText(/Voorzitter/), { target: { value: "p1" } });
+    const [presentHans] = screen.getAllByLabelText("Hans");
+    fireEvent.click(presentHans);
+    fireEvent.click(screen.getAllByLabelText("Hella")[1]);
+    fireEvent.click(submit);
+    await waitFor(() => expect(api.groupDecision).toHaveBeenCalledWith("c1", expect.objectContaining({ stage: "HOGERAAD", presidingUserId: "p1", presentUserIds: ["h1"], absentUserIds: ["h2"] })));
   });
 });

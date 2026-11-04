@@ -155,8 +155,14 @@ describe("API: ondersteuningsprocedure", () => {
 
     expect((await call("POST", `/callings/${created.body.id}/vote`, { token, body: { support: true } })).status).toBe(200);
     const after = await call("GET", `/callings/${created.body.id}`, { token });
-    expect(after.body.status).toBe("HOGERAAD_VOTING");
-    expect(after.body.rounds.map((r: { stage: string }) => r.stage)).toEqual(["PRESIDIUM", "HOGERAAD"]);
+    // Presidiumakkoord start de hoge raad niet vanzelf: eerst expliciete vrijgave.
+    expect(after.body.status).toBe("PRESIDIUM_APPROVED");
+    expect(after.body.canRelease).toBe(true);
+    expect((await call("POST", `/callings/${created.body.id}/release`, { token })).body.released).toBe(true);
+    expect((await call("POST", `/callings/${created.body.id}/release`, { token })).body.alreadyReleased).toBe(true);
+    const released = await call("GET", `/callings/${created.body.id}`, { token });
+    expect(released.body.status).toBe("HOGERAAD_VOTING");
+    expect(released.body.rounds.map((r: { stage: string }) => r.stage)).toEqual(["PRESIDIUM", "HOGERAAD"]);
 
     const hogeraadToken = await login(users[1].id);
     const hogeraadView = await call("GET", `/callings/${created.body.id}`, { token: hogeraadToken });
@@ -223,6 +229,8 @@ describe("API: ondersteuningsprocedure", () => {
     const calling = await createCalling({ ringId: ring.id, personName: "Jan", functionTitle: "F", createdById: users[0].id });
     const [presidium, secretary] = await Promise.all(users.map((u) => login(u.id)));
     await call("POST", `/callings/${calling.id}/vote`, { token: presidium, body: { support: true } });
+    const { approveCallingFully } = await import("./setup");
+    await approveCallingFully(calling.id);
     expect((await call("GET", `/callings/${calling.id}`, { token: presidium })).body.status).toBe("APPROVED");
 
     expect((await call("POST", `/callings/${calling.id}/tasks/roepen/assign`, { token: presidium, body: { assigneeId: users[1].id } })).status).toBe(200);

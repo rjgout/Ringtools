@@ -44,3 +44,27 @@ Wordt na elke fase bijgewerkt (zie hieronder).
 - **Sessie-intrekking op afstand:** `/sessions` en `/admin/sessions` (+ `/revoke`).
 - Blokkades: geen fysieke toesteltest; passkey-herverificatie en native passkeys (Fase C); uitnodigingsmail voor nieuwe gebruikers (Fase C: nu loggen
   nieuwe gebruikers in via "Stuur code" op hun e-mailadres); TOTP-inschrijving blijft web (technisch beheer).
+
+## Fase C (functionele herziening, opdracht na `61dcef5`)
+
+Volgorde: C1 workflowcorrecties · C2 ringinrichting + roepingencatalogus · C3 concepten en nieuw roepingsproces · C4 ontheffingen ·
+C5 uitnodigingen en native MFA · C6 afronding. Ringtools is een hulpmiddel om voorstellen, ondersteuning, ontheffingen en uitvoering te
+coördineren; **LCR blijft de officiële bron**, Ringtools houdt geen blijvend personenregister bij en neemt geen kerkelijke beslissingen.
+
+### C1 – Workflowcorrecties (gerealiseerd)
+- **Geen automatische goedkeuring meer** bij een lege hoge raad (de regel is verwijderd). Een lege hoge raad blokkeert de vrijgave met een duidelijke melding.
+- **Nieuwe status `PRESIDIUM_APPROVED`** ("Presidium akkoord – wacht op vrijgave aan de hoge raad"). Na individueel of gezamenlijk akkoord start de
+  hogeraadronde NIET meer automatisch en de hoge raad ontvangt niets.
+- **Vrijgave** (`releaseToHogeraad`, `POST /callings/:id/release`): alleen ringstaf van de eigen (actieve) ring; controleert opnieuw de actieve
+  hogeraadsleden (en is het haakpunt voor de persoonlijke kennisgeving bij ontheffingen, C4); maakt de deelnemerslijst; start de ronde; verstuurt de
+  meldingen. Idempotent en race-vrij (rij-lock): exact één ronde, één audit-regel (`CallingAudit`), één uitnodiging per persoon.
+- **Gezamenlijk akkoord** (`registerGroupDecision`, `POST /callings/:id/group-decision`) voor presidium én hoge raad. Het is een vastlegging van een
+  daadwerkelijk genomen besluit (`GroupDecision`: datum, registrant, tijdstip, expliciete verklaring, toelichting). Er worden **nooit** reacties namens
+  anderen aangemaakt; secretaris/administrateur registreren namens het presidium en tellen niet als ondersteuner. Hoge raad: verplichte presiderende
+  persoon uit het ringpresidium, minstens één aanwezige, aanwezigen/afwezigen moeten deelnemers van de ronde zijn, afwezig ≠ ondersteunend. Er is
+  bewust géén quorum- of meerderheidsregel. Bestaande negatieve reacties blijven bewaard; registreren vereist een expliciete, gemotiveerde afhandeling.
+- **Datamodel (additief, migratie `20261107100000_c1_workflow_vrijgave`):** enum-waarde `PRESIDIUM_APPROVED`, enum `DecisionMethod`, kolommen op
+  `Calling` (presidiumApprovedAt/-Method, hogeraadReleasedAt/-ById, hogeraadApprovalMethod), tabellen `GroupDecision` en `CallingAudit` (beide
+  cascade op het voorstel: verdwijnen met het voorstel, dus geen blijvend register). Bestaande voorstellen en statussen blijven ongewijzigd geldig.
+- Overgangswebapp: alleen een knop "Vrijgeven aan de hoge raad" (zodat geen voorstel vastloopt); gezamenlijke besluiten zijn app-only.
+- Open bij C1: pushmelding aan ringstaf bij "wacht op vrijgave" (nu zichtbaar op overzicht/dashboard); toesteltest.

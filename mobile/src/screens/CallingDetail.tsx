@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
-import type { TaskKey, TaskView } from "@shared/api-types";
+import type { CallingDetail as Detail, TaskKey, TaskView } from "@shared/api-types";
 import { ErrorState, Spinner } from "../components/ui";
 
 export function CallingDetail() {
@@ -99,6 +99,32 @@ export function CallingDetail() {
               ))}
             </section>
           ))}
+          {data.awaitingRelease && (
+            <section className="glass card stack" aria-label="Vrijgave">
+              <strong>Presidium akkoord – wacht op vrijgave aan de hoge raad</strong>
+              <span className="muted">De hoge raad ontvangt pas een verzoek nadat een bevoegde gebruiker het voorstel expliciet vrijgeeft.</span>
+              {data.canRelease && (
+                <button className="btn btn-primary" disabled={busy} onClick={() => act(() => api.release(id), (r) => (r.alreadyReleased ? "Dit voorstel was al vrijgegeven." : "Het voorstel is vrijgegeven aan de hoge raad."))}>
+                  Vrijgeven aan de hoge raad
+                </button>
+              )}
+            </section>
+          )}
+          {data.me.isStaff && (["PRESIDIUM", "HOGERAAD"] as const).filter((st) => data.canRegisterGroupDecision?.[st]).map((st) => (
+            <GroupDecisionForm key={st} stage={st} detail={data} busy={busy}
+              onSubmit={(input) => act(() => api.groupDecision(id, { stage: st, ...input }), "Het gezamenlijke besluit is vastgelegd.")} />
+          ))}
+          {(data.groupDecisions ?? []).map((d) => (
+            <section key={d.stage} className="glass card stack" aria-label={`Gezamenlijk besluit ${d.stage === "PRESIDIUM" ? "presidium" : "hoge raad"}`}>
+              <strong>Gezamenlijk besluit {d.stage === "PRESIDIUM" ? "ringpresidium" : "hoge raad"} (vergadering)</strong>
+              <span className="muted">Besloten op {d.decidedOn}; geregistreerd door {d.registeredBy}.</span>
+              {d.presiding && <span>Voorzitter: {d.presiding}</span>}
+              {d.present.length > 0 && <span>Aanwezig: {d.present.join(", ")}</span>}
+              {d.absent.length > 0 && <span>Afwezig (geen ondersteuning geregistreerd): {d.absent.join(", ")}</span>}
+              {d.overrodeNegativeVotes && <span className="badge">Negatieve reactie afgehandeld: {d.resolutionNote}</span>}
+              {d.note && <span className="muted">{d.note}</span>}
+            </section>
+          ))}
           {data.tasks.length > 0 && (
             <section className="glass card stack" aria-label="Taken">
               <strong>Taken</strong>
@@ -182,5 +208,71 @@ function TaskRow({ task, users, busy, onAssign, onComplete }: {
         </>
       )}
     </div>
+  );
+}
+
+function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
+  stage: "PRESIDIUM" | "HOGERAAD";
+  detail: Detail;
+  busy: boolean;
+  onSubmit: (input: { decidedOn: string; agreed: boolean; note?: string; presidingUserId?: string; presentUserIds?: string[]; absentUserIds?: string[]; resolveNegative?: boolean; resolutionNote?: string; releaseNow?: boolean }) => void;
+}) {
+  const round = detail.rounds.find((r) => r.stage === stage);
+  const hasNegative = !!round?.participants.some((p) => p.support === false);
+  const [open, setOpen] = useState(false);
+  const [decidedOn, setDecidedOn] = useState(new Date().toISOString().slice(0, 10));
+  const [agreed, setAgreed] = useState(false);
+  const [note, setNote] = useState("");
+  const [presiding, setPresiding] = useState("");
+  const [present, setPresent] = useState<string[]>([]);
+  const [absent, setAbsent] = useState<string[]>([]);
+  const [resolveNegative, setResolveNegative] = useState(false);
+  const [resolutionNote, setResolutionNote] = useState("");
+  const [releaseNow, setReleaseNow] = useState(false);
+  const label = stage === "PRESIDIUM" ? "ringpresidium" : "hoge raad";
+  const toggle = (list: string[], set: (v: string[]) => void, id: string) => set(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+
+  if (!open) return <button className="btn btn-ghost" onClick={() => setOpen(true)}>Gezamenlijk akkoord {label} registreren (vergadering)</button>;
+  const members = round?.participants ?? [];
+  const valid = agreed && decidedOn && (!hasNegative || (resolveNegative && resolutionNote.trim().length >= 10)) && (stage === "PRESIDIUM" || (presiding && present.length > 0));
+  return (
+    <form className="glass card stack" aria-label={`Gezamenlijk akkoord ${label}`} onSubmit={(e) => {
+      e.preventDefault();
+      onSubmit({
+        decidedOn, agreed, note: note || undefined, resolveNegative: hasNegative ? resolveNegative : undefined, resolutionNote: hasNegative ? resolutionNote : undefined,
+        ...(stage === "HOGERAAD" ? { presidingUserId: presiding, presentUserIds: present, absentUserIds: absent } : { releaseNow }),
+      });
+    }}>
+      <strong>Gezamenlijk akkoord {label}</strong>
+      <span className="muted">Registreer alleen een besluit dat daadwerkelijk in een vergadering is genomen. Er worden geen reacties namens anderen vastgelegd; afwezigheid geldt nooit als ondersteuning.</span>
+      <div><label htmlFor={`gd-date-${stage}`}>Datum van het besluit</label><input id={`gd-date-${stage}`} type="date" value={decidedOn} onChange={(e) => setDecidedOn(e.target.value)} required /></div>
+      {stage === "HOGERAAD" && (
+        <>
+          <div>
+            <label htmlFor="gd-presiding">Voorzitter (lid van het ringpresidium)</label>
+            <select id="gd-presiding" value={presiding} onChange={(e) => setPresiding(e.target.value)} required>
+              <option value="">Kies…</option>
+              {detail.assignableUsers.filter((u) => u.role === "RINGPRESIDIUM").map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
+          <fieldset className="stack"><legend>Aanwezig</legend>
+            {members.map((m) => <label key={m.userId} className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={present.includes(m.userId)} disabled={absent.includes(m.userId)} onChange={() => toggle(present, setPresent, m.userId)} /> {m.name}</label>)}
+          </fieldset>
+          <fieldset className="stack"><legend>Afwezig</legend>
+            {members.map((m) => <label key={m.userId} className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={absent.includes(m.userId)} disabled={present.includes(m.userId)} onChange={() => toggle(absent, setAbsent, m.userId)} /> {m.name}</label>)}
+          </fieldset>
+        </>
+      )}
+      <div><label htmlFor={`gd-note-${stage}`}>Korte toelichting (optioneel)</label><input id={`gd-note-${stage}`} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} /></div>
+      {hasNegative && (
+        <fieldset className="stack"><legend>Er is een negatieve reactie</legend>
+          <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={resolveNegative} onChange={(e) => setResolveNegative(e.target.checked)} /> De negatieve reactie is in de vergadering afgehandeld (de reactie zelf blijft bewaard)</label>
+          <div><label htmlFor={`gd-res-${stage}`}>Hoe is dit afgehandeld? (minimaal 10 tekens, geen gevoelige details)</label><input id={`gd-res-${stage}`} value={resolutionNote} maxLength={500} onChange={(e) => setResolutionNote(e.target.value)} /></div>
+        </fieldset>
+      )}
+      <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /> Het {label} heeft dit voorstel in de vergadering akkoord bevonden</label>
+      {stage === "PRESIDIUM" && <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={releaseNow} onChange={(e) => setReleaseNow(e.target.checked)} /> Direct vrijgeven aan de hoge raad</label>}
+      <div className="row"><button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>Annuleren</button><button className="btn btn-primary" disabled={busy || !valid}>Besluit vastleggen</button></div>
+    </form>
   );
 }

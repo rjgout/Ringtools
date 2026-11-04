@@ -270,7 +270,7 @@ describe("Bestaande workflows blijven werken na de MFA-uitbreiding", () => {
     const presidium = await createTestUser("RINGPRESIDIUM", "President Een");
     const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium.id });
     const updated = await castVote({ callingId: calling.id, userId: presidium.id, support: true });
-    expect(updated.status).toBe("APPROVED");
+    expect(updated.status).toBe("PRESIDIUM_APPROVED"); // wacht op vrijgave aan de hoge raad
   });
 });
 

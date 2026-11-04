@@ -127,6 +127,11 @@ bijwerken van deze tabel en van `docs/MOBILE.md`.
   tweede factor (`reauth-required` → herverificatie). Een gedeactiveerde ring (`Ring.active`) is voor niemand toegankelijk behalve voor de webmin;
   bij nieuwe lidmaatschapscontroles altijd `ring: { active: true }` meenemen.
 
+- **Workflowregels (vastgesteld door de eigenaar).** Een lege hoge raad leidt nooit tot goedkeuring; presidiumakkoord start de hogeraadronde nooit
+  automatisch (status `PRESIDIUM_APPROVED` → expliciete, idempotente vrijgave met audit); gezamenlijke besluiten leggen een werkelijk genomen besluit vast
+  en maken nooit reacties namens anderen aan; negatieve reacties worden nooit stilzwijgend overschreven. LCR blijft de bron voor ledengegevens en
+  roepingen: bewaar geen blijvend personenregister en importeer nooit persoonsgegevens uit LCR (alleen functietitels).
+
 ## Design
 
 Mobile-first; Liquid Glass-stijl behouden (tokens in `src/app/globals.css` en `mobile/src/styles.css`); iPhone, iPad en

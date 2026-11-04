@@ -135,6 +135,8 @@ authedRoute("POST", "/callings/:id/remove-participant", async ({ auth, params, b
   svc.removeParticipantFor(auth.user.id, params.id, str(body.userId))
 );
 authedRoute("POST", "/callings/:id/delete", async ({ auth, params, body }) => svc.deleteCallingFor(auth.user.id, params.id, body.confirmed === true));
+authedRoute("POST", "/callings/:id/release", async ({ auth, params }) => svc.releaseFor(auth.user.id, params.id));
+authedRoute("POST", "/callings/:id/group-decision", async ({ auth, params, body }) => svc.groupDecisionFor(auth.user.id, params.id, body));
 authedRoute("POST", "/callings/:id/process", async ({ auth, params }) => svc.markProcessedFor(auth.user.id, params.id));
 authedRoute("POST", "/callings/:id/tasks/:task/assign", async ({ auth, params, body }) =>
   svc.assignTaskFor(auth.user.id, params.id, params.task, str(body.assigneeId) || null)

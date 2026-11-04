@@ -11,7 +11,7 @@ const { CallingDetail } = await import("../src/screens/CallingDetail");
 
 const detail = (ringId: string) => ({
   id: "c1", ring: { id: ringId, name: "Ring" }, personName: "Jan", functionTitle: "F", status: "PRESIDIUM_VOTING", phase: "Presidium",
-  createdAt: "", createdBy: "", processedAt: null, me: { role: "HOGERAAD", isStaff: false }, rounds: [], tasks: [], readyToProcess: false, canDelete: false, assignableUsers: [],
+  createdAt: "", createdBy: "", processedAt: null, me: { role: "HOGERAAD", isStaff: false }, rounds: [], tasks: [], readyToProcess: false, canDelete: false, assignableUsers: [], awaitingRelease: false, canRelease: false, groupDecisions: [], canRegisterGroupDecision: { PRESIDIUM: false, HOGERAAD: false },
 });
 
 function setup(activeRing: string, calling: string) {

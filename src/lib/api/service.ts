@@ -22,6 +22,8 @@ import {
   assignTask,
   completeTask,
   markProcessed,
+  releaseToHogeraad,
+  registerGroupDecision,
   TASK_LABELS,
   WorkflowError,
   AuthorizationError,
@@ -213,7 +215,7 @@ export async function getCallingView(userId: string, callingId: string) {
     const prefix = stage;
     if (calling.status === `${prefix}_VOTING`) return "open" as const;
     if (calling.status === `${prefix}_PAUSED`) return "paused" as const;
-    if (stage === "PRESIDIUM" && (calling.status.startsWith("HOGERAAD") || calling.status === "APPROVED" || calling.status === "PROCESSED")) return "done" as const;
+    if (stage === "PRESIDIUM" && (calling.status === "PRESIDIUM_APPROVED" || calling.status.startsWith("HOGERAAD") || calling.status === "APPROVED" || calling.status === "PROCESSED")) return "done" as const;
     if (stage === "HOGERAAD" && (calling.status === "APPROVED" || calling.status === "PROCESSED")) return "done" as const;
     return "upcoming" as const;
   };
@@ -281,7 +283,37 @@ export async function getCallingView(userId: string, callingId: string) {
     readyToProcess: staff && isReadyToProcess(calling),
     canDelete: staff && calling.status !== "PROCESSED" && !calling.processedAt,
     assignableUsers: assignable.map((u) => ({ id: u.id, name: u.name, role: u.role })),
+    awaitingRelease: calling.status === "PRESIDIUM_APPROVED",
+    canRelease: staff && calling.status === "PRESIDIUM_APPROVED",
+    groupDecisions: staff ? await groupDecisionViews(calling.id) : [],
+    canRegisterGroupDecision: {
+      PRESIDIUM: staff && (calling.status === "PRESIDIUM_VOTING" || calling.status === "PRESIDIUM_PAUSED") && !(await hasGroupDecision(calling.id, "PRESIDIUM")),
+      HOGERAAD: staff && (calling.status === "HOGERAAD_VOTING" || calling.status === "HOGERAAD_PAUSED") && !(await hasGroupDecision(calling.id, "HOGERAAD")),
+    },
   };
+}
+
+async function hasGroupDecision(callingId: string, stage: "PRESIDIUM" | "HOGERAAD") {
+  return (await prisma.groupDecision.count({ where: { callingId, stage } })) > 0;
+}
+
+async function groupDecisionViews(callingId: string) {
+  const rows = await prisma.groupDecision.findMany({ where: { callingId }, include: { registeredBy: true, presidingUser: true }, orderBy: { registeredAt: "asc" } });
+  const ids = [...new Set(rows.flatMap((r) => [...r.presentUserIds, ...r.absentUserIds]))];
+  const users = ids.length ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
+  const name = new Map(users.map((u) => [u.id, u.name]));
+  return rows.map((r) => ({
+    stage: r.stage,
+    decidedOn: r.decidedOn.toISOString().slice(0, 10),
+    registeredBy: r.registeredBy.name,
+    registeredAt: r.registeredAt.toISOString(),
+    note: r.note,
+    presiding: r.presidingUser?.name ?? null,
+    present: r.presentUserIds.map((id) => name.get(id) ?? "Onbekend"),
+    absent: r.absentUserIds.map((id) => name.get(id) ?? "Onbekend"),
+    overrodeNegativeVotes: r.overrodeNegativeVotes,
+    resolutionNote: r.resolutionNote,
+  }));
 }
 
 /** Actieve leden van de eigen ring, voor het kiezen van verantwoordelijken. Alleen voor staf; strikt per ring. */
@@ -371,6 +403,37 @@ export async function completeTaskFor(userId: string, callingId: string, taskRaw
   const ondersteunenContext = ctx === "AVONDMAALSVERGADERING" || ctx === "RINGCONFERENTIE" ? (ctx as OndersteuningContext) : undefined;
   await mapErrors(() => completeTask({ callingId, task, doneById: userId, doneAt, ondersteunenContext }));
   return { ok: true };
+}
+
+export async function releaseFor(userId: string, callingId: string) {
+  await staffForCalling(userId, callingId);
+  const result = await mapErrors(() => releaseToHogeraad({ callingId, actorId: userId }));
+  return { ok: true, released: result.released, alreadyReleased: result.alreadyReleased };
+}
+
+export async function groupDecisionFor(userId: string, callingId: string, body: Record<string, unknown>) {
+  await staffForCalling(userId, callingId);
+  const stage = body.stage === "PRESIDIUM" || body.stage === "HOGERAAD" ? body.stage : null;
+  if (!stage) throw new ApiError(400, "Geef aan voor welke fase het besluit geldt.", "validation");
+  const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  const result = await mapErrors(() =>
+    registerGroupDecision({
+      callingId,
+      actorId: userId,
+      stage,
+      decidedOn: typeof body.decidedOn === "string" ? body.decidedOn : "",
+      agreed: body.agreed === true,
+      note: typeof body.note === "string" ? body.note : undefined,
+      presidingUserId: typeof body.presidingUserId === "string" ? body.presidingUserId : undefined,
+      presentUserIds: list(body.presentUserIds),
+      absentUserIds: list(body.absentUserIds),
+      resolveNegative: body.resolveNegative === true,
+      resolutionNote: typeof body.resolutionNote === "string" ? body.resolutionNote : undefined,
+    })
+  );
+  // Optioneel direct vrijgeven na een gezamenlijk presidiumakkoord (dezelfde expliciete, geautoriseerde handeling).
+  if (stage === "PRESIDIUM" && body.releaseNow === true) await mapErrors(() => releaseToHogeraad({ callingId, actorId: userId }));
+  return { ok: true, alreadyRegistered: result.alreadyRegistered };
 }
 
 export async function markProcessedFor(userId: string, callingId: string) {

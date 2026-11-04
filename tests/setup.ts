@@ -70,3 +70,28 @@ export async function createCalling(
 ) {
   return createCallingInRing({ ...input, ringId: input.ringId ?? (await getTestRing()).id });
 }
+
+/**
+ * Brengt een voorstel langs alle ondersteuningsfasen naar "goedgekeurd", zoals het in productie gaat: het presidium
+ * ondersteunt, een bevoegde gebruiker geeft expliciet vrij en de hoge raad ondersteunt. Zorgt zo nodig voor één hogeraadslid
+ * (een lege hoge raad leidt nooit tot goedkeuring).
+ */
+export async function approveCallingFully(callingId: string) {
+  const { castVote, releaseToHogeraad } = await import("@/lib/workflow");
+  const { prisma } = await import("@/lib/prisma");
+  let calling = await prisma.calling.findUniqueOrThrow({ where: { id: callingId } });
+  const presidium = await prisma.eligibleVoter.findMany({ where: { callingId, stage: "PRESIDIUM" } });
+  if (calling.status === "PRESIDIUM_VOTING") {
+    for (const v of presidium) calling = await castVote({ callingId, userId: v.userId, support: true });
+  }
+  if (calling.status === "PRESIDIUM_APPROVED") {
+    const hasHogeraad = await prisma.ringMembership.count({ where: { ringId: calling.ringId, role: "HOGERAAD", active: true } });
+    if (!hasHogeraad) await createTestUser("HOGERAAD", `Hogeraadslid hulp ${Date.now()}`, { ringId: calling.ringId });
+    calling = (await releaseToHogeraad({ callingId, actorId: presidium[0].userId })).calling;
+  }
+  if (calling.status === "HOGERAAD_VOTING") {
+    const hogeraad = await prisma.eligibleVoter.findMany({ where: { callingId, stage: "HOGERAAD" } });
+    for (const v of hogeraad) calling = await castVote({ callingId, userId: v.userId, support: true });
+  }
+  return calling;
+}
