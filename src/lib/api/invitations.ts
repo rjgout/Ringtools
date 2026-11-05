@@ -91,7 +91,7 @@ export async function activateInvitationApi(body: Record<string, unknown>, clien
   const token = str(body.token);
   const credentials = token ? { token } : { email: str(body.email), code: str(body.code) };
   const result = await invitationErrors(() =>
-    activateInvitation(credentials, clientKey, { issueSession: body.issueSession !== false, deviceName: str(body.deviceName) })
+    activateInvitation(credentials, clientKey, { issueSession: body.issueSession === true, deviceName: str(body.deviceName) })
   );
   const base = { ok: true as const, email: result.email, ringName: result.ringName, mfaRequired: result.mfaRequired };
   // Zonder verplichte MFA: direct een gewone volledige sessie (het token staat alleen in deze JSON-respons, nooit in een URL of log).
