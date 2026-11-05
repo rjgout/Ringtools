@@ -7,6 +7,7 @@ import { API_BASE } from "../config";
 import { isNative, platform } from "./native";
 import { registerForPush } from "./push";
 import { resumeSession } from "./resume";
+import { useAppLock } from "../components/AppLock";
 import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, PasskeyError, passkeysUsable, type PasskeyAssertion } from "./passkeys";
 import { nativeCapabilities } from "./buildProfile";
 
@@ -151,31 +152,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const retryStartup = useCallback(() => setStartupAttempt((n) => n + 1), []);
 
-  // Terug naar de voorgrond: sessie verlengen en zo nodig het token vernieuwen.
-  useEffect(() => {
-    const onActive = async () => {
-      void flushRef.current();
-      if (!tokenRef.current) return;
-      try {
-        const result = await api.refresh();
-        if (result.rotated && result.token) {
-          tokenRef.current = result.token;
-          await storage.setToken(result.token);
-        }
-        if (api.admin) setMe(adminMe((await api.adminMe()).user));
-        else await applyMe(await api.me());
-      } catch {
-        /* 401 wordt door onUnauthorized afgehandeld; netwerkfouten negeren */
+  // Terug naar de voorgrond: sessie verlengen en zo nodig het token vernieuwen. Niet zolang de app vergrendeld is (er worden dan geen
+  // gegevens opgehaald); na het ontgrendelen volgt direct één verversing.
+  const lock = useAppLock();
+  const unlockedRef = useRef(true);
+  unlockedRef.current = lock.phase === "unlocked";
+  const refreshOnActive = useCallback(async () => {
+    void flushRef.current();
+    if (!tokenRef.current) return;
+    try {
+      const result = await api.refresh();
+      if (result.rotated && result.token) {
+        tokenRef.current = result.token;
+        await storage.setToken(result.token);
       }
+      if (api.admin) setMe(adminMe((await api.adminMe()).user));
+      else await applyMe(await api.me());
+    } catch {
+      /* 401 wordt door onUnauthorized afgehandeld; netwerkfouten negeren */
+    }
+  }, [api, applyMe]);
+  const refreshRef = useRef(refreshOnActive);
+  refreshRef.current = refreshOnActive;
+
+  useEffect(() => {
+    const onActive = () => {
+      if (unlockedRef.current) void refreshRef.current();
     };
     if (isNative) {
-      const sub = CapApp.addListener("appStateChange", (s) => s.isActive && void onActive());
+      const sub = CapApp.addListener("appStateChange", (s) => s.isActive && onActive());
       return () => void sub.then((h) => h.remove());
     }
-    const handler = () => document.visibilityState === "visible" && void onActive();
+    const handler = () => document.visibilityState === "visible" && onActive();
     document.addEventListener("visibilitychange", handler);
     return () => document.removeEventListener("visibilitychange", handler);
-  }, [api, applyMe]);
+  }, []);
+
+  const wasLockedRef = useRef(false);
+  useEffect(() => {
+    if (lock.phase !== "unlocked") wasLockedRef.current = true;
+    else if (wasLockedRef.current) {
+      wasLockedRef.current = false;
+      void refreshRef.current();
+    }
+  }, [lock.phase]);
 
   const signIn = useCallback(
     async (email: string, code: string) => {

@@ -41,6 +41,13 @@ ok(/<key>aps-environment<\/key>/.test(read("ios/App/App/App.entitlements")), "iO
 ok(/CODE_SIGN_ENTITLEMENTS = App\/App.entitlements;/.test(pbx), "iOS-project: CODE_SIGN_ENTITLEMENTS ontbreekt.");
 ok(/<key>ITSAppUsesNonExemptEncryption<\/key>/.test(read("ios/App/App/Info.plist")), "Info.plist: ITSAppUsesNonExemptEncryption ontbreekt.");
 
+// 3a. Appvergrendeling (E3): verplichte lokale ontgrendeling en schermbescherming.
+ok(/<key>NSFaceIDUsageDescription<\/key>/.test(read("ios/App/App/Info.plist")), "Info.plist: NSFaceIDUsageDescription ontbreekt (Face ID-ontgrendeling zou crashen of niet beschikbaar zijn).");
+ok(/android\.permission\.USE_BIOMETRIC/.test(manifest), "AndroidManifest: USE_BIOMETRIC ontbreekt (BiometricPrompt).");
+ok(/PrivacyScreen:\s*\{[^}]*enable:\s*true/.test(cfg), "capacitor.config.ts: PrivacyScreen moet aan staan (Android FLAG_SECURE, afscherming app-switcher).");
+ok(/PrivacyScreen:\s*\{[^}]*preventScreenshots:\s*false/.test(cfg), "capacitor.config.ts: PrivacyScreen.preventScreenshots moet false zijn (niet-gedocumenteerde iOS-laagtruc bewust uit).");
+ok(!/^\s*(?:\/\/\s*)?"?@aparajita\/capacitor-biometric-auth"?\s*:\s*"[\^~]/m.test(read("package.json")), "package.json: biometrie-plug-in moet exact gepind zijn.");
+
 // 3b. Personal Team-testconfiguratie (iOS): zonder Push/Associated Domains, productie-entitlements onaangetast.
 const cfgBlocks = [...pbx.matchAll(/\t\t[0-9A-F]{24} \/\* ([^*]+) \*\/ = \{\n\t\t\tisa = XCBuildConfiguration;([\s\S]*?)\n\t\t\};/g)].map((m) => ({ name: m[1].trim(), body: m[2] }));
 const targetBlocks = cfgBlocks.filter((b) => /INFOPLIST_FILE = App\/Info.plist/.test(b.body));

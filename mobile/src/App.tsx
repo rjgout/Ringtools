@@ -9,6 +9,10 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import { API_HOST } from "./config";
 import { isNative, onBackButton, onNetworkChange, setupNativeChrome } from "./lib/native";
 import { installDeepLinkHandlers } from "./lib/deeplinks";
+import { routeInbox } from "./lib/routeInbox";
+import { useRouteInbox } from "./lib/useRouteInbox";
+import { AppLockGate, useAppLock } from "./components/AppLock";
+import { appLock, nativeLockSources } from "./lib/appLockSources";
 import { nativeCapabilities } from "./lib/buildProfile";
 import { ErrorState, Spinner, TabBar } from "./components/ui";
 import { Login } from "./screens/Login";
@@ -26,12 +30,11 @@ import { Activate } from "./screens/Activate";
 
 /**
  * Universele links/app-links en pushmeldingen: koude start, draaiende app en hervatten vanuit de achtergrond.
- * De listeners worden één keer geregistreerd (stabiele callback via een ref) en blijven bestaan, ook tijdens het
- * laden en na pushregistratie; er worden nooit listeners van andere onderdelen verwijderd.
+ * Staat BUITEN de appvergrendeling en blijft in elke toestand bestaan (ook vergrendeld), zodat een tik op een melding of link nooit
+ * verloren gaat. De bestemming gaat alleen naar een tijdelijke postbus in het geheugen; pas na ontgrendeling verwerkt de Shell hem.
+ * Er worden nooit listeners van andere onderdelen verwijderd.
  */
-function DeepLinks({ onTarget }: { onTarget: (route: string) => void }) {
-  const ref = useRef(onTarget);
-  ref.current = onTarget;
+function DeepLinks() {
   useEffect(() => {
     if (!isNative) return;
     return installDeepLinkHandlers(
@@ -45,7 +48,7 @@ function DeepLinks({ onTarget }: { onTarget: (route: string) => void }) {
             : Promise.resolve({ remove: async () => {} }),
       },
       API_HOST,
-      (route) => ref.current(route)
+      (route) => routeInbox.push(route)
     );
   }, []);
   return null;
@@ -64,7 +67,11 @@ function Shell() {
 
   useEffect(() => void setupNativeChrome(), []);
   useEffect(() => void onNetworkChange(setOnline).then((off) => off), []);
-  useEffect(() => onBackButton(() => (location.pathname !== "/" ? (navigate(-1), true) : false)), [location.pathname, navigate]);
+  const lock = useAppLock();
+  const lockedRef = useRef(false);
+  lockedRef.current = lock.phase !== "unlocked";
+  // Vergrendeld: de terugknop doet niets in de (verborgen) app; de vergrendeling zelf stuurt de app naar de achtergrond.
+  useEffect(() => onBackButton(() => (lockedRef.current ? true : location.pathname !== "/" ? (navigate(-1), true) : false)), [location.pathname, navigate]);
 
   const goTo = useCallback(
     (route: string) => {
@@ -80,6 +87,9 @@ function Shell() {
     [navigate, status]
   );
 
+  // Bestemmingen uit links/meldingen worden pas verwerkt als de app ontgrendeld en niet afgeschermd is.
+  useRouteInbox(lock.phase === "unlocked" && !lock.shielded, goTo);
+
   useEffect(() => {
     if (status === "signedIn" && pendingRoute.current) {
       navigate(pendingRoute.current);
@@ -93,12 +103,12 @@ function Shell() {
   }, [api, ring, status]);
   useEffect(refreshUnread, [refreshUnread, location.pathname]);
 
-  // DeepLinks staat in elke toestand gemonteerd, zodat een koude start via link of pushmelding niet verloren gaat.
-  if (status === "loading") return (<><DeepLinks onTarget={goTo} /><main className="page center"><Spinner /></main></>);
+  // De deeplink-listeners staan buiten de vergrendeling (zie DeepLinks) en blijven in elke toestand bestaan.
+  if (status === "loading") return (<><main className="page center"><Spinner /></main></>);
   if (activation && status !== "unavailable") {
     return (
       <>
-        <DeepLinks onTarget={goTo} />
+        
         <Activate
           token={activation.token}
           onCancel={() => setActivation(null)}
@@ -115,7 +125,7 @@ function Shell() {
   if (status === "unavailable" && startupError) {
     return (
       <>
-        <DeepLinks onTarget={goTo} />
+        
         <main className="page center">
           <div className="glass card stack" style={{ width: "100%", maxWidth: 420 }}>
             <ErrorState error={startupError} onRetry={retryStartup} />
@@ -125,14 +135,14 @@ function Shell() {
       </>
     );
   }
-  if (status === "signedOut") return (<><DeepLinks onTarget={goTo} /><Login key={loginEmail} initialEmail={loginEmail} onHaveInvitation={() => setActivation({})} /></>);
+  if (status === "signedOut") return (<><Login key={loginEmail} initialEmail={loginEmail} onHaveInvitation={() => setActivation({})} /></>);
 
   // Webmin: uitsluitend het beheergedeelte (geen ringen, voorstellen of meldingen).
-  if (isAdmin) return (<div className="shell"><DeepLinks onTarget={goTo} /><AdminHome /></div>);
+  if (isAdmin) return (<div className="shell"><AdminHome /></div>);
 
   return (
     <div className="shell">
-      <DeepLinks onTarget={goTo} />
+      
       {!online && <div className="banner" role="status">Geen internetverbinding. Gegevens kunnen verouderd zijn.</div>}
       <main className="page">
         {!ring ? (
@@ -164,10 +174,15 @@ function Shell() {
 
 export default function App() {
   return (
-    <HashRouter>
-      <AuthProvider>
-        <Shell />
-      </AuthProvider>
-    </HashRouter>
+    <>
+      <DeepLinks />
+      <AppLockGate controller={appLock} sources={nativeLockSources}>
+        <HashRouter>
+          <AuthProvider>
+            <Shell />
+          </AuthProvider>
+        </HashRouter>
+      </AppLockGate>
+    </>
   );
 }

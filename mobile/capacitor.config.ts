@@ -24,6 +24,9 @@ const config: CapacitorConfig = {
     SplashScreen: { launchAutoHide: false, backgroundColor: "#0b1220", showSpinner: false },
     Keyboard: { resize: "body" as never, resizeOnFullScreen: true },
     PushNotifications: { presentationOptions: ["badge", "sound", "alert"] },
+    // Schermbescherming (E3): Android FLAG_SECURE; iOS alleen de afscherming voor de app-switcher. De niet-gedocumenteerde laagtruc voor
+    // screenshots staat bewust UIT (iOS kan screenshots met openbare API niet betrouwbaar blokkeren; zie docs/APP-ONTGRENDELING-ONTWERP.md).
+    PrivacyScreen: { enable: true, preventScreenshots: false },
   },
 };
 

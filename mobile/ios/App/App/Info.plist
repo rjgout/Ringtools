@@ -45,6 +45,8 @@
       </array>
     </dict>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Ringtools gebruikt Face ID om de app te ontgrendelen. Er worden geen gezichtsgegevens opgeslagen of verzonden.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

@@ -119,3 +119,17 @@ input:focus-visible, select:focus-visible, .btn:focus-visible, a:focus-visible, 
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (min-width: 700px) { .page { padding-left: max(calc(var(--sal) + 16px), 10vw); padding-right: max(calc(var(--sar) + 16px), 10vw); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } .btn:active { transform: none; } }
+
+/* Appvergrendeling (E3) */
+.lock-content { display: contents; }
+.lock-content[hidden] { display: none !important; }
+.lock-screen {
+  position: fixed; inset: 0; z-index: 900; display: flex; align-items: center; justify-content: center;
+  padding: max(var(--sat), 16px) max(var(--sar), 16px) max(var(--sab), 16px) max(var(--sal), 16px);
+  background: var(--bg, #0b1220);
+}
+.lock-card { width: 100%; max-width: 420px; text-align: center; }
+.privacy-cover {
+  position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
+  background: var(--bg, #0b1220); color: var(--text, #fff); font-size: 1.4rem; font-weight: 600;
+}
