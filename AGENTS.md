@@ -5,19 +5,24 @@ Lees dit bestand volledig vóór je iets wijzigt. Bij tegenstrijdigheid met een 
 tenzij de eigenaar uitdrukkelijk anders heeft opgedragen. (Bij de invoering van dit bestand bestonden er geen andere
 `AGENTS.md`/`CLAUDE.md`; voeg bij een nieuw instructiebestand de inhoud hier samen i.p.v. een tweede bron te maken.)
 
-## Koers: app-first (permanent, door de eigenaar vastgesteld)
+## Koers: app-first met een blijvende beveiligde webomgeving (permanent, door de eigenaar vastgesteld; vervangt de eerdere app-only-aanname)
+
+> **Beslissing eigenaar (fase E):** Ringtools blijft app-first, maar wordt **niet** app-only. De website houdt een beveiligde inlogmogelijkheid voor bevoegde gebruikers, bijvoorbeeld een ringsecretaris of
+> ringadministrateur die tijdens een vergadering met een laptop voorstellen bekijkt, ondersteuning of gezamenlijke besluiten vastlegt en administratief werk doet. Dezelfde backend, database, autorisatie, rollen
+> en beveiligingsregels als de app; **geen apart accountsysteem**; verplichte MFA en herverificatie blijven gelden. Bestaande webtoegang voor andere rollen wordt **niet** zonder afzonderlijke toestemming ingetrokken.
+> De web-login wordt niet uitgeschakeld. De webmin-beheeromgeving blijft afzonderlijk beveiligd (wachtwoord + verplichte TOTP).
 
 - **Ringtools is app-first.** De native apps voor **iOS en Android (Capacitor)** zijn het hoofdproduct en de primaire gebruikersplatforms.
-- **De publieke website (`ringapeldoorn.nl`) is uitsluitend informatief** (uithangbord): uitleg, privacy, contact, accountverwijdering,
-  later links naar de stores. Geen vertrouwelijke gegevens, geen ingelogde gebruikersinterface.
-- **Nieuwe gebruikersfunctionaliteit wordt voor de native app gebouwd, niet voor de publieke website.** Webvarianten zijn alleen
-  toegestaan voor technisch beheer door `webmin`, en alleen met een vastgelegde reden.
+- **De website (`ringapeldoorn.nl`) heeft twee delen:** een **publiek, informatief deel** (startpagina, privacy, contact, accountverwijdering, later links naar de stores; geen vertrouwelijke gegevens,
+  geen sessie nodig, duidelijke knop **Inloggen**) en een **beveiligde webomgeving** voor bevoegde gebruikers (`/login` → `src/app/(app)`), met de bestaande rollen en bevoegdheden.
+- **Nieuwe gebruikersfunctionaliteit wordt eerst voor de native app gebouwd.** Voor de webomgeving geldt: hergebruik de bestaande `workflow.ts`-functies en API-regels (nooit een tweede workflow of
+  bevoegdheidsstructuur), en bouw alleen webfuncties die de eigenaar heeft aangewezen (nu: de vergaderwerkzaamheden van ringstaf; zie de tabel). Ontbreekt een bestaande eis in de web, documenteer dat in `docs/MIGRATIE-APP-ONLY.md`.
 - **De backend blijft centraal** (Next.js + PostgreSQL op de bestaande Synology NAS, Docker, poort 2809). Next.js blijft beschikbaar voor
   de mobiele API en eventueel een streng beveiligd technisch beheer (alleen `webmin`, verplichte TOTP). Dit is geen alternatief gebruikersportaal.
 - **Beveiliging, tenantisolatie en MFA worden nooit verzwakt** – ook niet om iets sneller af te krijgen of voor platformcompatibiliteit.
 - **Functionele volledigheid gaat vóór visuele verfijning.** Vormgeving komt later.
-- **De bestaande webapp wordt uitsluitend via een gecontroleerde, gefaseerde migratie uitgeschakeld** (zie `docs/MIGRATIE-APP-ONLY.md`).
-  De definitieve omschakeling gebeurt **nooit** zonder aparte, expliciete opdracht van de eigenaar. Tot die tijd blijft de webapp bereikbaar.
+- **De web-login voor gewone gebruikers wordt niet uitgeschakeld** (beslissing eigenaar, fase E). Het intrekken van webtoegang voor een rol vereist altijd een afzonderlijke, expliciete opdracht van de eigenaar.
+  De bestandsnaam `docs/MIGRATIE-APP-ONLY.md` is historisch; het document beschrijft de fasering van de app-first-koers.
 - **Elke wijziging houdt rekening met iOS én Android.** Een wijziging is pas afgerond wanneer de relevante platformtests zijn uitgevoerd
   of expliciet is vastgelegd waarom een test niet mogelijk was.
 - **De `App-PersonalTeam`-configuratie voor iPhone-tests (gratis Personal Team) blijft behouden** en werkend (zie "Permanente lessen").
@@ -29,21 +34,22 @@ tenzij de eigenaar uitdrukkelijk anders heeft opgedragen. (Bij de invoering van 
 ## Platformen en functieoverzicht
 
 Primair: **iOS** (`mobile/ios`) en **Android** (`mobile/android`), beide met dezelfde gebundelde React-client (`mobile/src`).
-Daarnaast bestaan: de **publieke website** (informatief) en de **technische beheeromgeving** (webmin-only noodtoegang).
-De huidige Next.js-webapp (`src/app`) is een **overgangsvoorziening** voor bestaande gebruikers tot de gecontroleerde omschakeling.
+Daarnaast bestaan: de **publieke website** (informatief), de **beveiligde webomgeving voor bevoegde gebruikers** (Next.js-webapp, `src/app`; blijvend, ook voor vergaderingen op een laptop) en de
+**technische beheeromgeving** (webmin-only). De gewone gebruikersomgeving en de webmin-beheeromgeving blijven strikt gescheiden.
 
-Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet · ⚠ overgang (webapp, wordt uitgefaseerd)
+Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet · ⚠ beveiligde webomgeving (blijvend; bestaande functies, nieuwe alleen op aanwijzing van de eigenaar)
 
-| Functie | iOS | Android | Publieke website | Technisch beheer (webmin, web) |
+| Functie | iOS | Android | Website (publiek deel / beveiligde webomgeving) | Technisch beheer (webmin, web) |
 |---|---|---|---|---|
-| Informatie over Ringtools, privacy, contact, accountverwijdering | ✅ (links) | ✅ (links) | 🔧 E | — |
-| Inloggen met e-mailcode | ✅ | ✅ | — (na omschakeling) | — |
+| Informatie over Ringtools, privacy, contact, accountverwijdering | ✅ (links) | ✅ (links) | ✅ E (publiek: startpagina met knop Inloggen, privacy, contact, accountverwijdering) | — |
+| Inloggen met e-mailcode | ✅ | ✅ | ✅ bestaande web-login blijft (inlogcode + MFA waar die geldt) | — |
 | Native passkeys / volledige MFA voor gebruikers | 🔧 C5.2: server, API, Capawesome-plug-in + adapter en tests klaar; functievlag UIT, niet op een toestel getest (niet in PersonalTeam) | 🔧 C5.2: plug-in + adapter klaar; functievlag UIT, niet op een toestel getest | — | — |
 | Webmin-login: wachtwoord + verplichte TOTP | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ |
-| Roepingen bekijken, ondersteunen (stemmen) | ✅ | ✅ | ⚠ | — |
-| Nieuw voorstel, verantwoordelijken, herinneren, opnieuw vragen, rondes beheren | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ⚠ | — |
-| Taken toewijzen/afronden, verwerken, definitief verwijderen | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ⚠ | — |
-| Gebruikersbeheer binnen eigen ring (ringbeheerder) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | ⚠ | — |
+| Roepingen bekijken, ondersteunen (stemmen) | ✅ | ✅ | ✅ web (blijvend) | — |
+| Nieuw voorstel, verantwoordelijken, herinneren, opnieuw vragen, rondes beheren | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ✅ web (blijvend) | — |
+| Taken toewijzen/afronden, verwerken, definitief verwijderen | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ✅ web (blijvend) | — |
+| Gezamenlijk akkoord (presidium/hoge raad) vastleggen, expliciet vrijgeven aan de hoge raad, melding "Voorstel wacht op vrijgave" aan ringstaf | ✅ C1 (toesteltest open) | ✅ C1 (toesteltest open) | ✅ E: ringstaf op een laptop (zelfde `workflow.ts`; secretaris/administrateur legt vast, is nooit ondersteuner) | — |
+| Gebruikersbeheer binnen eigen ring (ringbeheerder) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | ✅ web (blijvend) | — |
 | Ringbeheer: ringen aanmaken/wijzigen/(de)activeren (alleen webmin) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ (aanmaken/wijzigen; activeren alleen in de app) |
 | Eerste ringbeheerder van een nieuwe ring aanwijzen (webmin) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | — | ✅ |
 | Wijken/gemeenten, hogeraadskoppeling, ringinrichting, roepingencatalogus, eigen roepingen, aanstellingsbevoegdheid | ✅ C2 (toesteltest open) | ✅ C2 (toesteltest open) | — | ✅ (via app-beheer) |
@@ -51,10 +57,10 @@ Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet ·
 | Gestructureerde kerkelijke functies (ringpresident, eerste/tweede raadgever, …), machtigingen, voorgestelde bevoegde uitvoerders, catalogusoverzicht onder Inrichting | ✅ C4.5 (toesteltest open) | ✅ C4.5 (toesteltest open) | — | ✅ (via app-beheer) |
 | Uitnodigen en activeren van nieuwe gebruikers (ringbeheerder nodigt uit; activatie met link of e-mail + code; zonder verplichte MFA direct ingelogd, met verplichte MFA geen sessie) | ✅ C5.1 (toesteltest open) | ✅ C5.1 (toesteltest open) | informatieve landingspagina `/uitnodiging/<token>` | ✅ (webmin, via app-beheer) |
 | Ontheffingen (aparte module; vertrouwelijk, betrokkene heeft geen toegang) | ✅ C4 (toesteltest open) | ✅ C4 (toesteltest open) | — | — |
-| Meldingen in de app (bel) | ✅ | ✅ | ⚠ | — |
+| Meldingen in de app (bel) | ✅ | ✅ | ✅ web (blijvend) | — |
 | Native push (APNs/FCM) | ✅ (niet in PersonalTeam) | ✅ | — | — |
 | Universal Links / App Links | ✅ (niet in PersonalTeam) | ✅ | `.well-known`-bestanden | — |
-| Sessies en apparaten beheren, sessie-intrekking op afstand | ✅ (ook webmin) | ✅ (ook webmin) | ⚠ | ✅ |
+| Sessies en apparaten beheren, sessie-intrekking op afstand | ✅ (ook webmin) | ✅ (ook webmin) | ✅ web (blijvend) | ✅ |
 | SMTP/instellingen, MFA-reset, noodprocedures | — | — | — | ✅ |
 
 Houd deze tabel actueel bij iedere functionele wijziging. Verplaatsen van webfunctionaliteit naar de app: API-route + gedeelde types + tests +
@@ -165,12 +171,12 @@ terugknop); toegankelijk (contrast, focus, labels, ≥48 px aanraakdoelen); vers
 ## Bewust (voorlopig) niet in de app
 
 Zie het functieoverzicht: SMTP/instellingen, MFA-reset en noodprocedures blijven bij technisch beheer (`webmin`, web). Alles wat reguliere
-gebruikers, ringbeheerders en `webmin` voor hun werk nodig hebben, moet in de app komen (Fasen A–D in `docs/MIGRATIE-APP-ONLY.md`).
+gebruikers, ringbeheerders en `webmin` voor hun werk nodig hebben, moet in de app komen (Fasen A–D in `docs/MIGRATIE-APP-ONLY.md`); de beveiligde webomgeving blijft daarnaast bestaan.
 
 ## Checklist vóór en na iedere wijziging
 
 **Vooraf**
-- [ ] Raakt dit iOS én Android (primaire platformen)? Zo niet beide: waarom niet (vastleggen). Raakt het de overgangswebapp of technisch beheer?
+- [ ] Raakt dit iOS én Android (primaire platformen)? Zo niet beide: waarom niet (vastleggen). Raakt het de beveiligde webomgeving of technisch beheer?
 - [ ] Raakt het authenticatie/sessies, notificaties, navigatie, e-maillinks, opslag of het API-contract? → expliciet op
       native compatibiliteit beoordelen.
 - [ ] Hergebruikt het bestaande bedrijfslogica en autorisatie (geen duplicatie)? Blijft ringisolatie gewaarborgd?
@@ -180,7 +186,7 @@ gebruikers, ringbeheerders en `webmin` voor hun werk nodig hebben, moet in de ap
 **Achteraf (voer uit en rapporteer wat is gedraaid)**
 - [ ] `npx tsc --noEmit` en `npx eslint .` (root).
 - [ ] `npx vitest run` (root: server, API-contract, push, ringisolatie) en `cd mobile && npm test`.
-- [ ] `npx next build` (Next.js-build) en indien relevant Playwright-e2e (`npx playwright test`, zie README) voor de overgangswebapp en het technisch beheer.
+- [ ] `npx next build` (Next.js-build) en indien relevant Playwright-e2e (`npx playwright test`, zie README) voor de publieke pagina's, de beveiligde webomgeving en het technisch beheer.
 - [ ] `cd mobile && npm run build` (client) en `npm run check:native-config` (Capacitor-/native configuratie, deep links).
 - [ ] Android: `cd mobile && npm run build:android:debug` (vereist JDK 21 + Android SDK) – of expliciet "niet getest".
 - [ ] iOS: `npm run build:ios:simulator` op macOS met Xcode – of expliciet "niet getest".

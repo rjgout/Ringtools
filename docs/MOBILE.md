@@ -1,6 +1,6 @@
 # Mobiele ontwikkeling en storepublicatie (Capacitor 8)
 
-Ringtools heeft drie platforms: **Web/PWA**, **iOS** en **Android** (zie `AGENTS.md`). De iOS- en Android-app zijn
+Ringtools heeft drie platforms: **Web/PWA** (beveiligde webomgeving voor bevoegde gebruikers, blijvend; de publieke website is informatief met knop Inloggen), **iOS** en **Android** (zie `AGENTS.md`). De apps zijn het primaire platform; de website vervangt ze niet en wordt niet uitgeschakeld. De iOS- en Android-app zijn
 Capacitor 8-apps met een **lichte, gebundelde React-client** (`mobile/`) die via `/api/mobile/v1` met dezelfde backend
 praat als de webapp. De app is geen wrapper om de website: er is geen `server.url`, de assets zitten in de app.
 

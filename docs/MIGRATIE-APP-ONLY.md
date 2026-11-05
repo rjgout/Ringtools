@@ -1,8 +1,12 @@
-# Migratie naar app-first / app-only
+# Migratie naar app-first (met blijvende beveiligde webomgeving)
 
-Doel: Ringtools wordt een volwaardige native app (iOS + Android). De publieke website wordt een uithangbord; alleen een streng beveiligde
-technische beheeromgeving voor `webmin` blijft via het web bestaan. **Deze migratie verloopt gefaseerd. De definitieve omschakeling
-(web-login voor gewone gebruikers uit) gebeurt uitsluitend na een afzonderlijke, expliciete opdracht van de eigenaar.**
+> **Koerswijziging door de eigenaar (fase E):** Ringtools blijft **app-first, maar wordt niet app-only.** De eerdere aanname dat de website uiteindelijk uitsluitend informatief zou zijn en alle gewone
+> web-logins zouden verdwijnen, is **vervallen**. De website houdt een beveiligde inlogmogelijkheid voor bevoegde gebruikers (concreet: een ringsecretaris of ringadministrateur met een laptop in een vergadering).
+> Dezelfde backend, database, autorisatie, rollen en beveiliging als de app; geen apart accountsysteem; verplichte MFA en herverificatie blijven gelden; webtoegang voor andere rollen wordt niet zonder
+> afzonderlijke toestemming ingetrokken; de webmin-beheeromgeving blijft afzonderlijk beveiligd. De bestandsnaam van dit document is historisch.
+
+Doel: Ringtools is een volwaardige native app (iOS + Android) als primair platform. De website heeft een publiek informatief deel (met knop Inloggen) en een beveiligde webomgeving voor bevoegde gebruikers; de
+technische beheeromgeving voor `webmin` blijft afzonderlijk. **De web-login wordt niet uitgeschakeld; intrekken van webtoegang voor een rol gebeurt uitsluitend na een afzonderlijke, expliciete opdracht van de eigenaar.**
 
 ## Fasen en status
 
@@ -12,14 +16,12 @@ technische beheeromgeving voor `webmin` blijft via het web bestaan. **Deze migra
 | B | Gebruikers- en ringbeheer; veilige webmin-login in de app | gebouwd en getest (lokaal); toesteltest open |
 | C | Native passkeys; uitnodigings- en activatieprocedure; C6 afronding (zie "C6") | C5.1 (uitnodigen/activeren) gebouwd en getest; C5.2 (native passkeys) voorbereid, functievlag UIT, toesteltest open; zie "C5" |
 | D | Ontheffingen (eigen module en datamodel) | gebouwd en getest (C4, lokaal/CI); toesteltest open; zie "C4" en "Open vragen" |
-| E | Publieke informatieve website; voorbereiding uitschakelen web-login (feature flag, standaard UIT) | gepland |
+| E | Publieke website met knop Inloggen; beveiligde webomgeving blijvend bruikbaar op een laptop (vergaderwerk van ringstaf) | gebouwd en getest (lokaal/CI); zie "Fase E" |
 | F | Live acceptatie iPhone/Android; daarna eventuele storepublicatie | gepland (handmatig, eigenaar) |
 
-## Overgangsfase (nu)
-De webapp blijft bereikbaar voor bestaande gebruikers. De app krijgt alle functionaliteit. Checklist voor de omschakeling (alles moet
-aantoonbaar waar zijn): alle reguliere functies werken in de app · native MFA werkt · gebruikers zonder technische kennis kunnen installeren ·
-nieuwe gebruikers kunnen worden uitgenodigd en geactiveerd · e-maillinks werken · iOS én Android beschikbaar voor de doelgroep ·
-betrouwbare herstelprocedure bij verlies van een toestel.
+## Status van de web-login (nu)
+De beveiligde webomgeving blijft bereikbaar en volwaardig voor bevoegde gebruikers; er komt **geen** omschakeling die haar uitschakelt. De app krijgt alle functionaliteit en blijft het primaire platform.
+*Vervallen:* de eerdere "checklist voor de omschakeling" (web-login uit). Als de eigenaar ooit webtoegang voor een bepaalde rol wil intrekken, is dat een afzonderlijke opdracht met eigen risicoanalyse.
 
 ## Resterende blokkades per fase
 Wordt na elke fase bijgewerkt (zie hieronder).
@@ -248,6 +250,19 @@ rate-limiter-opruiming; cron-dekking (sessies, inloglinks, openlinks, concepten,
 **Open beslissingen van de eigenaar (ongewijzigd):** open vragen 1, 4, 5, 6 en 7 hieronder en de punten A en B. Er is aan geen van deze iets veranderd.
 
 **Fase E** begint niet voordat C6 is beoordeeld.
+
+### Fase E – Website met blijvende webtoegang (gebouwd)
+- **Publiek deel** (geen sessie nodig, geen persoonsgegevens, niet te lekken): startpagina `/` (wat Ringtools is, voor wie, roepingen/ontheffingen, app = primair platform, hoe bevoegden inloggen, duidelijke knop **Inloggen**), `/privacy`,
+  `/contact`, `/accountverwijdering` (gedeelde omlijsting `PublicShell`, bestaande huisstijl, mobilevriendelijk). Wie al een sessie heeft gaat vanaf `/` direct naar het overzicht (de geïnstalleerde webapp blijft werken).
+  Het supportadres wordt niet verzonnen: optioneel via `PUBLIC_CONTACT_EMAIL`; zonder waarde verwijzen de pagina's naar de ringbeheerder. De privacytekst is een beknopte uitleg gebaseerd op `docs/STORE-PRIVACY.md`; de definitieve privacyverklaring blijft aan de eigenaar. Links naar de stores ontbreken bewust (niets gepubliceerd).
+- **Beveiligde webomgeving** (ongewijzigd: `/login`, e-mailcode, MFA waar die geldt, sessiebeveiliging, herverificatie, ringisolatie, gedeactiveerde gebruiker/ring geen toegang). Er is geen tweede accountsysteem en geen omzeiling.
+- **Vergaderwerk van ringstaf op een laptop (ringpresidium, secretaris, administrateur)** – beschikbaar en getest: voorstellen en status bekijken (dashboard, lijst, detail met voortgang), lopende ondersteuningsrondes bekijken (volledige uitslag voor staf), individuele
+  ondersteuning door presidiumleden, **gezamenlijk akkoord vastleggen** (presidium en hoge raad; *nieuw in de web, zelfde `registerGroupDecision`*: aanwezigen, voorzitter, afwezigen ≠ ondersteuning, gemotiveerde afhandeling van een negatieve reactie), **expliciet vrijgeven aan de hoge raad**,
+  taken toewijzen en afronden (met bevoegdheidscontrole `assignTaskGuarded`), administratief verwerken en verwijderen. De registrerende secretaris/administrateur wordt nooit ondersteuner en er worden nooit reacties namens anderen aangemaakt (getest, ook in de browser).
+- **Vergadergemak:** het besluitformulier behoudt de invoer na een foutmelding (geen leeggemaakt formulier), knoppen worden tijdens het verwerken uitgeschakeld (geen dubbele verwerking; de server is bovendien idempotent), een verlopen sessie leidt naar inloggen zonder besluit vast te leggen, foutmeldingen komen van de server.
+- **Niet in de web (app-only, bestaande keuze; aan de eigenaar om te beslissen of dit voor ringstaf op een laptop ook nodig is):** ontheffingen, concepten/nieuw-voorstel-in-vijf-stappen (de web heeft het oudere formulier met vrije tekst en procedurebevestiging), ringinrichting/catalogus/uitnodigen (ringbeheerder; de web heeft het oudere gebruikersbeheer),
+  native passkey-login. Dit zijn geen fouten maar functionele keuzes.
+- Open voor fase F: toets met een echte laptop-sessie in de vergadering; toesteltesten van de app.
 
 ### Open punten voor een latere review (vastgelegd, niet gebouwd)
 - **A. Uitleg over namen bij ontheffingen.** In de huidige app staat een verwarrende tekst over het niet zichtbaar zijn van namen. De namen van betrokkenen mogen binnen het dossier zichtbaar zijn voor bevoegde leden van het ringpresidium en de hoge raad.
