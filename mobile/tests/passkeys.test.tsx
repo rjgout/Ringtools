@@ -144,3 +144,57 @@ describe("Inloggen met verplichte MFA in de app", () => {
     await waitFor(() => expect(finishMfa).toHaveBeenCalledTimes(2));
   });
 });
+
+describe("Inlogscherm: melding over passkeys volgt de werkelijke beschikbaarheid", () => {
+  const WARN = /kunnen in de app nog niet inloggen/;
+  const OK = /verifieer je dan met je passkey/;
+
+  function withMeta(meta: () => Promise<unknown>, limited = false) {
+    const s = setup({});
+    (auth.value.api as Record<string, unknown>).meta = vi.fn(meta);
+    if (limited) (window as unknown as { __RINGTOOLS_BUILD__?: unknown }).__RINGTOOLS_BUILD__ = { profile: "personal-team" };
+    return s;
+  }
+  afterEach(() => { delete (window as { __RINGTOOLS_BUILD__?: unknown }).__RINGTOOLS_BUILD__; });
+
+  it("server uit: waarschuwing blijft", async () => {
+    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: false }));
+    registerPasskeyProvider({ authenticate: async () => ASSERTION });
+    render(<Login />);
+    await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
+    expect(screen.getByText(WARN)).toBeTruthy();
+    expect(screen.queryByText(OK)).toBeNull();
+  });
+
+  it("server aan maar geen provider: waarschuwing blijft", async () => {
+    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true }));
+    render(<Login />);
+    await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
+    expect(screen.getByText(WARN)).toBeTruthy();
+  });
+
+  it("meta mislukt of ontbreekt: waarschuwing blijft", async () => {
+    withMeta(async () => { throw new Error("netwerk"); });
+    registerPasskeyProvider({ authenticate: async () => ASSERTION });
+    render(<Login />);
+    await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
+    expect(screen.getByText(WARN)).toBeTruthy();
+  });
+
+  it("server aan + provider + standaardbuild: neutrale melding zonder 'kan niet inloggen'", async () => {
+    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true }));
+    registerPasskeyProvider({ authenticate: async () => ASSERTION });
+    render(<Login />);
+    expect(await screen.findByText(OK)).toBeTruthy();
+    expect(screen.queryByText(WARN)).toBeNull();
+  });
+
+  it("Personal Team-build: waarschuwing blijft, ook met server aan en provider", async () => {
+    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true }), true);
+    registerPasskeyProvider({ authenticate: async () => ASSERTION });
+    render(<Login />);
+    await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
+    expect(screen.getByText(WARN)).toBeTruthy();
+    expect(screen.queryByText(OK)).toBeNull();
+  });
+});

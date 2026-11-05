@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AdminLogin } from "./AdminLogin";
 import { useAuth } from "../lib/auth";
 import { ApiRequestError } from "../lib/api";
@@ -16,6 +16,17 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [admin, setAdmin] = useState(false);
+  // Servercapaciteit (functievlag) uit GET /meta; onbekend of mislukt = niet beschikbaar (veilige standaardmelding).
+  const [serverPasskeys, setServerPasskeys] = useState<boolean | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    Promise.resolve()
+      .then(() => api.meta())
+      .then((meta) => { if (active) setServerPasskeys(meta?.nativePasskeys === true); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [api]);
 
   async function request(e: React.FormEvent) {
     e.preventDefault();
@@ -125,7 +136,11 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
         {nativeCapabilities().limited && <p role="note" className="muted">{PERSONAL_TEAM_NOTICE}</p>}
         {onHaveInvitation && step === "email" && <button type="button" className="btn btn-ghost btn-block" onClick={onHaveInvitation}>Ik heb een uitnodiging</button>}
         <button type="button" className="btn btn-ghost btn-block" onClick={() => setAdmin(true)}>Inloggen als beheerder (webmin)</button>
-        <p className="muted">Accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd.</p>
+        {passkeysUsable(serverPasskeys, nativeCapabilities().limited) ? (
+          <p className="muted">Heeft jouw account extra verificatie met een passkey? Na de inlogcode verifieer je dan met je passkey op dit toestel.</p>
+        ) : (
+          <p className="muted">Accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd.</p>
+        )}
       </form>
     </main>
   );
