@@ -399,7 +399,7 @@ export async function activateInvitation(credentials: Credentials, clientKey: st
   const outcome = await prisma.$transaction(async (tx) => {
     // Volledige sessie, alleen voor een actief, niet-beheerders, niet-MFA-account; aangeroepen als laatste stap vóór het afronden van de transactie.
     const issueSession = async (u: { id: string; role: string; active: boolean; mfaEnabled: boolean }, ringActive: boolean) => {
-      if (options.issueSession === false || !u.active || !ringActive || mfaApplies(u)) return undefined;
+      if (options.issueSession !== true || !u.active || !ringActive || mfaApplies(u)) return undefined;
       const rawToken = generateRawToken();
       const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
       await tx.session.create({
