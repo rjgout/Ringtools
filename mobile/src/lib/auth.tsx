@@ -7,7 +7,8 @@ import { API_BASE } from "../config";
 import { isNative, platform } from "./native";
 import { registerForPush } from "./push";
 import { resumeSession } from "./resume";
-import type { PasskeyAssertion } from "./passkeys";
+import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, passkeysUsable, type PasskeyAssertion } from "./passkeys";
+import { nativeCapabilities } from "./buildProfile";
 
 type Status = "loading" | "signedOut" | "signedIn" | "unavailable";
 
@@ -33,6 +34,8 @@ type AuthValue = {
   adminFinish: (pendingToken: string, proof: { code?: string; recoveryCode?: string }) => Promise<void>;
   /** Herverificatie voor gevoelige beheeracties; vervangt het sessietoken. */
   reauth: (code: string) => Promise<void>;
+  /** Gebruiker met verplichte MFA: herverificatie met een passkey (vervangt het sessietoken). Zonder provider: veilige melding. */
+  reauthWithPasskey: () => Promise<void>;
   /** Gewone gebruiker: vraagt een verse e-mailcode aan voor herverificatie. */
   requestReauthCode: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -236,6 +239,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [api]
   );
 
+  const reauthWithPasskey = useCallback(async () => {
+    const provider = getPasskeyProvider();
+    if (!provider || !passkeysUsable(true, nativeCapabilities().limited)) {
+      throw new ApiRequestError(0, PASSKEY_UNAVAILABLE_MESSAGE, "passkey-unavailable");
+    }
+    const { options } = await api.reauthPasskeyOptions();
+    let assertion;
+    try {
+      assertion = await provider.authenticate(options);
+    } catch (err) {
+      if (err instanceof PasskeyCancelledError) throw new ApiRequestError(0, "Je hebt de verificatie geannuleerd.", "passkey-cancelled");
+      throw err;
+    }
+    const result = await api.reauthPasskeyVerify(assertion);
+    tokenRef.current = result.token;
+    await storage.setToken(result.token);
+  }, [api]);
+
   const requestReauthCode = useCallback(async () => {
     if (me) await api.requestCode(me.user.email);
   }, [api, me]);
@@ -264,8 +285,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const ring = me?.rings.find((r) => r.id === ringId) ?? null;
   const value = useMemo<AuthValue>(
-    () => ({ status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishActivation, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
-    [status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishActivation, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
+    () => ({ status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishActivation, adminStart, adminFinish, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
+    [status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishActivation, adminStart, adminFinish, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

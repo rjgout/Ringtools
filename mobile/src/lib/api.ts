@@ -148,6 +148,13 @@ export class ApiClient {
   adminReauth(code: string) {
     return this.request<TokenResult>("POST", "/admin/auth/reauth", { code });
   }
+  /** Herverificatie van een ingelogde MFA-gebruiker met een passkey (alleen als native passkeys op de server aan staan). */
+  reauthPasskeyOptions() {
+    return this.request<{ options: PasskeyRequestOptions }>("POST", "/auth/reauth/passkey/options", {});
+  }
+  reauthPasskeyVerify(response: PasskeyAssertion) {
+    return this.request<TokenResult>("POST", "/auth/reauth/passkey/verify", { response });
+  }
   userReauth(code: string) {
     return this.request<TokenResult>("POST", "/auth/reauth", { code });
   }

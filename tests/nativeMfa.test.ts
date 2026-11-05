@@ -412,3 +412,39 @@ describe("Gelijktijdigheid: challenge en sessie zijn eenmalig te verbruiken", ()
     expect(await prisma.session.count({ where: { userId: u.user.id } })).toBe(1);
   });
 });
+
+describe("Herverificatie met passkey: extra beveiligingscontroles", () => {
+  it("functievlag uit: geen passkey-herverificatie (veilige weigering), en de e-mailcode-herverificatie blijft voor MFA-accounts geweigerd", async () => {
+    configure(false);
+    const u = await mfaUser("Reauth Uit");
+    const token = (await createVerifiedSession(u.user.id, "Test")).rawToken;
+    expect((await call("POST", "/auth/reauth/passkey/options", { token })).status).toBe(403);
+    expect((await call("POST", "/auth/reauth/passkey/verify", { token, body: { response: u.key.assert({ challenge: b64u(crypto.randomBytes(32)) }) } })).status).toBe(403);
+    const { code } = await createMagicLinkToken(u.user.id, { withCode: true });
+    const viaCode = await call("POST", "/auth/reauth", { token, body: { code } });
+    expect(viaCode.status).toBe(403); // een e-mailcode alleen is voor een MFA-account nooit genoeg
+    expect(viaCode.body.token).toBeUndefined();
+  });
+
+  it("een passkey van een ander account geeft geen herverificatie; zonder sessie of met een pending-login geen toegang", async () => {
+    const a = await mfaUser("Reauth A");
+    const b = await mfaUser("Reauth B");
+    const tokenA = (await createVerifiedSession(a.user.id, "Test")).rawToken;
+    const opts = await call("POST", "/auth/reauth/passkey/options", { token: tokenA });
+    const res = await call("POST", "/auth/reauth/passkey/verify", { token: tokenA, body: { response: b.key.assert({ challenge: opts.body.options.challenge, counter: 1 }) } });
+    expect(res.status).toBe(401);
+    expect(res.body.token).toBeUndefined();
+    expect((await call("GET", "/me", { token: tokenA })).status).toBe(200); // sessie ongewijzigd
+    expect((await call("POST", "/auth/reauth/passkey/options", {})).status).toBe(401);
+    const pending = await startLogin(a.user.id, a.user.email);
+    expect((await call("POST", "/auth/reauth/passkey/options", { token: pending.body.pendingToken })).status).toBe(401);
+    expect((await call("POST", "/auth/reauth/passkey/verify", { token: pending.body.pendingToken, body: { response: {} } })).status).toBe(401);
+  });
+
+  it("webmin gebruikt geen passkey-herverificatie in de app (alleen TOTP)", async () => {
+    const admin = await createTestUser("ADMIN", "Webmin Pk");
+    const token = (await createVerifiedSession(admin.id, "Test")).rawToken;
+    expect((await call("POST", "/auth/reauth/passkey/options", { token })).status).toBe(403);
+    expect((await call("POST", "/admin/auth/reauth/passkey/options", { token })).status).toBe(404);
+  });
+});

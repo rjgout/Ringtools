@@ -34,17 +34,38 @@ Associated Domains / Digital Asset Links. Wat daarvoor nodig is staat onderaan (
 - `Login.tsx`: bij `pendingToken` volgt de passkey-stap; zonder provider/zonder beschikbaarheid wordt de pending-login opgeruimd en de veilige melding getoond; geannuleerd → opnieuw proberen of annuleren; fout/vergrendeling netjes getoond.
 - Sessietokens staan uitsluitend in Keychain/Keystore (`lib/storage.ts`); een pendingToken blijft alleen in het geheugen.
 
-## Beoordeling plug-ins voor Capacitor 8 (gecontroleerd via het npm-register; niets geïnstalleerd)
-| Pakket | Versie / laatst bijgewerkt | Licentie | Opmerking |
-|---|---|---|---|
-| `@capgo/capacitor-passkey` | 8.5.8 · 2026-10-26 (aangemaakt 2026-04) | MPL-2.0 | Peer `@capacitor/core >=8`; geen runtime-dependencies, geen install-scripts; shimt `navigator.credentials.create/get` naar iOS `ASAuthorization` en Android Credential Manager. Twee maintainers (Capgo). **Voorkeur**, na toesteltest. |
-| `@capawesome/capacitor-passkeys` | 0.1.2 · 2026-09-02 | MIT | Jong (0.x), peer `>=8`, geen dependencies/install-scripts; Capawesome-team. Alternatief; API nog niet stabiel. |
-| `capacitor-webauthn` | 8.0.0 · 2026-03-24 | MIT | Eén maintainer, GitLab; iOS 16+/Android 9+. Minste voorkeur. |
-Bij de keuze: versie vastpinnen (geen `^`), lockfile reviewen, `npm audit`, en de broncode van de native delen (Swift/Kotlin) doorlopen vóór opname. Android-origin hangt af van de app-handtekening, niet van de website — zie de vingerafdrukken hierboven.
+## Stand van zaken C5.2 (gap-analyse)
+| Onderdeel | Status |
+|---|---|
+| Server: pending-login, passkey-opties/-verificatie, annuleren, herverificatie, origin-allowlist, lockout, rate limits, audit, `/meta`-vlag | ✅ gereed en getest (echte WebAuthn-verificatie), functievlag UIT |
+| Gelijktijdigheid (atomaire challenge, hooguit één sessie per pending-login/herverificatie) | ✅ gereed en getest |
+| Client: `PasskeyProvider`-interface, passkey-stap in Login (annuleren, fout, vergrendeling, veilige terugval) | ✅ gereed en getest |
+| Client: herverificatie voor gevoelige beheeracties met passkey (`useReauth`, `reauthWithPasskey`) | ✅ toegevoegd in deze ronde; MFA-accounts krijgen nooit de e-mailcode-route; getest |
+| `.well-known` (`webcredentials`, `get_login_creds`) alleen met configuratie | ✅ gereed |
+| Keuze en koppeling van een native plug-in (iOS `ASAuthorization`, Android Credential Manager) | ⛔ **wacht op jouw beslissing** (zie opties) |
+| iOS: `webcredentials:`-entitlement in `App.entitlements` (productie), Apple Team-ID | ⛔ extern (betaald Apple-programma) + beslissing |
+| Android: Digital Asset Links met release-vingerafdruk(ken) | ⛔ extern (Play Console) |
+| Toesteltests iOS en Android | ⛔ pas mogelijk na bovenstaande |
+| Passkeys registreren in de app | bewust niet (blijft webapp-only tot bovenstaande bewezen is) |
+
+## Keuze native plug-in – opties en aanbeveling (er is niets geïnstalleerd)
+Beoordeeld door de gepubliceerde pakketten alleen-lezen te inspecteren (`npm pack --ignore-scripts`, niets uitgevoerd of geïnstalleerd):
+| | **A. `@capawesome/capacitor-passkeys` 0.1.2** | **B. `@capgo/capacitor-passkey` 8.5.8** | **C. `capacitor-webauthn` 8.0.0** | **D. Eigen dunne plug-in** |
+|---|---|---|---|---|
+| Licentie | MIT | MPL-2.0 (bestandsgebonden copyleft; als afhankelijkheid werkbaar) | MIT | eigen |
+| Onderhoud | Capawesome-team; 0.x (jong, 2026-07), API nog niet stabiel | Capgo; 8.x, veel releases, twee maintainers | één maintainer, GitLab; minder recent | wij |
+| Dependencies / install-scripts | geen / geen | geen / geen — **maar** een `cap sync`-hook (`scripts/configure-native.js`) | niet nader geïnspecteerd | — |
+| Wijzigt het hún native project automatisch? | **Nee** — alle configuratie (entitlement, Digital Asset Links) doe je zelf en zichtbaar | **Ja, als er domeinen zijn geconfigureerd**: de hook schrijft `webcredentials:` in de entitlements, zet `CODE_SIGN_ENTITLEMENTS` in `project.pbxproj` en voegt Android-meta-data/-resources toe. Dat botst met onze regel dat entitlements en de Personal Team-configuratie nooit ongezien wijzigen; te neutraliseren met `autoShim:false`/geen domeinen | n.v.t. | nee |
+| API | expliciet: `isAvailable()`, `getPasskey(opts)`, `createPasskey(opts)`; WebAuthn-JSON zoals onze server; foutcodes (`CANCELED`, `DOMAIN_NOT_ASSOCIATED`, `NOT_SUPPORTED`) | shimt `navigator.credentials.get/create` | eigen API | naar wens |
+| Omvang native code | ±120 (Swift) + ±170 (Java) regels per kerndeel; geen netwerk-/logcode behalve `CAPLog` bij fouten | ±70 + ±90 regels | — | 2× ±150 regels + onderhoud |
+| Platformen | iOS 15+, Android (Credential Manager; README: API 28+) | iOS 15+, Android minSdk 24 | iOS 16+, Android 9+ | — |
+**Aanbeveling: A (`@capawesome/capacitor-passkeys`)**, exact vastgepind (geen `^`), na een regel-voor-regel review van de ±300 regels native code en `npm audit`. Redenen: geen automatische wijzigingen aan entitlements/projectbestanden (past bij onze Personal Team-/productieregels), expliciete en kleine API die 1-op-1 op de WebAuthn-JSON van onze server aansluit, geen afhankelijkheden, MIT.
+Risico: 0.x-versie. Mitigatie: de plug-in zit achter onze `PasskeyProvider`-interface (wisselen = één adapter), versie vastgepind, adapter getest met gemockte plug-in, toesteltests vóór activering. **Terugvaloptie: B**, uitsluitend met `plugins.CapacitorPasskey.autoShim = false` en zonder `domains`/`origin`, zodat de hook niets in onze native bestanden schrijft. D alleen als A en B bij de toesteltests tekortschieten.
+**Beslissing van jou nodig (zie rapport):** welke optie, en akkoord om de gekozen plug-in toe te voegen (dat wijzigt `mobile/package.json`/lockfile en, na `cap sync`, de native projecten — nieuwe native plug-in = store-/privacyimpact, `docs/STORE-PRIVACY.md`).
 
 ### Gelijktijdigheid
 - De challenge wordt atomair verbruikt (`DELETE … RETURNING`; tweede verzoek vindt niets) en `promoteSessionToMfaVerified` verwijdert de wachtende/te verifiëren sessie in dezelfde transactie en eist `count === 1`: bij parallelle verzoeken met één assertion slaagt hooguit één en ontstaat precies één volledige sessie.
-  Regressietests: `tests/nativeMfa.test.ts` ("Gelijktijdigheid"). De RP ID-, origin-, user verification- en tellercontroles zijn ongewijzigd.
+  Regressietests: `tests/nativeMfa.test.ts` ("Gelijktijdigheid", "Herverificatie met passkey"). De RP ID-, origin-, user verification- en tellercontroles zijn ongewijzigd.
 
 ## Wat nog moet gebeuren vóór activering (externe configuratie en toesteltests)
 1. **Eigenaar levert aan:** definitieve app-ID, Apple Team-ID (`APPLE_APP_ID = <TEAM-ID>.<bundle-id>`), en de SHA-256-vingerafdruk(ken) van het Android-**release**-ondertekeningscertificaat (Play Console → App-integriteit; ook de Play-app-signing-sleutel) in `ANDROID_SHA256_FINGERPRINTS`.

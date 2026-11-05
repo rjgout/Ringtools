@@ -8,7 +8,9 @@ import { ApiRequestError } from "../lib/api";
  * actie daarna opnieuw. Er wordt niets lokaal "onthouden": de server beslist.
  */
 export function useReauth() {
-  const { reauth, requestReauthCode, isAdmin } = useAuth();
+  const { reauth, reauthWithPasskey, requestReauthCode, isAdmin, me } = useAuth();
+  // Accounts met verplichte MFA (passkey) bevestigen met een passkey; een e-mailcode alleen is voor hen nooit genoeg (de server weigert dat).
+  const usesPasskey = !isAdmin && !!me?.user.mfaEnabled;
   const [open, setOpen] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState("");
@@ -56,6 +58,20 @@ export function useReauth() {
     }
   }
 
+  async function submitPasskey() {
+    setBusy(true);
+    setError(null);
+    try {
+      await reauthWithPasskey();
+      setOpen(false);
+      waiter.current?.resolve();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : "De verificatie is niet gelukt. Probeer het opnieuw.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -79,14 +95,18 @@ export function useReauth() {
   const dialog = open ? (
     <div className="glass card stack" role="dialog" aria-label="Bevestig je identiteit" style={{ position: "fixed", inset: "auto 12px 90px 12px", zIndex: 20 }}>
       <strong>Bevestig je identiteit</strong>
-      {isAdmin ? (
+      {usesPasskey ? (
+        <span className="muted">Voor jouw account is extra verificatie met een passkey nodig. Volg de aanwijzingen van je toestel.</span>
+      ) : isAdmin ? (
         <span className="muted">Vul de huidige 6-cijferige code uit je authenticator-app in.</span>
       ) : codeSent ? (
         <span className="muted">Vul de 8-cijferige code uit de e-mail in.</span>
       ) : (
         <span className="muted">Voor deze beheeractie sturen we je een verse code per e-mail.</span>
       )}
-      {!isAdmin && !codeSent ? (
+      {usesPasskey ? (
+        <button className="btn btn-primary" disabled={busy} onClick={() => void submitPasskey()}>{busy ? "Even geduld…" : "Verifiëren met passkey"}</button>
+      ) : !isAdmin && !codeSent ? (
         <button className="btn btn-primary" disabled={busy} onClick={sendCode}>Stuur code</button>
       ) : (
         <form className="stack" onSubmit={submit}>
