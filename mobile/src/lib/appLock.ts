@@ -24,7 +24,14 @@ export interface AppLockProvider {
   authenticate(): Promise<AppLockResult>;
 }
 
-export type LockSnapshot = { readonly phase: LockPhase; readonly shielded: boolean; readonly failure: LockFailure | null };
+/**
+ * `verifying`: de app is voor een terugkeer binnen de grens al actief, maar de schermbescherming wordt nog opnieuw bevestigd.
+ * Zolang dat loopt blijft alles afgeschermd en geldt de app als niet-ontgrendeld voor alle gegevens en verzoeken.
+ */
+export type LockSnapshot = { readonly phase: LockPhase; readonly shielded: boolean; readonly failure: LockFailure | null; readonly verifying: boolean };
+
+/** Harde bovengrens voor één bevestiging van de schermbescherming; daarna geldt ze als mislukt (fail-closed). */
+export const PROTECTION_CHECK_TIMEOUT_MS = 5_000;
 
 export type LockDeps = {
   /** Uitgeschakeld (alleen een gewone browser tijdens ontwikkeling): altijd ontgrendeld. Native is dit altijd aan. */
@@ -38,6 +45,7 @@ export type LockDeps = {
    * Geeft dit `false` of gooit het, dan is er geen toegang. Niet opgegeven = geen voorwaarde (alleen tests).
    */
   screenProtection?: () => Promise<boolean>;
+  protectionTimeoutMs?: number;
 };
 
 export class LockController {
@@ -49,11 +57,13 @@ export class LockController {
   private inflight = false;
   /** Laatst bekende voorgrondstatus (ook bijgehouden tijdens een prompt). */
   private active = true;
+  /** Volgnummer van de laatste bevestiging van de schermbescherming; oudere uitkomsten tellen niet meer. */
+  private verifySeq = 0;
 
   constructor(private readonly deps: LockDeps) {
     this.now = deps.now ?? (() => Date.now());
     // Koude start: vergrendeld, nog vóór enige asynchrone controle.
-    this.snap = deps.enabled ? { phase: "locked", shielded: false, failure: null } : { phase: "unlocked", shielded: false, failure: null };
+    this.snap = deps.enabled ? { phase: "locked", shielded: false, failure: null, verifying: false } : { phase: "unlocked", shielded: false, failure: null, verifying: false };
   }
 
   getSnapshot = (): LockSnapshot => this.snap;
@@ -64,7 +74,7 @@ export class LockController {
   };
 
   /** Synchrone waarheid over de vergrendeling (geen React-render nodig): voor alles wat gegevens ophaalt. */
-  isUnlocked = (): boolean => this.snap.phase === "unlocked";
+  isUnlocked = (): boolean => this.snap.phase === "unlocked" && !this.snap.verifying;
 
   /**
    * Wordt aangeroepen NADAT de vergrendeling is beoordeeld en de app ontgrendeld is: bij terugkeer binnen de grens, of na een
@@ -87,7 +97,7 @@ export class LockController {
 
   private set(next: Partial<LockSnapshot>) {
     const merged = { ...this.snap, ...next };
-    if (merged.phase === this.snap.phase && merged.shielded === this.snap.shielded && merged.failure === this.snap.failure) return;
+    if (merged.phase === this.snap.phase && merged.shielded === this.snap.shielded && merged.failure === this.snap.failure && merged.verifying === this.snap.verifying) return;
     this.snap = merged;
     this.listeners.forEach((l) => l());
   }
@@ -108,7 +118,8 @@ export class LockController {
   async unlock(): Promise<void> {
     if (!this.deps.enabled || this.snap.phase === "unlocked" || this.inflight) return;
     this.inflight = true;
-    this.set({ phase: "authenticating", failure: null });
+    this.verifySeq++; // een lopende bevestiging bij terugkeer wordt vervangen door deze ontgrendeling
+    this.set({ phase: "authenticating", failure: null, verifying: false });
     try {
       // Zonder aantoonbare schermbescherming nooit toegang, ook al zou de verificatie slagen.
       if (!(await this.protectionOk())) return this.fail("blocked", "screen-protection");
@@ -134,31 +145,56 @@ export class LockController {
     }
   }
 
+  /** Bevestigt de schermbescherming. Alleen een exact `true` binnen de tijdslimiet telt; fout, uitzondering of time-out = mislukt. */
   private async protectionOk(): Promise<boolean> {
     if (!this.deps.screenProtection) return true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return (await this.deps.screenProtection()) === true;
+      const timeout = new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), this.deps.protectionTimeoutMs ?? PROTECTION_CHECK_TIMEOUT_MS);
+      });
+      return (await Promise.race([this.deps.screenProtection(), timeout])) === true;
     } catch {
       return false;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
-  /** Bij terugkeer binnen de grens: de bescherming opnieuw bevestigen; lukt dat niet, dan direct blokkeren. */
-  private async reassertProtection() {
-    if (!this.deps.screenProtection) return;
-    if (await this.protectionOk()) return;
-    if (this.snap.phase === "unlocked" && !this.inflight) this.fail("blocked", "screen-protection");
+  /**
+   * Terugkeer binnen de grens: de app blijft afgeschermd en geldt als niet-ontgrendeld totdat de schermbescherming opnieuw is bevestigd.
+   * Alleen de nieuwste bevestiging telt (snelle wisselingen); pas bij succes, een actieve app en een nog ontgrendelde toestand gaat de
+   * afscherming op en volgt de hervatting. Mislukking, uitzondering of time-out blokkeert de app.
+   */
+  private async resumeAfterVerification() {
+    const seq = ++this.verifySeq;
+    this.set({ shielded: true, verifying: true });
+    const ok = await this.protectionOk();
+    if (seq !== this.verifySeq) return; // verouderd: een nieuwere gebeurtenis of ontgrendeling is leidend
+    if (this.snap.phase !== "unlocked") return;
+    if (!ok) {
+      this.set({ verifying: false });
+      this.fail("blocked", "screen-protection");
+      return;
+    }
+    if (!this.active) {
+      this.set({ verifying: false }); // weer weg: afgeschermd laten; de volgende terugkeer start een nieuwe bevestiging
+      return;
+    }
+    this.set({ shielded: false, verifying: false });
+    this.emitResume();
   }
 
   private fail(phase: "locked" | "blocked", failure: LockFailure) {
     this.awayAt = null;
-    this.set({ phase, failure, shielded: !this.active });
+    this.set({ phase, failure, shielded: !this.active, verifying: false });
   }
 
   /** App wordt inactief of gaat naar de achtergrond (ook systeemoverlays): onmiddellijk afschermen. */
   appInactive(): void {
     if (!this.deps.enabled) return;
     this.active = false;
+    this.verifySeq++; // een lopende bevestiging is verouderd; de volgende terugkeer start een nieuwe
     if (this.snap.phase === "unlocked" && this.awayAt === null && !this.inflight) this.awayAt = this.now();
     this.set({ shielded: true });
   }
@@ -174,14 +210,17 @@ export class LockController {
       if (away !== null) {
         const elapsed = this.now() - away;
         if (!Number.isFinite(elapsed) || elapsed < 0 || elapsed >= BACKGROUND_GRACE_MS) {
-          this.set({ phase: "locked", failure: null, shielded: false });
+          this.set({ phase: "locked", failure: null, shielded: false, verifying: false });
           void this.unlock(); // het systeem vraagt direct opnieuw om verificatie
           return;
         }
       }
+      if (this.deps.screenProtection) {
+        void this.resumeAfterVerification(); // eerst de schermbescherming bevestigen; pas daarna afscherming op en hervatten
+        return;
+      }
       this.set({ shielded: false });
       this.emitResume();
-      void this.reassertProtection();
       return;
     }
     this.set({ shielded: false });

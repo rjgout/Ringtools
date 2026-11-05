@@ -97,7 +97,7 @@ export function AppLockGate({ controller, sources, children }: { controller: Loc
   return (
     <LockContext.Provider value={api}>
       {(unlocked || everUnlocked) && (
-        <div className="lock-content" hidden={!unlocked} inert={!unlocked} aria-hidden={!unlocked}>
+        <div className="lock-content" hidden={!unlocked} inert={!unlocked || snap.verifying} aria-hidden={!unlocked || snap.verifying}>
           {children}
         </div>
       )}

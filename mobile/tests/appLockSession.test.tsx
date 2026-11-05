@@ -200,3 +200,81 @@ describe("Schermbescherming als toegangsvoorwaarde (gate)", () => {
     await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("signedIn:Geheime Naam"));
   });
 });
+
+describe("Terugkeer binnen 30 s: eerst de schermbescherming bevestigen (gate + sessie)", () => {
+  function mountWithProtection() {
+    const queue: Array<(v: boolean) => void> = [];
+    let first = true;
+    const protection = vi.fn(() => (first ? ((first = false), Promise.resolve(true)) : new Promise<boolean>((r) => void queue.push(r))));
+    const controller = new LockController({ enabled: true, provider: { deviceSecure: async () => true, authenticate: () => auth() }, screenProtection: protection, now: () => now });
+    render(
+      <AppLockGate controller={controller} sources={nativeLockSources}>
+        <AuthProvider><Probe /></AuthProvider>
+      </AppLockGate>
+    );
+    return { controller, queue, protection };
+  }
+  const content = () => document.querySelector(".lock-content") as HTMLElement;
+
+  it("tijdens de controle: afdekking aan, inhoud onbereikbaar, geen sessieverversing en geen enkel verzoek; na succes één verversing", async () => {
+    const { queue } = mountWithProtection();
+    await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("signedIn:Geheime Naam"));
+    net.calls = [];
+    act(() => cap.emit("appStateChange", { isActive: false }));
+    now += 5_000;
+    act(() => cap.emit("appStateChange", { isActive: true }));
+    expect(screen.getByTestId("privacy-cover")).toBeTruthy(); // nog steeds afgeschermd
+    expect(content().hasAttribute("inert")).toBe(true);
+    expect(apiCalls()).toEqual([]);
+    // ook een tweede voorgrondgebeurtenis of een directe aanroep van de client levert niets op
+    const { ApiClient } = await import("../src/lib/api");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(apiCalls()).toEqual([]);
+    expect(auth).toHaveBeenCalledTimes(1); // geen nieuwe prompt binnen de grens
+    act(() => queue[0](true));
+    await waitFor(() => expect(screen.queryByTestId("privacy-cover")).toBeNull());
+    expect(content().hasAttribute("inert")).toBe(false);
+    await waitFor(() => expect(apiCalls().filter((c) => c === "POST /auth/refresh")).toHaveLength(1));
+    void ApiClient;
+  });
+
+  it("mislukte controle: vergrendelscherm 'schermbeveiliging', inhoud verborgen, nooit een verzoek", async () => {
+    const { queue } = mountWithProtection();
+    await waitFor(() => expect(screen.getByTestId("probe").textContent).toMatch(/signedIn/));
+    net.calls = [];
+    act(() => cap.emit("appStateChange", { isActive: false }));
+    act(() => cap.emit("appStateChange", { isActive: true }));
+    act(() => queue[0](false));
+    expect(await screen.findByText(/schermbeveiliging/)).toBeTruthy();
+    expect(content().hidden).toBe(true);
+    expect(apiCalls()).toEqual([]);
+  });
+
+  it("snelle wisselingen: uitsluitend de laatste uitkomst opent de app; oudere uitkomsten niet", async () => {
+    const { queue } = mountWithProtection();
+    await waitFor(() => expect(screen.getByTestId("probe").textContent).toMatch(/signedIn/));
+    net.calls = [];
+    for (let i = 0; i < 3; i++) {
+      act(() => cap.emit("appStateChange", { isActive: false }));
+      act(() => cap.emit("appStateChange", { isActive: true }));
+    }
+    act(() => queue[0](true));
+    act(() => queue[1](true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByTestId("privacy-cover")).toBeTruthy();
+    expect(apiCalls()).toEqual([]);
+    act(() => queue[2](true));
+    await waitFor(() => expect(screen.queryByTestId("privacy-cover")).toBeNull());
+    await waitFor(() => expect(apiCalls().filter((c) => c === "POST /auth/refresh")).toHaveLength(1));
+  });
+
+  it("systeemdialoog (alleen inactief, zonder terugkeer): verzoeken blijven mogelijk, zodat bijv. de pushregistratie kan afronden", async () => {
+    const { controller } = mountWithProtection();
+    await waitFor(() => expect(screen.getByTestId("probe").textContent).toMatch(/signedIn/));
+    act(() => cap.emit("appStateChange", { isActive: false }));
+    expect(controller.isUnlocked()).toBe(true);
+    const { ApiClient } = await import("../src/lib/api");
+    const client = new ApiClient({ baseUrl: "https://x.test/api/mobile/v1", getToken: () => "t", isBlocked: () => !controller.isUnlocked() });
+    await expect(client.me()).resolves.toMatchObject({ user: { name: "Geheime Naam" } });
+  });
+});
