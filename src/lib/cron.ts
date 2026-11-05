@@ -54,8 +54,8 @@ async function runOnce(): Promise<void> {
 
   const expired = await deleteExpiredAuthData();
   const links = await deleteExpiredOpenLinks();
-  if (expired.sessions + expired.magicLinks + links > 0) {
-    console.log(`[cron] Opgeruimd: ${expired.sessions} sessie(s), ${expired.magicLinks} inloglink(s), ${links} koppeling(en).`);
+  if (expired.sessions + expired.magicLinks + expired.challenges + links > 0) {
+    console.log(`[cron] Opgeruimd: ${expired.sessions} sessie(s), ${expired.magicLinks} inloglink(s), ${expired.challenges} passkey-challenge(s), ${links} koppeling(en).`);
   }
 
   const drafts = await deleteStaleDrafts();

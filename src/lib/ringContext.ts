@@ -85,6 +85,6 @@ export async function setActiveRing(userId: string, ringId: string): Promise<boo
 
 /** Lidmaatschap van een gebruiker in een specifieke ring (voor autorisatie per voorstel, onafhankelijk van de actieve ring). */
 export async function getActiveMembership(userId: string, ringId: string): Promise<RingMembership | null> {
-  const membership = await prisma.ringMembership.findUnique({ where: { userId_ringId: { userId, ringId } } });
-  return membership && membership.active ? membership : null;
+  // Een gedeactiveerde ring of een gedeactiveerd account geeft nergens toegang (alleen de webmin beheert de ring).
+  return prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, user: { active: true }, ring: { active: true } } });
 }

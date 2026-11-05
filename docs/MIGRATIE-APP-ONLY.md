@@ -10,7 +10,7 @@ technische beheeromgeving voor `webmin` blijft via het web bestaan. **Deze migra
 |---|---|---|
 | A | Alle roepings- en taakfunctionaliteit in de app | gebouwd en getest (CI); toesteltest iPhone/Android open |
 | B | Gebruikers- en ringbeheer; veilige webmin-login in de app | gebouwd en getest (lokaal); toesteltest open |
-| C | Native passkeys; uitnodigings- en activatieprocedure | C5.1 (uitnodigen/activeren) gebouwd en getest; C5.2 (native passkeys) voorbereid, functievlag UIT, toesteltest open; zie "C5" |
+| C | Native passkeys; uitnodigings- en activatieprocedure; C6 afronding (zie "C6") | C5.1 (uitnodigen/activeren) gebouwd en getest; C5.2 (native passkeys) voorbereid, functievlag UIT, toesteltest open; zie "C5" |
 | D | Ontheffingen (eigen module en datamodel) | gebouwd en getest (C4, lokaal/CI); toesteltest open; zie "C4" en "Open vragen" |
 | E | Publieke informatieve website; voorbereiding uitschakelen web-login (feature flag, standaard UIT) | gepland |
 | F | Live acceptatie iPhone/Android; daarna eventuele storepublicatie | gepland (handmatig, eigenaar) |
@@ -223,6 +223,29 @@ Externe vereisten vóór activering: Apple Team-ID en Associated Domains met `we
 sessie in dezelfde transactie als het atomaire verbruik (hooguit één activatie en één sessie, ook bij gelijktijdige pogingen; rollback = geen sessie); alleen voor actieve, niet-beheerders-accounts zonder `mfaEnabled` en een actieve ring; zelfde levensduur, `mfaAt` en servercontroles als een gewone login; token alleen in de JSON-respons (`no-store`),
 op het toestel in Keychain/Keystore, niet in URL's of logs; accounts met verplichte MFA en het beheerdersaccount krijgen nooit een sessie (veilige blokkade blijft); is er al iemand ingelogd in de app dan wordt geen sessie gevraagd (nooit stilzwijgend van account wisselen).
 Bij een onderbroken verbinding is de uitnodiging mogelijk al verbruikt: een nieuwe poging geeft dan geen tweede sessie; de gebruiker logt gewoon in met de e-mailcode (een eventuele sessie waarvan het token verloren ging verloopt vanzelf en is zonder token onbruikbaar). Het uitnodigingsproces is hiermee niet minder streng dan de e-mailcode-login: wie de uitnodigingsmail bezit bezit ook de mailbox.
+
+### C6 – Afronding bestaande functionaliteit (inventarisatie en correcties)
+Peildatum: `773bb34` + C6-commit. Geen nieuwe functionaliteit, geen nieuwe kerkelijke regels; migraties zijn niet nodig geweest.
+
+**Gevonden en opgelost (aantoonbare fouten)**
+1. *Gedeactiveerde ring bleef bereikbaar in de overgangswebapp.* `getActiveMembership` (autorisatie per voorstel op de detailpagina en in de webacties voor staf/taken) negeerde `Ring.active` en `User.active`. Een lid van een door de webmin gedeactiveerde ring kon via een directe URL het
+   voorstel nog openen. Nu `ring: { active: true }` en `user: { active: true }` (regressietest in `tests/rings.test.ts`, bewezen rood vóór de fix). De mobiele API en alle andere controles hadden dit al goed.
+2. *Verlopen WebAuthn-challenges werden nooit opgeruimd* (alleen bij verbruik of MFA-reset). `deleteExpiredAuthData` (nachtelijke cron) verwijdert ze nu; een lopende challenge blijft staan (test in `tests/sessions.test.ts`).
+
+**Gecontroleerd en in orde bevonden:** ringisolatie en `ring.active` in alle overige lidmaatschapscontroles (de resterende zoekopdrachten zonder die filter zijn ontvangerslijsten binnen een reeds geautoriseerde handeling); clientroutes ↔ serverroutes (refresh, apparaten, beheerroutes);
+rate-limiter-opruiming; cron-dekking (sessies, inloglinks, openlinks, concepten, uitnodigingen, ontheffingen, aanmaakmeldingen); migratieketen op een schone database; volledige backendsuite.
+
+**Onvoltooide bestaande eisen — voorstel, niet zelf ingevuld (functionele keuze)**
+- *Push/melding aan ringstaf bij "Presidium akkoord – wacht op vrijgave"* (genoemd als open punt bij C1). Vereist een nieuw meldingstype (enum-migratie) en een tekst; voorstel: één generieke melding "Voorstel wacht op vrijgave" aan actieve ringstaf van de ring, zonder naam, alleen intern pad. Pas bouwen na akkoord.
+
+**Bewust uitgesteld: toesteltests (blokkeren C6 niet; geregistreerd als acceptatietests voor fase F)**
+- iPhone en Android: inloggen met e-mailcode, activatie via universele link/app-link, pushlevering (APNs/FCM), deeplinks uit meldingen, Android-terugknop, donkere modus/veilige randen.
+- Native passkeys (C5.2): iPhone én Android, inclusief Apple Team-ID/Associated Domains en Android-vingerafdrukken (`docs/PASSKEYS-NATIVE.md`). De functievlag `NATIVE_PASSKEYS_ENABLED` blijft UIT; native passkeys zijn **niet productiegereed** zolang deze tests en de domeinconfiguratie ontbreken.
+- Personal Team-build: handmatige controle dat alles zonder push/links/passkeys bruikbaar blijft.
+
+**Open beslissingen van de eigenaar (ongewijzigd):** open vragen 1, 4, 5, 6 en 7 hieronder en de punten A en B. Er is aan geen van deze iets veranderd.
+
+**Fase E** begint niet voordat C6 is beoordeeld.
 
 ### Open punten voor een latere review (vastgelegd, niet gebouwd)
 - **A. Uitleg over namen bij ontheffingen.** In de huidige app staat een verwarrende tekst over het niet zichtbaar zijn van namen. De namen van betrokkenen mogen binnen het dossier zichtbaar zijn voor bevoegde leden van het ringpresidium en de hoge raad.

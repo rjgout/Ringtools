@@ -204,6 +204,17 @@ describe("Intrekken van sessies", () => {
     expect(cleaned.magicLinks).toBe(1);
     expect((await getSessionUser(live.rawToken))?.id).toBe(user.id);
   });
+
+  it("ruimt verlopen WebAuthn-challenges op en laat een lopende challenge staan", async () => {
+    const old = await createTestUser("HOGERAAD", "Oud");
+    const fresh = await createTestUser("HOGERAAD", "Vers");
+    await prisma.webAuthnChallenge.create({ data: { userId: old.id, challenge: "c1", expiresAt: new Date(Date.now() - 60_000) } });
+    await prisma.webAuthnChallenge.create({ data: { userId: fresh.id, challenge: "c2", expiresAt: new Date(Date.now() + 60_000) } });
+    const cleaned = await deleteExpiredAuthData();
+    expect(cleaned.challenges).toBe(1);
+    expect(await prisma.webAuthnChallenge.findUnique({ where: { userId: old.id } })).toBeNull();
+    expect(await prisma.webAuthnChallenge.findUnique({ where: { userId: fresh.id } })).not.toBeNull();
+  });
 });
 
 describe("Magic links en inlogcode", () => {

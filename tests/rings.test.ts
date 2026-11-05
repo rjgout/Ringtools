@@ -1,8 +1,12 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { resetDatabase, createTestUser, createTestRing, createCalling, approveCallingFully } from "./setup";
 import { createRing, addMember, updateMember, renameRing, listRingMembers, RingError, AuthorizationError } from "@/lib/rings";
 import { castVote, releaseToHogeraad, removeParticipantFromRound, WorkflowError } from "@/lib/workflow";
+
+vi.mock("server-only", () => ({}));
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined, set: () => {} }) }));
+vi.mock("next/navigation", () => ({ redirect: () => { throw new Error("redirect"); } }));
 
 beforeEach(async () => {
   await resetDatabase();
@@ -479,6 +483,22 @@ describe("Lopende ondersteuningsrondes bij nieuwe en gewijzigde leden", () => {
     const result = await removeParticipantFromRound({ callingId: calling.id, userId: second.id, actorId: president.id });
     expect(await prisma.eligibleVoter.count({ where: { callingId: calling.id, userId: second.id } })).toBe(0);
     expect(result.status).toBe("PRESIDIUM_APPROVED"); // overige deelnemer had al ondersteund: ronde rondt af; vrijgave aan de hoge raad blijft een aparte handeling
+  });
+});
+
+describe("Gedeactiveerde ring en account (overgangswebapp)", () => {
+  it("getActiveMembership geeft geen toegang tot een gedeactiveerde ring of voor een gedeactiveerd account", async () => {
+    const { getActiveMembership } = await import("@/lib/ringContext");
+    const ring = await createTestRing("Ring");
+    const staff = await createTestUser("RINGPRESIDIUM", "Staf", { ringId: ring.id });
+    expect((await getActiveMembership(staff.id, ring.id))?.ringId).toBe(ring.id);
+
+    await prisma.ring.update({ where: { id: ring.id }, data: { active: false } });
+    expect(await getActiveMembership(staff.id, ring.id)).toBeNull();
+
+    await prisma.ring.update({ where: { id: ring.id }, data: { active: true } });
+    await prisma.user.update({ where: { id: staff.id }, data: { active: false } });
+    expect(await getActiveMembership(staff.id, ring.id)).toBeNull();
   });
 });
 

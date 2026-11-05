@@ -388,11 +388,13 @@ export async function verifyAdminPassword(username: string, password: string): P
 }
 
 /** Ruimt verlopen sessies en verbruikte/verlopen inloglinks op (nachtelijke taak). */
-export async function deleteExpiredAuthData(): Promise<{ sessions: number; magicLinks: number }> {
+export async function deleteExpiredAuthData(): Promise<{ sessions: number; magicLinks: number; challenges: number }> {
   const now = new Date();
   const sessions = await prisma.session.deleteMany({ where: { expiresAt: { lt: now } } });
   const magicLinks = await prisma.magicLinkToken.deleteMany({
     where: { OR: [{ expiresAt: { lt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } }, { usedAt: { not: null } }] },
   });
-  return { sessions: sessions.count, magicLinks: magicLinks.count };
+  // Verlopen, nooit verbruikte WebAuthn-challenges (afgebroken passkey-ceremonie) blijven anders staan.
+  const challenges = await prisma.webAuthnChallenge.deleteMany({ where: { expiresAt: { lt: now } } });
+  return { sessions: sessions.count, magicLinks: magicLinks.count, challenges: challenges.count };
 }
