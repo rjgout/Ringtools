@@ -1,10 +1,44 @@
-# Back-up, herstel en gecontroleerde releases (NAS)
+# Back-up, herstel en automatische updates (NAS)
 
-**Besluit eigenaar:** Ringtools krijgt voorlopig **gecontroleerde releases**, geen automatische Watchtower-updates. Pas als automatische back-ups vóór een update en
-het herstel aantoonbaar werken, bekijken we automatisering opnieuw. In de repository staat daarvoor het label `com.centurylinklabs.watchtower.enable: "false"`
-op de services `app` en `db` in `docker-compose.yml`. **Dat label werkt pas nadat de stack in Portainer opnieuw is uitgerold met dit bestand** — ik heb de
-Portainer-stack en jouw Watchtower-configuratie niet aangepast. Controleer na het uitrollen in de Watchtower-logs dat deze containers worden overgeslagen. Daarnaast raad
-ik aan `image:` bij de app vast te zetten op een sha-tag (`ghcr.io/rjgout/ringtools:<sha>`) in plaats van `:latest`; dan gebeurt er ook bij een handmatige "pull" niets onverwachts.
+**Besluit eigenaar:** de Ringtools-app wordt **automatisch bijgewerkt via Watchtower** zodra er een nieuwe image op `main` is gepubliceerd. PostgreSQL (`db`) wordt
+**niet** automatisch bijgewerkt. (Een eerdere versie van dit document beschreef gecontroleerde, handmatige releases; dat gaf een tussentijds bericht weer en is hiermee
+vervangen.) De back-up- en herstelprocedures hieronder blijven gelden.
+
+## Hoe de automatische update werkt
+1. Een push naar `main` start de workflow *Build en publiceer Docker-image*: typecontrole, migraties op een CI-database, alle tests, en pas daarna bouwen en publiceren van
+   `ghcr.io/rjgout/ringtools:latest` (plus een `:<sha>`-tag). Wat op `main` komt is dus direct de release: alleen mergen na groene CI.
+2. Watchtower ziet de nieuwe digest van `:latest`, haalt de image op en vervangt de app-container (zelfde configuratie). De image is publiek leesbaar (anoniem pullen getest), er
+   zijn geen registry-inloggegevens nodig.
+3. Bij het opstarten voert `docker-entrypoint.sh` `prisma migrate deploy` uit en start dan de app.
+
+## Compose-labels (in `docker-compose.yml`)
+| Service | Label | Gevolg |
+|---|---|---|
+| `app` | `com.centurylinklabs.watchtower.enable: "true"` | Bijwerken toegestaan; ook nodig als Watchtower met `WATCHTOWER_LABEL_ENABLE=true` draait (alleen gelabelde containers) |
+| `db` | `com.centurylinklabs.watchtower.enable: "false"` | Nooit automatisch (de tag `postgres:16-alpine` zou anders stilletjes minor-/patchupdates ophalen; een major-upgrade vraagt dump en restore) |
+
+## Eenmalig in Portainer (Watchtower-configuratie zelf is niet door mij aangepast)
+Het label van een **reeds draaiende container** verandert niet door een wijziging in GitHub. Wat te doen:
+1. **Stack opnieuw uitrollen met de nieuwe compose**: Portainer → Stacks → Ringtools → Editor: zet bij `app` het label `com.centurylinklabs.watchtower.enable: "true"` en laat bij `db` `"false"`
+   (of plak de huidige `docker-compose.yml`) → *Update the stack*. De stackomgevingsvariabelen (`POSTGRES_PASSWORD`, `SETTINGS_ENCRYPTION_KEY`, `APP_BASE_URL`, …) blijven staan.
+   Dit herstart de containers één keer; maak vooraf een back-up (stap 1 hieronder).
+2. Heb je het uitsluitingslabel `enable=false` bij `app` eerder uitgerold (vanaf commit `7ebbfbd`), dan is stap 1 **noodzakelijk**. Heb je dat nooit uitgerold, dan staat er op de draaiende
+   `app`-container geen label en werkt Watchtower in de standaardmodus al; stap 1 is dan alleen nodig voor de modus met `WATCHTOWER_LABEL_ENABLE`.
+3. **Controleer de Watchtower-instellingen** (Portainer → Containers → watchtower → Inspect / Env):
+   - `WATCHTOWER_LABEL_ENABLE=true`? Dan wordt alleen gelabeld bewaakt: `app` heeft nu het label, `db` bewust niet. Staat de variabele niet, dan worden alle containers bewaakt behalve die met `enable=false`.
+   - `WATCHTOWER_POLL_INTERVAL` (seconden) of `WATCHTOWER_SCHEDULE` (cron): bepaalt hoe snel een nieuwe release landt.
+   - `WATCHTOWER_CLEANUP=true` is aan te raden (oude images opruimen, de NAS heeft beperkte schijfruimte).
+   - Watchtower start geen containers opnieuw die hij niet bewaakt; `WATCHTOWER_MONITOR_ONLY=true` zou alleen melden en **niet** bijwerken — zet dat uit.
+   - Meldingen (`WATCHTOWER_NOTIFICATION_URL`, bijv. e-mail/ntfy) zijn aan te raden zodat je een mislukte update merkt.
+   - Het image moet `:latest` blijven (niet vastzetten op een sha-tag), anders ziet Watchtower nooit een nieuwe versie.
+4. Controle na de eerste update: `docker logs <watchtower>` toont "Found new … image" en "Updating … ringtools"; `docker logs <app-container>` toont de migraties en het starten.
+
+## Risico van automatische databasemigraties (beoordeling)
+- **Altijd een back-up eerst:** Watchtower maakt zelf geen back-up en de app-image bevat geen `pg_dump`. Plan daarom een **dagelijkse** `scripts/db-backup.sh`-taak in de Synology Taakplanner (zie stap 1) vóór het moment waarop Watchtower pollt, en bewaar minstens 14 dagen. Een back-up vlak vóór elke update is met Watchtower alleen mogelijk via een eigen hook in jouw Watchtower-opzet; dat heb ik niet ingericht.
+- **Migraties zijn additief** (kolommen/tabellen/enumwaarden toevoegen). De enige commit-reeks die nu klaarstaat voor het bijwerken vanaf de laatste gepubliceerde image (`c9210aa`) bevat één migratie, `20261117100000_e2_herstelcode_begrenzing`: twee kolommen met standaardwaarde op `TotpCredential` (geen data verwijderd; getest op een gevulde database). Eerdere migraties met `DROP INDEX`/`DELETE` (`multi_ring`, `native_push_devices`) zijn lang geleden toegepast. Controleer bij elke toekomstige release `git diff <vorige>..<nieuwe> -- prisma/migrations` op `DROP`, `DELETE`, `TRUNCATE` en `ALTER … TYPE`.
+- **Mislukte migratie:** de app-container start dan niet (restart-lus door `restart: unless-stopped`); de oude image draait niet meer. Postgres voert elke migratie in een transactie uit, maar Prisma markeert een mislukte migratie als "failed" en weigert verder tot die is opgelost (`prisma migrate resolve`). Herstel: stap 4 hieronder (vorige image-sha vastzetten, zo nodig de dump terugzetten) en laat de oorzaak onderzoeken vóór je terugkeert naar `:latest`.
+- **Niet terug te draaien:** `ALTER TYPE … ADD VALUE` en gegevens die door nieuwe code zijn geschreven. Een oudere image op een nieuwere database start wel (`migrate deploy`: "No pending migrations"), maar is niet gegarandeerd compatibel.
+- **Gelijktijdigheid:** er is één app-container; tijdens de vervanging is de app kort onbereikbaar (seconden tot een halve minuut, plus de duur van migraties).
 
 ## Status van wat getest is
 Getest in de ontwikkelomgeving (PostgreSQL 16, 23 migraties): de scripts `scripts/db-backup.sh` en `scripts/db-restore-oefen.sh`, aangestuurd via een nagebootste `docker exec`
@@ -39,10 +73,10 @@ stopt het met een foutmelding en blijft er geen (half) bestand achter. Controlee
 `docker inspect --format '{{.Image}}' <app-container>`). Bewaar de dump buiten het volume (Hyper Backup/externe schijf). Plan dagelijks een Synology-taak (bv. 14 dagen bewaren).
 Een bestandsbackup van een draaiende database is alleen crash-consistent; de dump is de betrouwbare vorm.
 
-## 2. Gecontroleerde release
+## 2. Handmatige release of uitrol buiten Watchtower om (optioneel)
 1. Back-up maken (stap 1) en de dump op een andere plek bewaren.
 2. Oefenherstel (stap 3) — minstens bij de eerste release en na elke migratie die tabellen wijzigt.
-3. In de stack `image: ghcr.io/rjgout/ringtools:<nieuwe-sha>` zetten en de stack opnieuw uitrollen.
+3. Wil je bewust een bepaalde versie draaien (bijv. na een mislukte update), zet dan tijdelijk `image: ghcr.io/rjgout/ringtools:<sha>` in de stack; Watchtower werkt een vaste tag niet bij. Zet daarna terug op `:latest` om automatische updates te hervatten.
 4. Controle: `docker logs <app-container>` zonder fouten, `docker exec <app-container> node_modules/.bin/prisma migrate status` ("Database schema is up to date"), inloggen met een testaccount en een voorstel openen.
 5. Mislukt het: zie stap 4 (terugdraaien).
 
@@ -55,7 +89,7 @@ Herstelt in `<POSTGRES_DB>_oefen`, stopt bij de eerste fout (`--exit-on-error`; 
 echte en de oefendatabase. De echte database kan sinds de dump veranderd zijn; vergelijk dus met de toestand op het moment van de back-up.
 
 ## 4. Terugdraaien na een mislukte update
-1. Zet de app stil (`docker stop <app-container>`; de db blijft draaien). Bij gecontroleerde releases start Watchtower hem niet opnieuw.
+1. Zet de app stil (`docker stop <app-container>`; de db blijft draaien). Watchtower kan de app opnieuw starten of bijwerken zodra de image of `:latest` verandert: zet daarom de vorige sha-tag vast (stap 2) vóór je de app weer start, of zet Watchtower tijdelijk op pauze.
 2. Zet de **vorige image-sha** in de stack.
 3. Alleen als de gegevens zijn aangetast, of volgens de conclusie hierboven, de database terugzetten. Dit overschrijft de echte database — doe dit bewust en alleen met een gecontroleerde dump:
 ```sh
