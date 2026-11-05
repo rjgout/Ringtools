@@ -10,24 +10,6 @@ const initialState: TotpEnrollResult = { ok: false, message: "" };
 export function TotpEnrollForm({ qrDataUrl, secret, redirectTo }: { qrDataUrl: string; secret: string; redirectTo: string }) {
   const [state, action, pending] = useActionState(confirmTotpEnrollmentLoginAction, initialState);
 
-  if (state.ok && state.recoveryCodes && state.recoveryCodes.length === 0) {
-    // Gewone gebruiker (E2.1): geen herstelcodes; direct afronden.
-    return (
-      <div className="space-y-5">
-        <div>
-          <h2 className="font-semibold">Authenticator-app is ingesteld</h2>
-          <p className="mt-1 text-sm text-[var(--text-muted)]">Bij de volgende keer inloggen bevestig je met een code uit je app.</p>
-        </div>
-        <form action={finalizeAwaitingMfaEnrollmentAction}>
-          <input type="hidden" name="redirect" value={redirectTo} />
-          <button type="submit" className="btn-primary w-full">
-            Verder
-          </button>
-        </form>
-      </div>
-    );
-  }
-
   if (state.ok && state.recoveryCodes) {
     return (
       <div className="space-y-5">

@@ -14,8 +14,9 @@ import {
   requireRecentMfa,
 } from "@/lib/session";
 import { promoteSessionToMfaVerified, SessionNoLongerValidError, destroySessionById, markSessionFactorProved, hasFreshFactorProof } from "@/lib/auth";
-import { startTotpEnrollment, verifyTotpCode, confirmTotpEnrollment, consumeRecoveryCode, regenerateRecoveryCodes, isTotpConfirmed, removeTotp } from "@/lib/mfa";
-import { enrolledMethods, totpAllowedForUser } from "@/lib/mfaMethods";
+import { startTotpEnrollment, verifyTotpCode, confirmTotpEnrollment, consumeRecoveryCode, regenerateRecoveryCodes, isTotpConfirmed } from "@/lib/mfa";
+import { enrolledMethods, totpAllowedForUser, removePasskeyGuarded, removeTotpGuarded, enableMfaGuarded } from "@/lib/mfaMethods";
+import { sendMail, mfaResetEmail } from "@/lib/mailer";
 import { hasPasskeys } from "@/lib/webauthn";
 import { logSecurityEvent } from "@/lib/securityEvents";
 import { rateLimit } from "@/lib/rateLimit";
@@ -59,7 +60,7 @@ export async function confirmTotpEnrollmentLoginAction(_prev: TotpEnrollResult |
   const { allowed } = rateLimit(`totp-enroll:${awaiting.userId}`, 10, 15 * 60 * 1000);
   if (!allowed) return { ok: false, message: "Te veel pogingen. Probeer het later opnieuw." };
 
-  const result = await confirmTotpEnrollment(awaiting.userId, awaiting.user.email, parsed.data, { issueRecoveryCodes: !regular });
+  const result = await confirmTotpEnrollment(awaiting.userId, awaiting.user.email, parsed.data);
   if (!result.ok) {
     return { ok: false, message: result.outcome === "LOCKED" ? "Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw." : "Ongeldige code. Controleer de tijd op je apparaat en probeer het opnieuw." };
   }
@@ -123,8 +124,10 @@ export async function useRecoveryCodeLoginAction(_prev: ActionResult | null, for
   const awaiting = await getAwaitingMfaUser();
   if (!awaiting) return { ok: false, message: "Sessie verlopen. Log opnieuw in." };
 
-  // Herstelcodes bestaan alleen voor het beheerdersaccount; voor gewone gebruikers is herstel een open beleidskeuze (E2.1: niet gebouwd).
-  if (awaiting.user.role !== "ADMIN") return { ok: false, message: "Niet beschikbaar voor dit account." };
+  // Gewone gebruiker: herstelcodes horen bij de authenticator-app; zonder bevestigde TOTP (of met vlag uit) bestaan ze niet.
+  if (awaiting.user.role !== "ADMIN" && !(await enrolledMethods(awaiting.user)).includes("totp")) {
+    return { ok: false, message: "Niet beschikbaar voor dit account." };
+  }
 
   const parsed = recoveryCodeSchema.safeParse(formData.get("code"));
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Ongeldige herstelcode." };
@@ -202,7 +205,10 @@ export async function confirmTotpReenrollmentAction(_prev: TotpEnrollResult | nu
 
 export async function regenerateRecoveryCodesAction(): Promise<{ ok: boolean; message: string; recoveryCodes?: string[] }> {
   const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
-  if (session.user.role !== "ADMIN") return { ok: false, message: "Niet beschikbaar voor dit account." };
+  // Beheerder, of een gewone gebruiker met een bevestigde authenticator-app (vlag aan); de oude set vervalt direct.
+  if (session.user.role !== "ADMIN" && !(await enrolledMethods(session.user)).includes("totp")) {
+    return { ok: false, message: "Niet beschikbaar voor dit account." };
+  }
 
   const codes = await regenerateRecoveryCodes(session.user.id);
   await logSecurityEvent({ userId: session.user.id, type: "RECOVERY_CODES_REGENERATED" });
@@ -214,18 +220,11 @@ export async function removePasskeyAction(_prev: ActionResult | null, formData: 
   const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
   const credentialId = String(formData.get("credentialId") || "");
 
-  const count = await prisma.webAuthnCredential.count({ where: { userId: session.user.id } });
-  // Alleen wie passkey-verificatie heeft ingeschakeld heeft de laatste passkey nodig om in te loggen.
-  const otherMethod = (await enrolledMethods(session.user)).includes("totp");
-  if (count <= 1 && session.user.mfaEnabled && !otherMethod) {
-    return { ok: false, message: "Je kunt je laatste passkey niet verwijderen: zonder passkey kun je niet meer inloggen. Registreer eerst een nieuwe passkey." };
-  }
+  // Eén transactie met rijvergrendeling: de laatste bruikbare methode kan niet worden weggehaald, ook niet door twee gelijktijdige verwijderingen.
+  const result = await removePasskeyGuarded(session.user.id, credentialId);
+  if (!result.ok) return { ok: false, message: result.message };
 
-  const credential = await prisma.webAuthnCredential.findFirst({ where: { id: credentialId, userId: session.user.id } });
-  if (!credential) return { ok: false, message: "Deze passkey is niet gevonden." };
-
-  await prisma.webAuthnCredential.delete({ where: { id: credential.id } });
-  await logSecurityEvent({ userId: session.user.id, type: "PASSKEY_REMOVED", detail: credential.deviceLabel ?? undefined });
+  await logSecurityEvent({ userId: session.user.id, type: "PASSKEY_REMOVED", detail: result.deviceLabel ?? undefined });
   revalidatePath("/profiel/beveiliging");
   return { ok: true, message: "Passkey verwijderd." };
 }
@@ -242,8 +241,17 @@ export async function revokeSessionAction(_prev: ActionResult | null, formData: 
   return { ok: true, message: "Sessie beëindigd." };
 }
 
-// ---- Admin: MFA-reset voor een andere gebruiker ----
+// ---- Admin: MFA-reset voor een andere gebruiker (noodprocedure) ----
 
+/**
+ * Noodprocedure van de webmin. Vereist recente MFA van de webmin, een uitdrukkelijke bevestiging dat de identiteit van de gebruiker
+ * buiten Ringtools is gecontroleerd én het intypen van het e-mailadres van de gebruiker. De reset is ÉÉN transactie: alle passkeys,
+ * challenges, de authenticator-app, herstelcodes en sessies verdwijnen samen met het auditspoor, of er verandert niets. Daarna volgt
+ * een melding per e-mail aan de gebruiker (best effort; een mislukte mail maakt de reset niet ongedaan).
+ *
+ * Eindtoestand: `mfaEnabled` blijft aan, de gebruiker heeft geen methode en geen sessie; bij de volgende e-mailcode-login is een EERSTE
+ * inschrijving toegestaan (er is dan werkelijk geen bestaande methode), zie `mayEnrollFirstFactorWhilePending`.
+ */
 export async function resetUserMfaAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const admin = await requireRole(["ADMIN"]);
   const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
@@ -254,22 +262,38 @@ export async function resetUserMfaAction(_prev: ActionResult | null, formData: F
   if (!target || target.role === "ADMIN") {
     return { ok: false, message: "Dit account kan niet via dit scherm worden gereset." };
   }
+  if (formData.get("identityChecked") !== "yes") {
+    return { ok: false, message: "Bevestig eerst dat je de identiteit van de gebruiker buiten Ringtools hebt gecontroleerd." };
+  }
+  if (String(formData.get("confirmEmail") || "").trim().toLowerCase() !== target.email.toLowerCase()) {
+    return { ok: false, message: "Het ingetypte e-mailadres komt niet overeen met dat van de gebruiker." };
+  }
 
   await prisma.$transaction([
     prisma.webAuthnCredential.deleteMany({ where: { userId: target.id } }),
     prisma.webAuthnChallenge.deleteMany({ where: { userId: target.id } }),
+    prisma.recoveryCode.deleteMany({ where: { userId: target.id } }),
+    prisma.totpCredential.deleteMany({ where: { userId: target.id } }),
     prisma.session.deleteMany({ where: { userId: target.id } }),
+    prisma.securityEvent.create({
+      data: { userId: target.id, actorUserId: admin.id, type: "MFA_RESET_BY_ADMIN", detail: `Gereset door ${admin.name}; identiteit gecontroleerd` },
+    }),
   ]);
-  await removeTotp(target.id); // E2.1: ook een eventuele authenticator-app (en herstelcodes) van deze gewone gebruiker
-  await logSecurityEvent({
-    userId: target.id,
-    actorUserId: admin.id,
-    type: "MFA_RESET_BY_ADMIN",
-    detail: `Gereset door ${admin.name}`,
-  });
+
+  let notified = true;
+  try {
+    const mail = mfaResetEmail(target.name);
+    await sendMail({ to: target.email, subject: mail.subject, text: mail.text });
+  } catch (err) {
+    notified = false;
+    console.error("[mfa] Melding van MFA-reset kon niet worden verstuurd:", err instanceof Error ? err.message : err);
+  }
 
   revalidatePath("/gebruikers");
-  return { ok: true, message: `MFA van ${target.name} is gereset. Deze gebruiker moet bij de volgende magic link opnieuw een tweede factor instellen.` };
+  return {
+    ok: true,
+    message: `Verificatie van ${target.name} is gereset; alle sessies zijn ingetrokken. Bij de volgende inlog stelt deze gebruiker opnieuw een methode in.${notified ? " De gebruiker is per e-mail op de hoogte gebracht." : " Let op: de e-mailmelding aan de gebruiker kon niet worden verstuurd; breng de gebruiker zelf op de hoogte."}`,
+  };
 }
 
 
@@ -280,12 +304,10 @@ export async function enableUserMfaAction(): Promise<ActionResult> {
   if (!session) redirect("/login");
   if (session.user.role === "ADMIN") return { ok: false, message: "Voor het beheerdersaccount is verificatie altijd verplicht." };
 
-  if ((await enrolledMethods(session.user)).length === 0) {
-    return { ok: false, message: totpAllowedForUser(session.user.role) ? "Stel eerst een passkey of authenticator-app in voordat je verificatie inschakelt." : "Registreer eerst een passkey voordat je verificatie inschakelt." };
-  }
-  await prisma.user.update({ where: { id: session.user.id }, data: { mfaEnabled: true } });
+  const result = await enableMfaGuarded(session.user.id);
+  if (!result.ok) return { ok: false, message: result.message };
   revalidatePath("/profiel/beveiliging");
-  return { ok: true, message: "Passkey-verificatie is ingeschakeld. Bij de volgende inlog bevestig je met je passkey." };
+  return { ok: true, message: "Verificatie is ingeschakeld. Bij de volgende inlog bevestig je met een van je ingestelde methoden." };
 }
 
 export async function disableUserMfaAction(): Promise<ActionResult> {
@@ -294,13 +316,12 @@ export async function disableUserMfaAction(): Promise<ActionResult> {
 
   await prisma.user.update({ where: { id: session.user.id }, data: { mfaEnabled: false } });
   revalidatePath("/profiel/beveiliging");
-  return { ok: true, message: "Passkey-verificatie is uitgeschakeld. Inloggen kan voortaan met alleen de inloglink." };
+  return { ok: true, message: "Verificatie is uitgeschakeld. Inloggen kan voortaan met alleen de inlogcode uit je e-mail." };
 }
-
 
 // ---- E2.1: authenticator-app (TOTP) beheren door een gewone gebruiker (vlag WEB_TOTP_ENABLED) ----
 
-/** Start de inschrijving van een authenticator-app. Met MFA aan vereist dit een recente verificatie (geen zwakkere factor erbij met alleen een oude sessie). */
+/** Start de inschrijving van een authenticator-app. Met MFA aan vereist dit een recente verificatie (geen methode erbij met alleen een e-mailcode). */
 export async function startUserTotpEnrollmentAction(): Promise<TotpEnrollmentView> {
   const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
   if (!totpAllowedForUser(session.user.role)) throw new Error("Niet beschikbaar voor dit account.");
@@ -310,7 +331,7 @@ export async function startUserTotpEnrollmentAction(): Promise<TotpEnrollmentVie
   return { qrDataUrl, secret };
 }
 
-export async function confirmUserTotpEnrollmentAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+export async function confirmUserTotpEnrollmentAction(_prev: TotpEnrollResult | null, formData: FormData): Promise<TotpEnrollResult> {
   const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
   if (!totpAllowedForUser(session.user.role)) return { ok: false, message: "Niet beschikbaar voor dit account." };
 
@@ -320,28 +341,20 @@ export async function confirmUserTotpEnrollmentAction(_prev: ActionResult | null
   const { allowed } = rateLimit(`totp-enroll:${session.user.id}`, 10, 15 * 60 * 1000);
   if (!allowed) return { ok: false, message: "Te veel pogingen. Probeer het later opnieuw." };
 
-  const result = await confirmTotpEnrollment(session.user.id, session.user.email, parsed.data, { issueRecoveryCodes: false });
+  const result = await confirmTotpEnrollment(session.user.id, session.user.email, parsed.data);
   if (!result.ok) {
     return { ok: false, message: result.outcome === "LOCKED" ? "Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw." : "Ongeldige code. Controleer de tijd op je apparaat en probeer het opnieuw." };
   }
   revalidatePath("/profiel/beveiliging");
-  return { ok: true, message: "Authenticator-app is ingesteld." };
+  return { ok: true, message: "Authenticator-app is ingesteld.", recoveryCodes: result.recoveryCodes };
 }
 
-/** Verwijdert de authenticator-app. Recente MFA vereist; de laatste methode kan niet weg zolang verificatie aan staat. */
+/** Verwijdert de authenticator-app en de herstelcodes. Recente MFA vereist; de laatste methode kan niet weg zolang verificatie aan staat. */
 export async function removeUserTotpAction(): Promise<ActionResult> {
   const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
-  if (session.user.role === "ADMIN") return { ok: false, message: "Voor het beheerdersaccount is TOTP verplicht." };
-  // Bewust ook zonder vlag toegestaan: een gebruiker moet een eigen TOTP-rij altijd kunnen opruimen.
-  if (!(await isTotpConfirmed(session.user.id)) && !(await prisma.totpCredential.findUnique({ where: { userId: session.user.id } }))) {
-    return { ok: false, message: "Er is geen authenticator-app ingesteld." };
-  }
-  const hasPasskey = await hasPasskeys(session.user.id);
-  if (session.user.mfaEnabled && !hasPasskey) {
-    return { ok: false, message: "Je kunt je laatste verificatiemethode niet verwijderen zolang verificatie aan staat. Registreer eerst een passkey of schakel verificatie uit." };
-  }
-  await removeTotp(session.user.id);
+  const result = await removeTotpGuarded(session.user.id);
+  if (!result.ok) return { ok: false, message: result.message };
   await logSecurityEvent({ userId: session.user.id, type: "TOTP_RESET", detail: "Authenticator-app verwijderd door gebruiker" });
   revalidatePath("/profiel/beveiliging");
-  return { ok: true, message: "Authenticator-app verwijderd." };
+  return { ok: true, message: "Authenticator-app en herstelcodes verwijderd." };
 }

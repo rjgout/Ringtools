@@ -5,7 +5,7 @@ import { enableUserMfaAction, disableUserMfaAction, type ActionResult } from "@/
 
 const initialState: ActionResult = { ok: false, message: "" };
 
-export function UserMfaToggle({ enabled, hasPasskey }: { enabled: boolean; hasPasskey: boolean }) {
+export function UserMfaToggle({ enabled, hasMethod, totpEnabled = false }: { enabled: boolean; hasMethod: boolean; totpEnabled?: boolean }) {
   const [state, action, pending] = useActionState(
     async () => (enabled ? disableUserMfaAction() : enableUserMfaAction()),
     initialState
@@ -14,20 +14,24 @@ export function UserMfaToggle({ enabled, hasPasskey }: { enabled: boolean; hasPa
   return (
     <div className="space-y-2">
       <p className="text-sm">
-        Passkey-verificatie is <strong>{enabled ? "ingeschakeld" : "uitgeschakeld"}</strong>.{" "}
+        {totpEnabled ? "Verificatie" : "Passkey-verificatie"} is <strong>{enabled ? "ingeschakeld" : "uitgeschakeld"}</strong>.{" "}
         <span className="text-[var(--text-muted)]">
           {enabled
-            ? "Na de inloglink bevestig je met je passkey (Face ID, Touch ID of schermcode)."
-            : "Je logt in met alleen de inloglink uit je e-mail. Schakel verificatie in voor extra beveiliging."}
+            ? totpEnabled
+              ? "Na de inlogcode bevestig je met een passkey (Face ID, Touch ID of schermcode) of een code uit je authenticator-app."
+              : "Na de inloglink bevestig je met je passkey (Face ID, Touch ID of schermcode)."
+            : "Je logt in met alleen de inlogcode uit je e-mail. Schakel verificatie in voor extra beveiliging."}
         </span>
       </p>
       <form action={action}>
-        <button type="submit" disabled={pending || (!enabled && !hasPasskey)} className={enabled ? "btn-ghost text-sm" : "btn-primary text-sm"}>
+        <button type="submit" disabled={pending || (!enabled && !hasMethod)} className={enabled ? "btn-ghost text-sm" : "btn-primary text-sm"}>
           {pending ? "Even geduld…" : enabled ? "Verificatie uitschakelen" : "Verificatie inschakelen"}
         </button>
       </form>
-      {!enabled && !hasPasskey && (
-        <p className="text-xs text-[var(--text-muted)]">Registreer hieronder eerst een passkey om verificatie in te kunnen schakelen.</p>
+      {!enabled && !hasMethod && (
+        <p className="text-xs text-[var(--text-muted)]">
+          {totpEnabled ? "Stel hieronder eerst een passkey of authenticator-app in om verificatie in te kunnen schakelen." : "Registreer hieronder eerst een passkey om verificatie in te kunnen schakelen."}
+        </p>
       )}
       {state.message && <p className={`text-sm ${state.ok ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>{state.message}</p>}
     </div>

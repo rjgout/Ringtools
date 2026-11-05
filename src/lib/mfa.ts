@@ -72,6 +72,17 @@ export async function startTotpEnrollment(userId: string, label: string, forceNe
 export type TotpOutcome = "OK" | "INVALID" | "LOCKED" | "NOT_CONFIGURED";
 
 /**
+ * Registreert een mislukte poging atomair (`increment`, geen lees-schrijf-race tussen gelijktijdige pogingen) en vergrendelt bij de
+ * vijfde fout. Geeft terug of de instelling nu vergrendeld is.
+ */
+async function registerFailedAttempt(userId: string): Promise<boolean> {
+  const updated = await prisma.totpCredential.update({ where: { userId }, data: { failedAttempts: { increment: 1 } } });
+  if (updated.failedAttempts < MAX_FAILED_ATTEMPTS) return false;
+  await prisma.totpCredential.update({ where: { userId }, data: { lockedUntil: new Date(Date.now() + LOCKOUT_MS) } });
+  return true;
+}
+
+/**
  * Verifieert een TOTP-code tegen de (nog niet per se bevestigde) instelling
  * van de gebruiker. Voorkomt hergebruik van dezelfde geldige code (de
  * bijbehorende tijdstap wordt pas als "gebruikt" vastgelegd bij een
@@ -93,22 +104,21 @@ export async function verifyTotpCode(userId: string, label: string, code: string
   const matchedCounter = delta === null ? null : currentCounter() + delta;
   const isReplay = matchedCounter !== null && credential.lastUsedCounter !== null && matchedCounter <= credential.lastUsedCounter;
 
-  if (matchedCounter === null || isReplay) {
-    const failedAttempts = credential.failedAttempts + 1;
-    const lockedUntil = failedAttempts >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCKOUT_MS) : null;
-    await prisma.totpCredential.update({ where: { userId }, data: { failedAttempts, lockedUntil } });
-    await logSecurityEvent({
-      userId,
-      type: lockedUntil ? "TOTP_LOCKED" : "TOTP_FAILED_ATTEMPT",
-      detail: isReplay ? "Code al eerder gebruikt" : "Ongeldige code",
-    });
-    return lockedUntil ? "LOCKED" : "INVALID";
+  async function fail(detail: string): Promise<TotpOutcome> {
+    const locked = await registerFailedAttempt(userId);
+    await logSecurityEvent({ userId, type: locked ? "TOTP_LOCKED" : "TOTP_FAILED_ATTEMPT", detail });
+    return locked ? "LOCKED" : "INVALID";
   }
 
-  await prisma.totpCredential.update({
-    where: { userId },
+  if (matchedCounter === null || isReplay) return fail(isReplay ? "Code al eerder gebruikt" : "Ongeldige code");
+
+  // Atomair "claimen" van deze tijdstap: alleen de aanroep die lastUsedCounter werkelijk verhoogt, slaagt. Twee gelijktijdige
+  // verzoeken met dezelfde code zien allebei een oude waarde, maar de voorwaarde in de UPDATE laat er precies één door.
+  const claimed = await prisma.totpCredential.updateMany({
+    where: { userId, OR: [{ lastUsedCounter: null }, { lastUsedCounter: { lt: matchedCounter } }] },
     data: { lastUsedCounter: matchedCounter, failedAttempts: 0, lockedUntil: null },
   });
+  if (claimed.count !== 1) return fail("Code al eerder gebruikt");
   return "OK";
 }
 
@@ -129,11 +139,9 @@ export async function confirmTotpEnrollment(
     const pendingBase32 = decryptSecret(credential.pendingSecretEncrypted as string);
     const delta = buildTotp(pendingBase32, label).validate({ token: code.trim(), window: 1 });
     if (delta === null) {
-      const failedAttempts = credential.failedAttempts + 1;
-      const lockedUntil = failedAttempts >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCKOUT_MS) : null;
-      await prisma.totpCredential.update({ where: { userId }, data: { failedAttempts, lockedUntil } });
-      await logSecurityEvent({ userId, type: lockedUntil ? "TOTP_LOCKED" : "TOTP_FAILED_ATTEMPT", detail: "Ongeldige code (opnieuw instellen)" });
-      return { ok: false, outcome: lockedUntil ? "LOCKED" : "INVALID" };
+      const locked = await registerFailedAttempt(userId);
+      await logSecurityEvent({ userId, type: locked ? "TOTP_LOCKED" : "TOTP_FAILED_ATTEMPT", detail: "Ongeldige code (opnieuw instellen)" });
+      return { ok: false, outcome: locked ? "LOCKED" : "INVALID" };
     }
     await prisma.totpCredential.update({
       where: { userId },

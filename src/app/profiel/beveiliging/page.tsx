@@ -30,7 +30,7 @@ export default async function BeveiligingPage() {
       <div>
         <h1 className="text-xl font-semibold">Beveiliging</h1>
         <p className="text-sm text-[var(--text-muted)]">
-          {user.role === "ADMIN" ? "Tweefactorauthenticatie is verplicht voor het beheerdersaccount." : "Extra verificatie met een passkey is optioneel."}
+          {user.role === "ADMIN" ? "Tweefactorauthenticatie is verplicht voor het beheerdersaccount." : totpOn ? "Extra verificatie met een passkey of authenticator-app is optioneel." : "Extra verificatie met een passkey is optioneel."}
         </p>
       </div>
 
@@ -44,14 +44,19 @@ export default async function BeveiligingPage() {
         </div>
       ) : (
         <div className="glass-card space-y-3">
-          <h2 className="font-semibold">Passkey-verificatie (optioneel)</h2>
-          <UserMfaToggle enabled={user.mfaEnabled} hasPasskey={passkeys.length > 0 || totpConfigured} />
+          <h2 className="font-semibold">{totpOn ? "Verificatie (optioneel)" : "Passkey-verificatie (optioneel)"}</h2>
+          <UserMfaToggle enabled={user.mfaEnabled} hasMethod={passkeys.length > 0 || totpConfigured} totpEnabled={totpOn} />
           <h3 className="pt-2 text-sm font-medium">Passkeys</h3>
           <PasskeyManager credentials={passkeys} mfaEnabled={user.mfaEnabled} />
           {totpOn && (
             <>
               <h3 className="pt-2 text-sm font-medium">Authenticator-app</h3>
-              <UserTotpPanel configured={totpConfigured} canRemove={!user.mfaEnabled || passkeys.length > 0} />
+              <UserTotpPanel
+                configured={totpConfigured}
+                canRemove={!user.mfaEnabled || passkeys.length > 0}
+                unusedRecoveryCodes={totpConfigured ? await prisma.recoveryCode.count({ where: { userId: user.id, usedAt: null } }) : 0}
+                suggestPasskey={totpConfigured && passkeys.length === 0}
+              />
             </>
           )}
         </div>

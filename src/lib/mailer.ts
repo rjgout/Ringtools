@@ -220,3 +220,17 @@ export function invitationEmail(opts: { name: string; ringName: string; link: st
     ].join("\n"),
   };
 }
+
+export function mfaResetEmail(name: string) {
+  return {
+    subject: "Ringtools – je verificatie is gereset",
+    text: [
+      `Beste ${name},`,
+      "",
+      "De systeembeheerder van Ringtools heeft je tweede verificatiemethode (passkey of authenticator-app) gereset en je actieve sessies beëindigd.",
+      "Bij je volgende keer inloggen stel je opnieuw een methode in.",
+      "",
+      "Heb je hier niet om gevraagd of verwacht je dit niet? Neem dan direct contact op met je ringbeheerder.",
+    ].join("\n"),
+  };
+}

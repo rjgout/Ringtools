@@ -644,9 +644,16 @@ behouden.
 
 Neem het Postgres-volume (`ringtools_db`, of de NAS-map als je daarvoor
 gekozen hebt) mee in je Synology Hyper Backup-taak. Dat is de enige
-persistente opslag van de applicatie.
+persistente opslag van de applicatie. Een bestandsbackup van een draaiende
+database is alleen crash-consistent: maak daarnaast een logische dump
+(`pg_dump`). Stappen, terugdraaien van een update en de geteste uitkomsten
+staan in [`docs/BACKUP-HERSTEL.md`](docs/BACKUP-HERSTEL.md).
 
 ## Tests
+
+E2.1 (authenticator-app voor webgebruikers, vlag `WEB_TOTP_ENABLED`): `e2e/webTotp.spec.ts` draait alleen met `E2E_WEB_TOTP=on|off` en een server met dezelfde vlagwaarde.
+Draai achter elkaar `on`, `off`, `on` om ook het terugzetten van de vlag te testen. Let op: `npx vitest run` leegt de testdatabase, inclusief de
+webmin; verwijder daarna het testaccount (`DELETE FROM "User" WHERE role='ADMIN'`) en start de server opnieuw voor de Playwright-tests met webmin.
 
 ```bash
 npm test        # Vitest: kritieke workflow-, autorisatie- en authenticatielogica

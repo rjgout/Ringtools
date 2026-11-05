@@ -48,7 +48,7 @@ export function MemberList({ members, viewerIsAdmin }: { members: Member[]; view
             }}
             canEditProfile={viewerIsAdmin || m.otherRingCount === 0}
           />
-          {viewerIsAdmin && <ResetMfaButton userId={m.userId} userName={m.user.name} />}
+          {viewerIsAdmin && <ResetMfaButton userId={m.userId} userName={m.user.name} email={m.user.email} />}
         </details>
       ))}
     </div>

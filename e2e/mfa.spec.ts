@@ -147,10 +147,12 @@ test("een admin kan de MFA van een gebruiker resetten; de gebruiker moet daarna 
   await loginAsAdmin(page, "webmin", "e2e-test-wachtwoord-123");
   await page.goto(`/ringen/${ringId}`);
   const row = page.locator("details", { hasText: user.email });
-  await row.locator("summary").click();
+  await row.locator("summary").first().click();
 
-  page.once("dialog", (dialog) => dialog.accept());
-  await row.getByRole("button", { name: "MFA resetten" }).click();
+  await row.getByText("Verificatie resetten (noodprocedure)").click();
+  await row.getByLabel(/Ik heb de identiteit/).check();
+  await row.getByLabel(/Typ ter bevestiging/).fill(user.email);
+  await row.getByRole("button", { name: "Verificatie resetten", exact: true }).click();
   await expect(row.getByText(/is gereset/)).toBeVisible();
   expect(await prisma.webAuthnCredential.count({ where: { userId: user.id } })).toBe(0);
 
@@ -170,7 +172,7 @@ test("een ringbeheerder (geen webmin) ziet geen 'MFA resetten'-knop in gebruiker
   await expect(page).toHaveURL(/\/dashboard/);
 
   await page.goto("/gebruikers");
-  await expect(page.getByRole("button", { name: "MFA resetten" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Verificatie resetten", exact: true })).toHaveCount(0);
 });
 
 test.describe("Mobiele interface", () => {

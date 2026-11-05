@@ -111,11 +111,10 @@ describe("Gestructureerde kerkelijke functies: rol ≠ bevoegdheid, fail-closed"
   it("ringpresident, eerste en tweede raadgever zijn uniek per ring; gelijktijdig toewijzen levert precies één houder op", async () => {
     const s = await setup();
     const base = { actorId: s.manager.id, isRingManager: false, active: true, churchFunction: "Functie", role: "RINGPRESIDIUM" as const };
-    const results = await Promise.allSettled([
-      updateMember({ ...base, membershipId: (await s.mem(s.president.id)).id, churchFunctionCode: "RINGPRESIDENT" }),
-      updateMember({ ...base, membershipId: (await s.mem(s.first.id)).id, churchFunctionCode: "RINGPRESIDENT" }),
-      updateMember({ ...base, membershipId: (await s.mem(s.second.id)).id, churchFunctionCode: "RINGPRESIDENT" }),
-    ]);
+    // Eerst alle lidmaatschappen ophalen en daarna pas de gelijktijdige updates starten: met een `await` tussen de aanroepen kon een snel
+    // afgewezen eerste update nog zonder afhandelaar zijn (niet-afgevangen rejection in de testuitvoer).
+    const membershipIds = [(await s.mem(s.president.id)).id, (await s.mem(s.first.id)).id, (await s.mem(s.second.id)).id];
+    const results = await Promise.allSettled(membershipIds.map((membershipId) => updateMember({ ...base, membershipId, churchFunctionCode: "RINGPRESIDENT" })));
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     expect(await prisma.ringMembership.count({ where: { ringId: s.ring.id, churchFunctionCode: "RINGPRESIDENT" } })).toBe(1);
     // een gedeactiveerde houder blokkeert de functie niet; heractiveren naast een nieuwe houder wel

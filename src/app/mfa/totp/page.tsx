@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import QRCode from "qrcode";
+import { prisma } from "@/lib/prisma";
 import { getAwaitingMfaUser, safeInternalPath } from "@/lib/session";
 import { startTotpEnrollment, isTotpConfirmed } from "@/lib/mfa";
 import { enrolledMethods, totpAllowedForUser } from "@/lib/mfaMethods";
@@ -19,6 +20,7 @@ export default async function TotpMfaPage({ searchParams }: { searchParams: Prom
   if (!isAdmin && !totpAllowedForUser(awaiting.user.role)) redirect(toPasskey);
 
   let confirmed = true;
+  const hasRecoveryCodes = !isAdmin && (await prisma.recoveryCode.count({ where: { userId: awaiting.userId, usedAt: null } })) > 0;
   if (isAdmin) {
     confirmed = await isTotpConfirmed(awaiting.userId);
   } else {
@@ -42,7 +44,7 @@ export default async function TotpMfaPage({ searchParams }: { searchParams: Prom
           <p className="mt-1 text-sm text-[var(--text-muted)]">Welkom, {awaiting.user.name}</p>
         </div>
         {confirmed || !enrollment ? (
-          <TotpVerifyForm redirectTo={redirectTo} allowRecovery={isAdmin} />
+          <TotpVerifyForm redirectTo={redirectTo} allowRecovery={isAdmin || hasRecoveryCodes} />
         ) : (
           <TotpEnrollForm qrDataUrl={enrollment.qrDataUrl} secret={enrollment.secret} redirectTo={redirectTo} />
         )}

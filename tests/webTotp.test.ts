@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as OTPAuth from "otpauth";
 import { prisma } from "@/lib/prisma";
 import { createSession, hasFreshFactorProof } from "@/lib/auth";
-import { startTotpEnrollment, confirmTotpEnrollment, isTotpConfirmed, removeTotp, verifyTotpCode } from "@/lib/mfa";
+import { startTotpEnrollment, confirmTotpEnrollment, isTotpConfirmed, removeTotp, verifyTotpCode, regenerateRecoveryCodes } from "@/lib/mfa";
+import { removePasskeyGuarded, removeTotpGuarded, enableMfaGuarded } from "@/lib/mfaMethods";
 import { enrolledMethods } from "@/lib/mfaMethods";
 import { resetDatabase, createTestUser } from "./setup";
 
@@ -61,7 +62,7 @@ async function fullFor(userId: string, recent = true) {
 }
 async function confirmedTotp(userId: string, email: string) {
   const { secret } = await startTotpEnrollment(userId, email);
-  await confirmTotpEnrollment(userId, email, code(secret), { issueRecoveryCodes: false });
+  await confirmTotpEnrollment(userId, email, code(secret));
   // Dezelfde tijdstap mag niet opnieuw: de volgende tests gebruiken de volgende stap.
   return secret;
 }
@@ -95,14 +96,32 @@ describe("E2.1 – methoden en vlag", () => {
     expect(await enrolledMethods(admin)).toEqual([]);
   });
 
-  it("zonder herstelcodes voor gewone gebruikers; removeTotp ruimt alles op", async () => {
+  it("inschrijving geeft acht gehashte herstelcodes; removeTotp ruimt alles op", async () => {
     const user = await createTestUser("HOGERAAD", "Gebruiker");
     await confirmedTotp(user.id, user.email);
-    expect(await prisma.recoveryCode.count({ where: { userId: user.id } })).toBe(0);
-    await prisma.recoveryCode.create({ data: { userId: user.id, codeHash: "h" } });
+    const rows = await prisma.recoveryCode.findMany({ where: { userId: user.id } });
+    expect(rows).toHaveLength(8);
+    expect(rows.every((r) => r.codeHash.length >= 32 && !r.codeHash.includes("-"))).toBe(true);
     await removeTotp(user.id);
     expect(await isTotpConfirmed(user.id)).toBe(false);
     expect(await prisma.recoveryCode.count({ where: { userId: user.id } })).toBe(0);
+  });
+
+  it("replay-race: twee gelijktijdige verificaties met dezelfde code slagen nooit allebei", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    const secret = await confirmedTotp(user.id, user.email);
+    const c = code(secret, 1);
+    const results = await Promise.all(Array.from({ length: 6 }, () => verifyTotpCode(user.id, user.email, c)));
+    expect(results.filter((r) => r === "OK")).toHaveLength(1);
+  });
+
+  it("gelijktijdige foute pogingen worden allemaal geteld (lockout na 5)", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    await confirmedTotp(user.id, user.email);
+    await Promise.all(Array.from({ length: 5 }, () => verifyTotpCode(user.id, user.email, "000000")));
+    const row = await prisma.totpCredential.findUniqueOrThrow({ where: { userId: user.id } });
+    expect(row.failedAttempts).toBeGreaterThanOrEqual(5);
+    expect(row.lockedUntil).not.toBeNull();
   });
 });
 
@@ -150,14 +169,44 @@ describe("E2.1 – inloggen met TOTP", () => {
     expect(await prisma.session.count({ where: { userId: user.id, mfaAt: { not: null } } })).toBe(0);
   });
 
-  it("herstelcode-login bestaat niet voor gewone gebruikers", async () => {
+  it("herstelcode: eenmalig bruikbaar bij een gewone gebruiker met authenticator-app", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    const secret = await confirmedTotp(user.id, user.email);
+    void secret;
+    const codes = await regenerateRecoveryCodes(user.id);
+    await pendingFor(user.id);
+    await expect(actions.useRecoveryCodeLoginAction(null, form({ code: codes[0], redirect: "/dashboard" }))).rejects.toThrow("NEXT_REDIRECT:/dashboard");
+    await pendingFor(user.id);
+    const again = await actions.useRecoveryCodeLoginAction(null, form({ code: codes[0] }));
+    expect(again.ok).toBe(false);
+  });
+
+  it("herstelcode zonder (bevestigde) authenticator-app of met vlag uit: geweigerd", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    await addPasskey(user.id);
+    const codes = await regenerateRecoveryCodes(user.id); // verdwaalde codes zonder TOTP
+    await pendingFor(user.id);
+    expect((await actions.useRecoveryCodeLoginAction(null, form({ code: codes[0] }))).ok).toBe(false);
+    const other = await createTestUser("HOGERAAD", "Ander");
+    await confirmedTotp(other.id, other.email);
+    const otherCodes = await regenerateRecoveryCodes(other.id);
+    delete process.env.WEB_TOTP_ENABLED;
+    await pendingFor(other.id);
+    expect((await actions.useRecoveryCodeLoginAction(null, form({ code: otherCodes[0] }))).ok).toBe(false);
+    expect(await prisma.session.count({ where: { mfaAt: { not: null } } })).toBe(0);
+  });
+
+  it("nieuwe herstelcodes maken vereist recente MFA en maakt de oude ongeldig", async () => {
     const user = await createTestUser("HOGERAAD", "Gebruiker");
     await confirmedTotp(user.id, user.email);
-    await prisma.recoveryCode.create({ data: { userId: user.id, codeHash: "x" } });
+    const old = await regenerateRecoveryCodes(user.id);
+    await fullFor(user.id, false);
+    await expect(actions.regenerateRecoveryCodesAction()).rejects.toThrow("herverifieer");
+    await fullFor(user.id);
+    const res = await actions.regenerateRecoveryCodesAction();
+    expect(res.ok && res.recoveryCodes).toHaveLength(8);
     await pendingFor(user.id);
-    const res = await actions.useRecoveryCodeLoginAction(null, form({ code: "AAAAA-BBBBB" }));
-    expect(res.ok).toBe(false);
-    expect(await prisma.session.count({ where: { userId: user.id, mfaAt: { not: null } } })).toBe(0);
+    expect((await actions.useRecoveryCodeLoginAction(null, form({ code: old[0] }))).ok).toBe(false);
   });
 });
 
@@ -168,7 +217,7 @@ describe("E2.1 – inschrijving tijdens het inloggen", () => {
     await pendingFor(user.id);
     const res = await actions.confirmTotpEnrollmentLoginAction(null, form({ code: code(secret) }));
     expect(res.ok).toBe(true);
-    expect(res.recoveryCodes).toEqual([]);
+    expect(res.recoveryCodes).toHaveLength(8);
     const row = await prisma.session.findFirstOrThrow({ where: { userId: user.id } });
     expect(hasFreshFactorProof({ factorProvedAt: row.factorProvedAt })).toBe(true);
   });
@@ -205,7 +254,9 @@ describe("E2.1 – beheer in het profiel", () => {
     const user = await createTestUser("HOGERAAD", "Gebruiker");
     await fullFor(user.id);
     const view = await actions.startUserTotpEnrollmentAction();
-    expect((await actions.confirmUserTotpEnrollmentAction(null, form({ code: code(view.secret) }))).ok).toBe(true);
+    const confirmed = await actions.confirmUserTotpEnrollmentAction(null, form({ code: code(view.secret) }));
+    expect(confirmed.ok).toBe(true);
+    expect(confirmed.recoveryCodes).toHaveLength(8);
     expect(await actions.enableUserMfaAction()).toMatchObject({ ok: true });
     await fullFor(user.id);
     const removed = await actions.removeUserTotpAction();
@@ -234,16 +285,58 @@ describe("E2.1 – beheer in het profiel", () => {
     await expect(actions.startUserTotpEnrollmentAction()).rejects.toThrow();
   });
 
-  it("webmin-reset wist ook de authenticator-app van de gebruiker (niet die van een andere gebruiker)", async () => {
+  it("gelijktijdig laatste passkey en laatste authenticator-app verwijderen: er blijft altijd een methode over", async () => {
+    for (let i = 0; i < 5; i++) {
+      await resetDatabase();
+      const user = await createTestUser("HOGERAAD", "Gebruiker");
+      await addPasskey(user.id);
+      await confirmedTotp(user.id, user.email);
+      await prisma.user.update({ where: { id: user.id }, data: { mfaEnabled: true } });
+      const cred = await prisma.webAuthnCredential.findFirstOrThrow({ where: { userId: user.id } });
+      const [a, b] = await Promise.all([removePasskeyGuarded(user.id, cred.id), removeTotpGuarded(user.id)]);
+      expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
+      const left = (await prisma.webAuthnCredential.count({ where: { userId: user.id } })) + (await isTotpConfirmed(user.id) ? 1 : 0);
+      expect(left).toBe(1);
+    }
+  });
+
+  it("verificatie inschakelen zonder bruikbare methode is geweigerd; gelijktijdig met verwijderen blijft consistent", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    expect((await enableMfaGuarded(user.id)).ok).toBe(false);
+    await confirmedTotp(user.id, user.email);
+    const [en, rm] = await Promise.all([enableMfaGuarded(user.id), removeTotpGuarded(user.id)]);
+    const fresh = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    const hasMethod = await isTotpConfirmed(user.id);
+    // Nooit: verificatie aan zonder methode.
+    expect(fresh.mfaEnabled && !hasMethod).toBe(false);
+    expect(en.ok || rm.ok).toBe(true);
+  });
+
+  it("webmin-reset: vereist identiteitsbevestiging en e-mailadres; wist alles atomair, trekt sessies in en logt", async () => {
     const admin = await createTestUser("ADMIN", "Webmin");
     const target = await createTestUser("HOGERAAD", "Doel");
     const other = await createTestUser("HOGERAAD", "Ander");
     await confirmedTotp(target.id, target.email);
+    await addPasskey(target.id);
+    await prisma.user.update({ where: { id: target.id }, data: { mfaEnabled: true } });
+    await prisma.webAuthnChallenge.create({ data: { userId: target.id, challenge: "c", expiresAt: new Date(Date.now() + 60000) } });
+    await createSession(target.id);
     await confirmedTotp(other.id, other.email);
     await fullFor(admin.id);
-    const res = await actions.resetUserMfaAction(null, form({ userId: target.id }));
+
+    expect((await actions.resetUserMfaAction(null, form({ userId: target.id, confirmEmail: target.email }))).ok).toBe(false); // geen identiteitsbevestiging
+    expect((await actions.resetUserMfaAction(null, form({ userId: target.id, identityChecked: "yes", confirmEmail: "iemand@anders.nl" }))).ok).toBe(false);
+    expect(await isTotpConfirmed(target.id)).toBe(true);
+
+    const res = await actions.resetUserMfaAction(null, form({ userId: target.id, identityChecked: "yes", confirmEmail: target.email.toUpperCase() }));
     expect(res.ok).toBe(true);
     expect(await isTotpConfirmed(target.id)).toBe(false);
-    expect(await isTotpConfirmed(other.id)).toBe(true);
+    expect(await prisma.webAuthnCredential.count({ where: { userId: target.id } })).toBe(0);
+    expect(await prisma.recoveryCode.count({ where: { userId: target.id } })).toBe(0);
+    expect(await prisma.session.count({ where: { userId: target.id } })).toBe(0);
+    expect(await prisma.securityEvent.count({ where: { userId: target.id, type: "MFA_RESET_BY_ADMIN", actorUserId: admin.id } })).toBe(1);
+    expect(await isTotpConfirmed(other.id)).toBe(true); // andere gebruiker onaangetast
+    // Eindtoestand: MFA aan, geen methode -> eerste inschrijving is dan toegestaan
+    expect((await enrolledMethods(target))).toEqual([]);
   });
 });

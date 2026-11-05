@@ -1,6 +1,9 @@
 # Ontwerp: MFA-keuze voor webgebruikers (fase E2 – E2.1 gebouwd achter vlag UIT; rest nog NIET gebouwd)
 
-> **Status: alleen ontwerp en roadmap.** Er is niets geïmplementeerd of geactiveerd. Productkeuzes onderaan ("Beslissingen eigenaar") moeten eerst worden vastgesteld. De bestaande MFA (passkey voor gebruikers die dat aanzetten, wachtwoord + verplichte TOTP voor webmin, e-mailcode als eerste factor) blijft ongewijzigd.
+> **Status (bijgewerkt na E2.1):**
+> - **E2.1 is gebouwd op de ontwikkelbranch, achter de functievlag `WEB_TOTP_ENABLED` (standaard UIT, niet geactiveerd, niet op main).** Beschrijving en beveiligingskeuzes: zie §9 onderaan.
+> - **E2.2 t/m E2.5 (passkey als keuzemethode in een nieuw keuzescherm, vertrouwd toestel, number matching, beleid zoals verplichte MFA per rol) zijn alleen ontwerp.** Number matching is niet gebouwd en wordt niet als WebAuthn-equivalent gepresenteerd.
+> - Zonder de vlag is het gedrag ongewijzigd: gewone gebruikers kennen alleen optionele passkey-verificatie; webmin = wachtwoord + verplichte TOTP; e-mailcode blijft eerste factor.
 
 ## 1. Doel
 Gebruikers van de beveiligde webomgeving (bijv. een secretaris met een laptop) kiezen bij het inloggen uit de tweede-factormethoden die **voor hun account zijn geregistreerd**:
@@ -100,23 +103,23 @@ Per stap: backendtests (race/replay/expiry/ringisolatie), clienttests, Playwrigh
 6. **Volgorde**: akkoord met E2.1 → E2.5, in het bijzonder TOTP eerst?
 7. Mag voor ondertekening een **eigen kleine native plug-in** worden gebouwd (voorkeur) in plaats van een externe?
 
+## 9. E2.1 – wat er werkelijk is gebouwd (functievlag `WEB_TOTP_ENABLED`, standaard UIT)
 
-## E2.1 – status (gebouwd, functievlag `WEB_TOTP_ENABLED` standaard UIT)
+**Werking (hergebruikt `src/lib/mfa.ts`, pending-login, `factorProvedAt`, `promoteSessionToMfaVerified`; geen schemawijziging):**
+- `src/lib/mfaMethods.ts` bepaalt de bruikbare methoden. Met de vlag uit telt een eventueel aanwezige TOTP voor een gewone gebruiker **nergens** mee; webmin houdt het eigen, ongewijzigde pad.
+- **Inloggen:** na de e-mailcode kiest de gebruiker (alleen als er twee methoden zijn) passkey of authenticator-app; bij één methode volgt die direct. TOTP wordt alleen op een **bevestigde** instelling geverifieerd; rate limit 10/15 min, replay-bescherming en persistente lockout na 5 fouten.
+- **Herstelcodes:** acht eenmalige codes (alleen hashes; eenmalige weergave) bij het instellen van de authenticator-app. Ze horen bij de authenticator-app: werken alleen bij een bevestigde TOTP en met de vlag aan. Nieuwe set maken vereist recente MFA en maakt de oude direct ongeldig. Verwijderen van de authenticator-app verwijdert de codes. Een gebruiker met alleen een passkey heeft geen herstelcodes; zij worden daarvoor niet aangeboden.
+- **Eerste inschrijving met alleen een e-mailcode:** uitsluitend als er **werkelijk geen** methode is (bijv. na een reset). Methoden toevoegen of vervangen bij een al beveiligd account kan nooit met alleen een e-mailcode: in het profiel is recente MFA nodig, tijdens inloggen wordt het geweigerd (TOTP-pagina stuurt een passkey-gebruiker door; passkey-inschrijving blijft geblokkeerd bij een bestaande TOTP).
+- **Minimaal één methode** volstaat. De interface beveelt een tweede methode en een passkey sterk aan (de sterkste methode, phishingbestendig; een code uit een app niet).
+- **Invariant:** een account met ingeschakelde verificatie houdt altijd een bruikbare methode. Verwijderen van een passkey, van de authenticator-app en het inschakelen van verificatie lopen in één transactie met een rijvergrendeling op de gebruiker (`SELECT … FOR UPDATE`); gelijktijdige verwijderingen worden serieel afgehandeld (getest).
+- **Races:** een TOTP-tijdstap wordt atomair "geclaimd" (voorwaardelijke `UPDATE` op `lastUsedCounter`), zodat dezelfde code bij gelijktijdige verzoeken maar één keer slaagt; foute pogingen worden atomair opgeteld (`increment`).
+- **Webmin-reset (noodprocedure):** vereist recente MFA van de webmin, bevestiging dat de identiteit buiten Ringtools is gecontroleerd, en het intypen van het e-mailadres van de gebruiker. Eén transactie: alle passkeys, challenges, authenticator-app, herstelcodes, sessies en het auditspoor (`MFA_RESET_BY_ADMIN`, met de naam van de webmin); daarna een e-mail aan de gebruiker (best effort; een mislukte mail maakt de reset niet ongedaan en wordt aan de webmin getoond). Eindtoestand: verificatie blijft aan, geen methode en geen sessie; bij de volgende inlog is een eerste inschrijving toegestaan.
+- **Vlag terugzetten (UIT) terwijl gebruikers al TOTP hebben:** hun TOTP en herstelcodes blijven bewaard maar tellen niet mee. Een gebruiker met alleen een authenticator-app kan dan niet inloggen en ziet een duidelijke melding (geen inschrijving met alleen een e-mailcode, want er bestaat een methode). Oplossing: vlag weer aan, of webmin-reset. Dit is getest (Playwright aan → uit → aan).
+- **Native app:** ongewijzigd fail-closed. TOTP wordt in de app niet aangeboden; een TOTP-only account krijgt in de app de bestaande veilige melding (via de webapp inloggen/instellen).
+- **Meldingen:** zodra TOTP is toegestaan spreken de teksten van "verificatie"; zonder de vlag blijven ze "passkey". Herstelcodes worden alleen genoemd waar ze bestaan.
 
-**Gebouwd (hergebruikt `src/lib/mfa.ts` en de bestaande pending-login/`factorProvedAt`/`promoteSessionToMfaVerified`-keten):**
-- `src/lib/mfaMethods.ts`: `enrolledMethods`/`totpAllowedForUser`. Met de vlag uit telt TOTP voor een gewone gebruiker nergens mee (fail-closed); webmin blijft het eigen, ongewijzigde TOTP-pad.
-- Inloggen: `/mfa/passkey` toont (alleen met vlag) een keuze passkey/authenticator-app als beide bestaan, stuurt een TOTP-only gebruiker naar `/mfa/totp`; `/mfa/totp` verifieert alleen een **bevestigde** instelling (rate limit 10/15 min, replay-bescherming via `lastUsedCounter`, persistente lockout na 5 fouten).
-- Nieuwe factor tijdens inloggen (alleen e-mailcode als bewijs) uitsluitend als er **nog geen** methode is (zelfde regel als bij passkeys, `mayEnrollFirstFactorWhilePending`); wie al een passkey heeft kan er via een e-mailcode geen zwakkere factor bijzetten.
-- Profiel (`/profiel/beveiliging`): authenticator-app instellen/verwijderen met de bestaande "recente MFA"-regel; verificatie inschakelen werkt met passkey of TOTP; de laatste methode is niet verwijderbaar zolang verificatie aan staat (ook de laatste passkey niet als er geen TOTP is). Herverificatie (`/profiel/beveiliging/herverifieer`) biedt TOTP naast passkey.
-- Webmin-reset van een gebruiker wist nu ook de authenticator-app.
-- Native app: ongewijzigd fail-closed. `/auth/login` weigert MFA-accounts zolang `NATIVE_PASSKEYS_ENABLED` uit staat; een TOTP-only account krijgt ook met die vlag aan de bestaande veilige melding (geen passkey → inschrijven via de webapp). TOTP wordt in de app niet aangeboden.
+**Bewust niet gebouwd:** verplichte MFA per rol; `Session.mfaMethod` (nog geen consument; additieve migratie zodra E2.3/E2.4 dat nodig hebben); mail aan de gebruiker bij het gebruiken van een herstelcode (wel in het beveiligingslogboek `RECOVERY_CODE_USED`); persistente lockout voor herstelcode-pogingen (nu in-memory rate limit 10/15 min per gebruiker).
 
-**Bewust NIET gebouwd (open beleidsbesluiten voor de eigenaar):**
-1. *Herstel voor gewone gebruikers.* Geen herstelcodes en geen herstel-login (E2.1 geeft ze niet uit). Een gebruiker die zijn authenticator-app kwijt is en geen passkey heeft, wordt geholpen via de webmin-reset (wist alle methoden; daarna eerste inschrijving bij het volgende inloggen). Keuze nodig: herstelcodes ja/nee, of altijd webmin-reset.
-2. *Verplichte MFA per rol* (bijv. ringstaf op de laptop) — niet aangepast; MFA blijft vrijwillig voor gewone gebruikers.
-3. *Eerste inschrijving zonder bestaande methode* gebeurt met alleen de e-mailcode als bewijs (gelijk aan het bestaande passkeygedrag na een reset). Alternatief: webmin moet eerst een uitnodiging voor inschrijving geven.
-4. *Minimum aantal methoden* (bijv. altijd twee) — niet afgedwongen.
-5. `Session.mfaMethod` (genoemd onder E2.1 hierboven) is **niet** gebouwd: er is nog geen consument (E2.3/E2.4); het toevoegen van een kolom is dan een kleine, additieve migratie. Het beveiligingslogboek registreert methode via `detail` (hergebruikt bestaande `TOTP_*`-events; voor verwijderen is `TOTP_RESET` hergebruikt om geen enum-migratie nodig te hebben).
-6. Pushbare TOTP is niet phishingbestendig; de interface zegt dat ook. Een passkey blijft de sterkere keuze.
+**Open punten voor de eigenaar vóór activeren:** (1) bevestig dat de interne meldingsmail bij een reset acceptabel is; (2) bevestig het bewust beperkte bereik van herstelcodes (alleen bij TOTP); (3) besluit over verplichte MFA per rol en over een persistente lockout voor herstelcodes; (4) back-up/herstel op de NAS eerst oefenen (`docs/BACKUP-HERSTEL.md`).
 
-**Activeren:** `WEB_TOTP_ENABLED=true` in de omgeving van de container — alleen na akkoord van de eigenaar en nadat de punten hierboven zijn beslist. Geen schemawijziging, dus geen migratie nodig.
+**Tests:** `tests/webTotp.test.ts` (22), `e2e/webTotp.spec.ts` (aan: 8, uit: 4; draai de spec met `E2E_WEB_TOTP=on|off` en een server met dezelfde `WEB_TOTP_ENABLED`; volgorde aan → uit → aan test het terugzetten van de vlag). **Activeren:** `WEB_TOTP_ENABLED=true` in de omgeving van de container, pas na akkoord van de eigenaar.

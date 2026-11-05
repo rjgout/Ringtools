@@ -7,22 +7,35 @@ import {
   startUserTotpEnrollmentAction,
   confirmUserTotpEnrollmentAction,
   removeUserTotpAction,
-  type ActionResult,
+  regenerateRecoveryCodesAction,
+  type TotpEnrollResult,
   type TotpEnrollmentView,
 } from "@/lib/actions/mfa.actions";
+import { RecoveryCodesReveal } from "./RecoveryCodesReveal";
 
-const initialState: ActionResult = { ok: false, message: "" };
+const initialState: TotpEnrollResult = { ok: false, message: "" };
 
-/** Authenticator-app (TOTP) voor gewone gebruikers (E2.1, achter WEB_TOTP_ENABLED). Geen herstelcodes: herstel is een open beleidskeuze. */
-export function UserTotpPanel({ configured, canRemove }: { configured: boolean; canRemove: boolean }) {
+/** Authenticator-app (TOTP) voor gewone gebruikers (E2.1, achter WEB_TOTP_ENABLED), met herstelcodes. */
+export function UserTotpPanel({
+  configured,
+  canRemove,
+  unusedRecoveryCodes,
+  suggestPasskey,
+}: {
+  configured: boolean;
+  canRemove: boolean;
+  unusedRecoveryCodes: number;
+  suggestPasskey: boolean;
+}) {
   const router = useRouter();
   const [enrollment, setEnrollment] = useState<TotpEnrollmentView | null>(null);
+  const [codes, setCodes] = useState<string[] | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [state, action, pending] = useActionState(async (prev: ActionResult, formData: FormData) => {
+  const [state, action, pending] = useActionState(async (prev: TotpEnrollResult, formData: FormData) => {
     const result = await confirmUserTotpEnrollmentAction(prev, formData);
     if (result.ok) {
       setEnrollment(null);
-      router.refresh();
+      setCodes(result.recoveryCodes ?? null);
     }
     return result;
   }, initialState);
@@ -43,12 +56,38 @@ export function UserTotpPanel({ configured, canRemove }: { configured: boolean; 
     if (result.ok) router.refresh();
   }
 
+  async function regenerate() {
+    setMessage(null);
+    const result = await regenerateRecoveryCodesAction();
+    if (result.ok && result.recoveryCodes) setCodes(result.recoveryCodes);
+    else setMessage({ ok: false, text: result.message });
+  }
+
+  if (codes) {
+    return (
+      <div className="space-y-3" data-testid="recovery-codes-panel">
+        <p className="text-sm text-[var(--success)]">Authenticator-app is ingesteld. Bewaar je herstelcodes nu: ze worden niet opnieuw getoond.</p>
+        <RecoveryCodesReveal codes={codes} />
+        <button
+          type="button"
+          className="btn-primary w-full"
+          onClick={() => {
+            setCodes(null);
+            router.refresh();
+          }}
+        >
+          Ik heb mijn herstelcodes opgeslagen
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <p className="text-sm text-[var(--text-muted)]">
         {configured
-          ? "Een authenticator-app is ingesteld. Let op: een code uit een app is niet bestand tegen phishing; een passkey wel."
-          : "Optioneel: bevestig inloggen met een 6-cijferige code uit een authenticator-app."}
+          ? "Een authenticator-app is ingesteld. Een code uit een app is niet bestand tegen phishing; een passkey wel."
+          : "Optioneel: bevestig inloggen met een 6-cijferige code uit een authenticator-app. Je krijgt acht eenmalige herstelcodes."}
       </p>
 
       {enrollment ? (
@@ -67,21 +106,32 @@ export function UserTotpPanel({ configured, canRemove }: { configured: boolean; 
           <button type="submit" disabled={pending} className="btn-primary w-full">
             {pending ? "Even geduld…" : "Bevestigen"}
           </button>
-          {state.message && <p className={`text-sm ${state.ok ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>{state.message}</p>}
+          {state.message && !state.ok && <p className="text-sm text-[var(--danger)]">{state.message}</p>}
         </form>
       ) : configured ? (
-        canRemove && (
-          <button type="button" onClick={remove} className="btn-ghost text-sm">
-            Authenticator-app verwijderen
-          </button>
-        )
+        <div className="space-y-2">
+          <p className="text-xs text-[var(--text-muted)]">Nog {unusedRecoveryCodes} van 8 herstelcodes ongebruikt.</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={regenerate} className="btn-ghost text-sm">
+              Nieuwe herstelcodes maken
+            </button>
+            {canRemove && (
+              <button type="button" onClick={remove} className="btn-ghost text-sm">
+                Authenticator-app verwijderen
+              </button>
+            )}
+          </div>
+          {!canRemove && <p className="text-xs text-[var(--text-muted)]">Dit is je enige methode; registreer eerst een passkey of schakel verificatie uit om hem te verwijderen.</p>}
+        </div>
       ) : (
         <button type="button" onClick={start} className="btn-primary text-sm">
           Authenticator-app instellen
         </button>
       )}
-      {configured && !canRemove && (
-        <p className="text-xs text-[var(--text-muted)]">Dit is je enige methode; registreer eerst een passkey of schakel verificatie uit om hem te verwijderen.</p>
+      {configured && suggestPasskey && (
+        <p className="rounded-xl bg-black/5 p-3 text-xs dark:bg-white/5" data-testid="suggest-passkey">
+          Aanbevolen: registreer ook een passkey. Een passkey is de sterkste methode en een tweede methode voorkomt dat je buitengesloten raakt.
+        </p>
       )}
       {message && <p className={`text-sm ${message.ok ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>{message.text}</p>}
     </div>
