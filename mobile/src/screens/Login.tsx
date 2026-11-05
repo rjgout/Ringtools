@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { AdminLogin } from "./AdminLogin";
 import { useAuth } from "../lib/auth";
 import { ApiRequestError } from "../lib/api";
 import { nativeCapabilities, PERSONAL_TEAM_NOTICE } from "../lib/buildProfile";
-import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, PasskeyError, passkeysUsable } from "../lib/passkeys";
+import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, PasskeyError, passkeysUsable, subscribePasskeyProvider } from "../lib/passkeys";
 
 /** Inloggen met e-mail + 8-cijferige code uit de e-mail. De link in de mail opent deze app direct (universele link). */
 export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: string; onHaveInvitation?: () => void }) {
@@ -17,6 +17,8 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
   const [info, setInfo] = useState<string | null>(null);
   const [admin, setAdmin] = useState(false);
   // Servercapaciteit (functievlag) uit GET /meta; onbekend of mislukt = niet beschikbaar (veilige standaardmelding).
+  // Reactief: de provider kan pas na het eerste renderen (en na /meta) geregistreerd worden.
+  const providerReady = useSyncExternalStore(subscribePasskeyProvider, () => getPasskeyProvider() !== null);
   const [serverPasskeys, setServerPasskeys] = useState<boolean | undefined>(undefined);
 
   useEffect(() => {
@@ -136,7 +138,7 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
         {nativeCapabilities().limited && <p role="note" className="muted">{PERSONAL_TEAM_NOTICE}</p>}
         {onHaveInvitation && step === "email" && <button type="button" className="btn btn-ghost btn-block" onClick={onHaveInvitation}>Ik heb een uitnodiging</button>}
         <button type="button" className="btn btn-ghost btn-block" onClick={() => setAdmin(true)}>Inloggen als beheerder (webmin)</button>
-        {passkeysUsable(serverPasskeys, nativeCapabilities().limited) ? (
+        {providerReady && passkeysUsable(serverPasskeys, nativeCapabilities().limited) ? (
           <p className="muted">Heeft jouw account extra verificatie met een passkey? Na de inlogcode verifieer je dan met je passkey op dit toestel.</p>
         ) : (
           <p className="muted">Accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd.</p>

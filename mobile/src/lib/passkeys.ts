@@ -48,9 +48,18 @@ export interface PasskeyProvider {
 }
 
 let provider: PasskeyProvider | null = null;
+const listeners = new Set<() => void>();
 
 export function registerPasskeyProvider(p: PasskeyProvider | null) {
+  if (provider === p) return;
   provider = p;
+  listeners.forEach((l) => l());
+}
+
+/** Reactieve koppeling (useSyncExternalStore): de provider wordt asynchroon geregistreerd, na het eerste renderen. */
+export function subscribePasskeyProvider(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
 }
 
 /** Standaard null: geen native plug-in in deze build. */

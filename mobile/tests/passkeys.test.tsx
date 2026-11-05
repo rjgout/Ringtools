@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ApiRequestError } from "../src/lib/api";
 import { nativeCapabilities } from "../src/lib/buildProfile";
 import { PasskeyCancelledError, PasskeyError, passkeysUsable, registerPasskeyProvider, getPasskeyProvider, type PasskeyAssertion } from "../src/lib/passkeys";
@@ -187,6 +187,29 @@ describe("Inlogscherm: melding over passkeys volgt de werkelijke beschikbaarheid
     render(<Login />);
     expect(await screen.findByText(OK)).toBeTruthy();
     expect(screen.queryByText(WARN)).toBeNull();
+  });
+
+  it("provider pas na /meta geregistreerd: melding wordt bijgewerkt (standaardbuild)", async () => {
+    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true }));
+    render(<Login />);
+    await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 10)); // /meta is verwerkt, nog geen provider
+    expect(screen.getByText(WARN)).toBeTruthy();
+    expect(screen.queryByText(OK)).toBeNull();
+    act(() => registerPasskeyProvider({ authenticate: async () => ASSERTION }));
+    expect(await screen.findByText(OK)).toBeTruthy();
+    expect(screen.queryByText(WARN)).toBeNull();
+    act(() => registerPasskeyProvider(null)); // en weer terug naar de veilige melding
+    expect(await screen.findByText(WARN)).toBeTruthy();
+  });
+
+  it("Personal Team-build: provider later geregistreerd verandert niets", async () => {
+    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true }), true);
+    render(<Login />);
+    await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
+    act(() => registerPasskeyProvider({ authenticate: async () => ASSERTION }));
+    expect(screen.getByText(WARN)).toBeTruthy();
+    expect(screen.queryByText(OK)).toBeNull();
   });
 
   it("Personal Team-build: waarschuwing blijft, ook met server aan en provider", async () => {
