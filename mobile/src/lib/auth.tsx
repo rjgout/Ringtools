@@ -1,10 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { App as CapApp } from "@capacitor/app";
 import type { LoginResult, Me, RingInfo } from "@shared/api-types";
 import { ApiClient, ApiRequestError } from "./api";
 import { storage } from "./storage";
 import { API_BASE } from "../config";
-import { isNative, platform } from "./native";
+import { platform } from "./native";
 import { registerForPush } from "./push";
 import { resumeSession } from "./resume";
 import { useAppLock } from "../components/AppLock";
@@ -61,6 +60,10 @@ export function useAuth(): AuthValue {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const tokenRef = useRef<string | null>(null);
+  // Stabiele, synchrone verwijzing naar de vergrendeling (zie components/AppLock.tsx).
+  const lock = useAppLock();
+  const lockRef = useRef(lock);
+  lockRef.current = lock;
   const [status, setStatus] = useState<Status>("loading");
   const [startupError, setStartupError] = useState<ApiRequestError | null>(null);
   const [startupAttempt, setStartupAttempt] = useState(0);
@@ -85,7 +88,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const api = useMemo(
-    () => new ApiClient({ baseUrl: API_BASE, getToken: () => tokenRef.current, onUnauthorized: () => void clearSession() }),
+    () =>
+      new ApiClient({
+        baseUrl: API_BASE,
+        getToken: () => tokenRef.current,
+        onUnauthorized: () => void clearSession(),
+        // Vangnet: zolang de app vergrendeld is gaat er geen enkel verzoek de deur uit.
+        isBlocked: () => !lockRef.current.isUnlocked(),
+      }),
     [clearSession]
   );
 
@@ -152,50 +162,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const retryStartup = useCallback(() => setStartupAttempt((n) => n + 1), []);
 
-  // Terug naar de voorgrond: sessie verlengen en zo nodig het token vernieuwen. Niet zolang de app vergrendeld is (er worden dan geen
-  // gegevens opgehaald); na het ontgrendelen volgt direct één verversing.
-  const lock = useAppLock();
-  const unlockedRef = useRef(true);
-  unlockedRef.current = lock.phase === "unlocked";
+  // Terug naar de voorgrond: sessie verlengen en zo nodig het token vernieuwen. Dit gebeurt UITSLUITEND na een melding van de
+  // appvergrendeling (`onResume`, nadat die de terugkeer heeft beoordeeld) en nooit rechtstreeks op een native gebeurtenis: de volgorde
+  // van gebeurtenissen en React-renders speelt dan geen rol. Elke stap controleert synchroon opnieuw of de app nog ontgrendeld is.
   const refreshOnActive = useCallback(async () => {
+    if (!lockRef.current.isUnlocked()) return;
     void flushRef.current();
     if (!tokenRef.current) return;
     try {
       const result = await api.refresh();
       if (result.rotated && result.token) {
+        // Een geroteerd token moet bewaard blijven (anders raakt de sessie zoek), ook als de app intussen vergrendeld is.
         tokenRef.current = result.token;
         await storage.setToken(result.token);
       }
-      if (api.admin) setMe(adminMe((await api.adminMe()).user));
-      else await applyMe(await api.me());
+      if (!lockRef.current.isUnlocked()) return; // intussen vergrendeld: geen gegevens meer opvragen
+      if (api.admin) {
+        const who = await api.adminMe();
+        if (lockRef.current.isUnlocked()) setMe(adminMe(who.user));
+      } else {
+        const next = await api.me();
+        if (lockRef.current.isUnlocked()) await applyMe(next);
+      }
     } catch {
-      /* 401 wordt door onUnauthorized afgehandeld; netwerkfouten negeren */
+      /* 401 wordt door onUnauthorized afgehandeld; netwerkfouten en 'app-locked' negeren */
     }
   }, [api, applyMe]);
   const refreshRef = useRef(refreshOnActive);
   refreshRef.current = refreshOnActive;
 
-  useEffect(() => {
-    const onActive = () => {
-      if (unlockedRef.current) void refreshRef.current();
-    };
-    if (isNative) {
-      const sub = CapApp.addListener("appStateChange", (s) => s.isActive && onActive());
-      return () => void sub.then((h) => h.remove());
-    }
-    const handler = () => document.visibilityState === "visible" && onActive();
-    document.addEventListener("visibilitychange", handler);
-    return () => document.removeEventListener("visibilitychange", handler);
-  }, []);
-
-  const wasLockedRef = useRef(false);
-  useEffect(() => {
-    if (lock.phase !== "unlocked") wasLockedRef.current = true;
-    else if (wasLockedRef.current) {
-      wasLockedRef.current = false;
-      void refreshRef.current();
-    }
-  }, [lock.phase]);
+  useEffect(() => lockRef.current.onResume(() => void refreshRef.current()), []);
 
   const signIn = useCallback(
     async (email: string, code: string) => {

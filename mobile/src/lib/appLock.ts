@@ -12,7 +12,7 @@
 export const BACKGROUND_GRACE_MS = 30_000;
 
 export type LockPhase = "locked" | "authenticating" | "unlocked" | "blocked";
-export type LockFailure = "cancelled" | "failed" | "lockout" | "unavailable" | "no-device-security" | "error";
+export type LockFailure = "cancelled" | "failed" | "lockout" | "unavailable" | "no-device-security" | "screen-protection" | "error";
 
 export type AppLockResult = { ok: true } | { ok: false; reason: LockFailure };
 
@@ -33,11 +33,17 @@ export type LockDeps = {
   now?: () => number;
   /** Is de app op dit moment actief (voorgrond)? Voor het geval de app tijdens de prompt wegging. */
   isAppActive?: () => Promise<boolean>;
+  /**
+   * Fail-closed voorwaarde: de native schermbescherming (Android FLAG_SECURE, afscherming app-switcher) moet aantoonbaar actief zijn.
+   * Geeft dit `false` of gooit het, dan is er geen toegang. Niet opgegeven = geen voorwaarde (alleen tests).
+   */
+  screenProtection?: () => Promise<boolean>;
 };
 
 export class LockController {
   private snap: LockSnapshot;
   private readonly listeners = new Set<() => void>();
+  private readonly resumeListeners = new Set<() => void>();
   private readonly now: () => number;
   private awayAt: number | null = null;
   private inflight = false;
@@ -56,6 +62,28 @@ export class LockController {
     this.listeners.add(listener);
     return () => void this.listeners.delete(listener);
   };
+
+  /** Synchrone waarheid over de vergrendeling (geen React-render nodig): voor alles wat gegevens ophaalt. */
+  isUnlocked = (): boolean => this.snap.phase === "unlocked";
+
+  /**
+   * Wordt aangeroepen NADAT de vergrendeling is beoordeeld en de app ontgrendeld is: bij terugkeer binnen de grens, of na een
+   * geslaagde ontgrendeling. Alleen hierna mag de sessie worden ververst; de volgorde van native gebeurtenissen speelt dan geen rol.
+   */
+  onResume = (listener: () => void): (() => void) => {
+    this.resumeListeners.add(listener);
+    return () => void this.resumeListeners.delete(listener);
+  };
+
+  private emitResume() {
+    this.resumeListeners.forEach((l) => {
+      try {
+        l();
+      } catch {
+        /* een luisteraar mag de vergrendeling nooit verstoren */
+      }
+    });
+  }
 
   private set(next: Partial<LockSnapshot>) {
     const merged = { ...this.snap, ...next };
@@ -82,6 +110,8 @@ export class LockController {
     this.inflight = true;
     this.set({ phase: "authenticating", failure: null });
     try {
+      // Zonder aantoonbare schermbescherming nooit toegang, ook al zou de verificatie slagen.
+      if (!(await this.protectionOk())) return this.fail("blocked", "screen-protection");
       const provider = this.deps.provider;
       if (!provider) return this.fail("blocked", "unavailable"); // geen provider = nooit toegang
       let secure = false;
@@ -96,11 +126,28 @@ export class LockController {
       // Geslaagd. Is de app intussen naar de achtergrond gegaan, dan begint de afwezigheidsklok nu.
       this.awayAt = this.active ? null : this.now();
       this.set({ phase: "unlocked", failure: null, shielded: !this.active });
+      if (this.active) this.emitResume();
     } catch {
       this.fail("locked", "error");
     } finally {
       this.inflight = false;
     }
+  }
+
+  private async protectionOk(): Promise<boolean> {
+    if (!this.deps.screenProtection) return true;
+    try {
+      return (await this.deps.screenProtection()) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Bij terugkeer binnen de grens: de bescherming opnieuw bevestigen; lukt dat niet, dan direct blokkeren. */
+  private async reassertProtection() {
+    if (!this.deps.screenProtection) return;
+    if (await this.protectionOk()) return;
+    if (this.snap.phase === "unlocked" && !this.inflight) this.fail("blocked", "screen-protection");
   }
 
   private fail(phase: "locked" | "blocked", failure: LockFailure) {
@@ -118,8 +165,8 @@ export class LockController {
 
   /** App is weer actief: opnieuw vergrendelen als de afwezigheid te lang was of de klok niet te vertrouwen is. */
   appActive(): void {
-    if (!this.deps.enabled) return;
     this.active = true;
+    if (!this.deps.enabled) return this.emitResume(); // ontwikkelbrowser: geen vergrendeling, wel gewoon verversen
     if (this.inflight) return; // de eigen prompt veroorzaakt ook voorgrond-/achtergrondwisselingen; het resultaat bepaalt de toestand
     if (this.snap.phase === "unlocked") {
       const away = this.awayAt;
@@ -133,6 +180,8 @@ export class LockController {
         }
       }
       this.set({ shielded: false });
+      this.emitResume();
+      void this.reassertProtection();
       return;
     }
     this.set({ shielded: false });

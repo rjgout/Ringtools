@@ -3,6 +3,7 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { Capacitor } from "@capacitor/core";
 import { LockController } from "./appLock";
 import { createLazyAppLockProvider, loadNativeAppLockProvider } from "./biometricAppLock";
+import { ensurePrivacyScreen } from "./privacyScreen";
 
 /** De platformgebeurtenissen die de vergrendeling nodig heeft (injecteerbaar voor tests). */
 export type LockSources = {
@@ -18,7 +19,12 @@ const native = Capacitor.isNativePlatform();
 
 export const nativeLockSources: LockSources = {
   onAppState(cb) {
-    if (!native) return () => {};
+    if (!native) {
+      // Alleen een ontwikkelbrowser: zichtbaarheid van het tabblad als voor-/achtergrond.
+      const handler = () => cb(document.visibilityState === "visible");
+      document.addEventListener("visibilitychange", handler);
+      return () => document.removeEventListener("visibilitychange", handler);
+    }
     const sub = CapApp.addListener("appStateChange", (s) => cb(s.isActive));
     return () => void sub.then((h) => h.remove()).catch(() => {});
   },
@@ -37,4 +43,6 @@ export const appLock = new LockController({
   enabled: native,
   provider: createLazyAppLockProvider(loadNativeAppLockProvider),
   isAppActive: async () => (await CapApp.getState()).isActive,
+  // Fail-closed: zonder aantoonbaar actieve schermbescherming geen toegang (zie privacyScreen.ts).
+  screenProtection: () => ensurePrivacyScreen(),
 });

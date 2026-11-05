@@ -63,6 +63,11 @@ export type ApiClientOptions = {
   fetchImpl?: typeof fetch;
   /** Maximale wachttijd per verzoek (standaard 20 s). */
   timeoutMs?: number;
+  /**
+   * Vangnet van de appvergrendeling: geeft dit `true`, dan wordt er NIET gevraagd (geen netwerkverkeer). Zo kan geen enkel scherm of
+   * achtergrondproces gegevens ophalen of een sessie verversen zolang de app vergrendeld is. Standaard: nooit geblokkeerd.
+   */
+  isBlocked?: () => boolean;
 };
 
 /** Dunne client voor /api/mobile/v1. Het sessietoken gaat alleen in de Authorization-header, nooit in een URL. */
@@ -72,6 +77,7 @@ export class ApiClient {
   constructor(private opts: ApiClientOptions) {}
 
   private async request<T>(method: "GET" | "POST", path: string, body?: unknown, tokenOverride?: string | null): Promise<T> {
+    if (this.opts.isBlocked?.()) throw new ApiRequestError(0, "Ringtools is vergrendeld. Ontgrendel de app om verder te gaan.", "app-locked");
     const token = tokenOverride === undefined ? this.opts.getToken() : tokenOverride;
     let res: Response;
     // Time-out: een hangende verbinding mag de app nooit eindeloos laten laden.

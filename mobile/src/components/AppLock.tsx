@@ -2,10 +2,19 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, u
 import type { LockController, LockFailure, LockPhase } from "../lib/appLock";
 import type { LockSources } from "../lib/appLockSources";
 
-export type LockApi = { phase: LockPhase; shielded: boolean; failure: LockFailure | null; unlock: () => void };
+export type LockApi = {
+  phase: LockPhase;
+  shielded: boolean;
+  failure: LockFailure | null;
+  unlock: () => void;
+  /** Stabiel en synchroon (niet afhankelijk van renders): mag er nu iets worden opgehaald? */
+  isUnlocked: () => boolean;
+  /** Stabiel: meldt zich nadat de vergrendeling is beoordeeld en de app ontgrendeld is (terugkeer of ontgrendelen). */
+  onResume: (listener: () => void) => () => void;
+};
 
 /** Zonder provider (bijv. in tests van losse schermen) gedraagt de context zich als ontgrendeld. */
-const LockContext = createContext<LockApi>({ phase: "unlocked", shielded: false, failure: null, unlock: () => {} });
+const LockContext = createContext<LockApi>({ phase: "unlocked", shielded: false, failure: null, unlock: () => {}, isUnlocked: () => true, onResume: () => () => {} });
 export const useAppLock = () => useContext(LockContext);
 
 const MESSAGES: Record<LockFailure, string> = {
@@ -14,6 +23,7 @@ const MESSAGES: Record<LockFailure, string> = {
   lockout: "Te veel mislukte pogingen. Ontgrendel eerst je toestel met de toestelcode en probeer het daarna opnieuw.",
   unavailable: "Ontgrendelen is op dit toestel nu niet beschikbaar. Controleer de beveiligingsinstellingen van je toestel en probeer het opnieuw.",
   "no-device-security": "",
+  "screen-protection": "De schermbeveiliging (tegen schermafbeeldingen en inzage via de app-switcher) kon niet worden ingeschakeld. Ringtools blijft daarom vergrendeld. Probeer het opnieuw of start de app opnieuw.",
   error: "Ontgrendelen is niet gelukt. Probeer het opnieuw.",
 };
 
@@ -21,6 +31,7 @@ const MESSAGES: Record<LockFailure, string> = {
 export function LockScreen({ phase, failure, onUnlock }: { phase: LockPhase; failure: LockFailure | null; onUnlock: () => void }) {
   const busy = phase === "authenticating";
   const noSecurity = phase === "blocked" && failure === "no-device-security";
+  const retry = phase === "blocked" && failure === "screen-protection";
   return (
     <main className="lock-screen" aria-label="Ringtools is vergrendeld">
       <div className="glass card stack lock-card">
@@ -38,7 +49,7 @@ export function LockScreen({ phase, failure, onUnlock }: { phase: LockPhase; fai
         )}
         {failure && !noSecurity && <p role="alert" className="error">{MESSAGES[failure]}</p>}
         <button className="btn btn-primary" onClick={onUnlock} disabled={busy}>
-          {busy ? "Even geduld…" : noSecurity ? "Opnieuw controleren" : "Ontgrendelen"}
+          {busy ? "Even geduld…" : noSecurity ? "Opnieuw controleren" : retry ? "Opnieuw proberen" : "Ontgrendelen"}
         </button>
       </div>
     </main>
@@ -78,7 +89,10 @@ export function AppLockGate({ controller, sources, children }: { controller: Loc
   useEffect(() => (unlocked ? undefined : sources.onBackWhileLocked()), [unlocked, sources]);
 
   const unlock = useCallback(() => void controller.unlock(), [controller]);
-  const api = useMemo<LockApi>(() => ({ phase: snap.phase, shielded: snap.shielded, failure: snap.failure, unlock }), [snap, unlock]);
+  const api = useMemo<LockApi>(
+    () => ({ phase: snap.phase, shielded: snap.shielded, failure: snap.failure, unlock, isUnlocked: controller.isUnlocked, onResume: controller.onResume }),
+    [snap, unlock, controller]
+  );
 
   return (
     <LockContext.Provider value={api}>
