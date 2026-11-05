@@ -51,6 +51,13 @@ export const env = {
   get nativePasskeysEnabled() {
     return process.env.NATIVE_PASSKEYS_ENABLED === "true";
   },
+  /**
+   * E2.1: authenticator-app (TOTP) als tweede factor voor gewone webgebruikers. Standaard UIT: zonder deze vlag is er geen enkel
+   * gedrag veranderd (gewone gebruikers kennen alleen passkeys; TOTP blijft beperkt tot het beheerdersaccount).
+   */
+  get webTotpEnabled() {
+    return process.env.WEB_TOTP_ENABLED === "true";
+  },
   /** SHA-256-vingerafdrukken van het app-ondertekeningscertificaat (hex, met dubbele punten), ook gebruikt voor de Digital Asset Links. */
   get androidCertFingerprints() {
     return (process.env.ANDROID_SHA256_FINGERPRINTS || "")

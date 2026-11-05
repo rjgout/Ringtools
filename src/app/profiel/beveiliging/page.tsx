@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { isTotpConfirmed } from "@/lib/mfa";
 import { TotpResetPanel } from "@/components/mfa/TotpResetPanel";
 import { UserMfaToggle } from "@/components/mfa/UserMfaToggle";
+import { totpAllowedForUser } from "@/lib/mfaMethods";
+import { UserTotpPanel } from "@/components/mfa/UserTotpPanel";
 import { PasskeyManager } from "@/components/mfa/PasskeyManager";
 import { SessionList } from "@/components/mfa/SessionList";
 
@@ -12,6 +14,8 @@ export default async function BeveiligingPage() {
   const currentSession = await getCurrentSession();
 
   const sessions = await listSessionsForUser(user.id);
+  const totpOn = totpAllowedForUser(user.role);
+  const totpConfigured = totpOn && (await isTotpConfirmed(user.id));
   const passkeys =
     user.role === "ADMIN"
       ? []
@@ -41,9 +45,15 @@ export default async function BeveiligingPage() {
       ) : (
         <div className="glass-card space-y-3">
           <h2 className="font-semibold">Passkey-verificatie (optioneel)</h2>
-          <UserMfaToggle enabled={user.mfaEnabled} hasPasskey={passkeys.length > 0} />
+          <UserMfaToggle enabled={user.mfaEnabled} hasPasskey={passkeys.length > 0 || totpConfigured} />
           <h3 className="pt-2 text-sm font-medium">Passkeys</h3>
           <PasskeyManager credentials={passkeys} mfaEnabled={user.mfaEnabled} />
+          {totpOn && (
+            <>
+              <h3 className="pt-2 text-sm font-medium">Authenticator-app</h3>
+              <UserTotpPanel configured={totpConfigured} canRemove={!user.mfaEnabled || passkeys.length > 0} />
+            </>
+          )}
         </div>
       )}
 

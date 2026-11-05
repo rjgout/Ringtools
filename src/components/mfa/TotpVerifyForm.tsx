@@ -5,7 +5,7 @@ import { verifyTotpLoginAction, useRecoveryCodeLoginAction, type ActionResult } 
 
 const initialState: ActionResult = { ok: false, message: "" };
 
-export function TotpVerifyForm({ redirectTo }: { redirectTo: string }) {
+export function TotpVerifyForm({ redirectTo, allowRecovery = true }: { redirectTo: string; allowRecovery?: boolean }) {
   const [mode, setMode] = useState<"code" | "recovery">("code");
   const [codeState, codeAction, codePending] = useActionState(verifyTotpLoginAction, initialState);
   const [recoveryState, recoveryAction, recoveryPending] = useActionState(useRecoveryCodeLoginAction, initialState);
@@ -62,9 +62,11 @@ export function TotpVerifyForm({ redirectTo }: { redirectTo: string }) {
         {codePending ? "Even geduld…" : "Inloggen"}
       </button>
       {codeState.message && <p className="text-center text-sm text-[var(--danger)]">{codeState.message}</p>}
-      <button type="button" onClick={() => setMode("recovery")} className="w-full text-center text-sm text-[var(--text-muted)] underline">
-        Ik heb geen toegang tot mijn authenticator
-      </button>
+      {allowRecovery && (
+        <button type="button" onClick={() => setMode("recovery")} className="w-full text-center text-sm text-[var(--text-muted)] underline">
+          Ik heb geen toegang tot mijn authenticator
+        </button>
+      )}
     </form>
   );
 }

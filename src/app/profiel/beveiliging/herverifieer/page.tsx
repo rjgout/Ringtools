@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentSession, safeInternalPath } from "@/lib/session";
 import { ReverifyTotpForm } from "@/components/mfa/ReverifyTotpForm";
+import { enrolledMethods } from "@/lib/mfaMethods";
 import { PasskeyVerifyPanel } from "@/components/mfa/PasskeyVerifyPanel";
 
 export default async function ReverifyPage({ searchParams }: { searchParams: Promise<{ redirect?: string }> }) {
@@ -9,6 +10,10 @@ export default async function ReverifyPage({ searchParams }: { searchParams: Pro
 
   const { redirect: rawRedirect } = await searchParams;
   const redirectTo = safeInternalPath(rawRedirect) || "/profiel/beveiliging";
+
+  const methods = session.user.role === "ADMIN" ? [] : await enrolledMethods(session.user);
+  const offerTotp = methods.includes("totp");
+  const offerPasskey = methods.includes("passkey") || !offerTotp; // ongewijzigd gedrag zolang er geen TOTP is
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-4">
@@ -22,7 +27,15 @@ export default async function ReverifyPage({ searchParams }: { searchParams: Pro
         {session.user.role === "ADMIN" ? (
           <ReverifyTotpForm redirectTo={redirectTo} />
         ) : (
-          <PasskeyVerifyPanel redirectTo={redirectTo} />
+          <div className="space-y-6">
+            {offerPasskey && <PasskeyVerifyPanel redirectTo={redirectTo} />}
+            {offerTotp && (
+              <div className="space-y-2">
+                {offerPasskey && <p className="text-center text-xs text-[var(--text-muted)]">of met je authenticator-app</p>}
+                <ReverifyTotpForm redirectTo={redirectTo} />
+              </div>
+            )}
+          </div>
         )}
       </div>
     </main>

@@ -113,7 +113,12 @@ export async function verifyTotpCode(userId: string, label: string, code: string
 }
 
 /** Bevestigt een lopende TOTP-inschrijving en genereert nieuwe herstelcodes. */
-export async function confirmTotpEnrollment(userId: string, label: string, code: string): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; outcome: TotpOutcome }> {
+export async function confirmTotpEnrollment(
+  userId: string,
+  label: string,
+  code: string,
+  opts: { issueRecoveryCodes?: boolean } = {}
+): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; outcome: TotpOutcome }> {
   const credential = await prisma.totpCredential.findUnique({ where: { userId } });
   const pendingValid =
     !!credential?.pendingSecretEncrypted && !!credential.pendingCreatedAt && Date.now() - credential.pendingCreatedAt.getTime() <= PENDING_SECRET_TTL_MS;
@@ -142,7 +147,7 @@ export async function confirmTotpEnrollment(userId: string, label: string, code:
         lockedUntil: null,
       },
     });
-    const recoveryCodes = await regenerateRecoveryCodes(userId);
+    const recoveryCodes = opts.issueRecoveryCodes === false ? [] : await regenerateRecoveryCodes(userId);
     await logSecurityEvent({ userId, type: "TOTP_ENROLLED" });
     return { ok: true, recoveryCodes };
   }
@@ -154,11 +159,18 @@ export async function confirmTotpEnrollment(userId: string, label: string, code:
   if (outcome !== "OK") return { ok: false, outcome };
 
   await prisma.totpCredential.update({ where: { userId }, data: { confirmedAt: new Date() } });
-  const recoveryCodes = await regenerateRecoveryCodes(userId);
+  const recoveryCodes = opts.issueRecoveryCodes === false ? [] : await regenerateRecoveryCodes(userId);
   await logSecurityEvent({ userId, type: "TOTP_ENROLLED" });
   return { ok: true, recoveryCodes };
 }
 
+/** Verwijdert de TOTP-instelling en alle herstelcodes van een gebruiker (beheer door de gebruiker zelf of reset door webmin). */
+export async function removeTotp(userId: string): Promise<void> {
+  await prisma.$transaction([
+    prisma.recoveryCode.deleteMany({ where: { userId } }),
+    prisma.totpCredential.deleteMany({ where: { userId } }),
+  ]);
+}
 
 export async function isTotpConfirmed(userId: string): Promise<boolean> {
   const credential = await prisma.totpCredential.findUnique({ where: { userId } });
