@@ -67,7 +67,9 @@ coördineren; **LCR blijft de officiële bron**, Ringtools houdt geen blijvend p
   `Calling` (presidiumApprovedAt/-Method, hogeraadReleasedAt/-ById, hogeraadApprovalMethod), tabellen `GroupDecision` en `CallingAudit` (beide
   cascade op het voorstel: verdwijnen met het voorstel, dus geen blijvend register). Bestaande voorstellen en statussen blijven ongewijzigd geldig.
 - Overgangswebapp: alleen een knop "Vrijgeven aan de hoge raad" (zodat geen voorstel vastloopt); gezamenlijke besluiten zijn app-only.
-- Open bij C1: pushmelding aan ringstaf bij "wacht op vrijgave" (nu zichtbaar op overzicht/dashboard); toesteltest.
+- **Melding "Voorstel wacht op vrijgave" (afgerond na akkoord eigenaar):** bij het bereiken van `PRESIDIUM_APPROVED` (individueel én gezamenlijk) krijgen de actieve ringstafleden (ringpresidium, secretaris, administrateur; dezelfde kring als wie mag vrijgeven) van déze ring één generieke interne melding + generieke push, zonder naam of functie, met alleen het interne pad
+  `/roepingen/<id>`; nooit e-mail, nooit automatische vrijgave, nooit naar de hoge raad of een andere ring. Herstelbaar volgens het bestaande patroon (`Calling.releaseNotifyClaimedAt/releaseNotifiedAt`, claim met 2 minuten lease, `skipExisting`; cron elke 10 minuten, `retryPendingReleaseNotifications`). Is het voorstel intussen vrijgegeven, dan volgt geen melding meer.
+  Migratie `20261116100000_c1_melding_wacht_op_vrijgave` (additief: enumwaarde `AWAITING_RELEASE`, twee nullable kolommen); voorstellen die al op vrijgave wachten of het presidiumakkoord al hadden worden niet achteraf gemeld. Open bij C1: toesteltest van de pushlevering.
 
 ### C2 – Ringinrichting en roepingencatalogus (gerealiseerd)
 - **Catalogus** (`src/lib/catalog/callings.ts`, versie `2026.11-1`): 89 functietitels in 23 organisatiecategorieën uit het aangeleverde LCR-overzicht, plus de afgesproken
@@ -236,7 +238,7 @@ Peildatum: `773bb34` + C6-commit. Geen nieuwe functionaliteit, geen nieuwe kerke
 rate-limiter-opruiming; cron-dekking (sessies, inloglinks, openlinks, concepten, uitnodigingen, ontheffingen, aanmaakmeldingen); migratieketen op een schone database; volledige backendsuite.
 
 **Onvoltooide bestaande eisen — voorstel, niet zelf ingevuld (functionele keuze)**
-- *Push/melding aan ringstaf bij "Presidium akkoord – wacht op vrijgave"* (genoemd als open punt bij C1). Vereist een nieuw meldingstype (enum-migratie) en een tekst; voorstel: één generieke melding "Voorstel wacht op vrijgave" aan actieve ringstaf van de ring, zonder naam, alleen intern pad. Pas bouwen na akkoord.
+- ~~Melding aan ringstaf bij "wacht op vrijgave"~~ — door de eigenaar goedgekeurd en gebouwd (zie C1).
 
 **Bewust uitgesteld: toesteltests (blokkeren C6 niet; geregistreerd als acceptatietests voor fase F)**
 - iPhone en Android: inloggen met e-mailcode, activatie via universele link/app-link, pushlevering (APNs/FCM), deeplinks uit meldingen, Android-terugknop, donkere modus/veilige randen.

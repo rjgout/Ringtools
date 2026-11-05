@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { env } from "./env";
-import { sendDue30DayReminders, deleteDueProcessedCallings, retryPendingCreationNotifications } from "./workflow";
+import { sendDue30DayReminders, deleteDueProcessedCallings, retryPendingCreationNotifications, retryPendingReleaseNotifications } from "./workflow";
 import { deleteExpiredAuthData } from "./auth";
 import { deleteExpiredOpenLinks } from "./openLinks";
 import { deleteStaleDrafts } from "./proposals";
@@ -38,6 +38,7 @@ export function startBackgroundJobs(): void {
     "*/10 * * * *",
     () => {
       retryPendingCreationNotifications().catch((err) => console.error("[cron] Herhalen van aanmaakmeldingen mislukt:", err));
+      retryPendingReleaseNotifications().catch((err) => console.error("[cron] Herhalen van meldingen 'wacht op vrijgave' mislukt:", err));
       retryPendingOntheffingNotifications().catch((err) => console.error("[cron] Herhalen van meldingen mislukt:", err));
     },
     options

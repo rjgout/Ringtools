@@ -291,6 +291,62 @@ export async function retryPendingCreationNotifications(now: Date = new Date()):
   return delivered;
 }
 
+export const RELEASE_NOTIFY_LEASE_MS = 2 * 60 * 1000;
+
+/**
+ * Meldt de actieve ringstaf van déze ring (zelfde kring als wie mag vrijgeven) dat een voorstel op vrijgave wacht.
+ * Generieke tekst zonder namen; verwijst alleen naar het interne pad. Nooit automatische vrijgave.
+ * Zelfde principe als de aanmaakmeldingen: compare-and-set claim met lease (precies één verzender), `releaseNotifiedAt` pas na volledig
+ * succes, herhaalde poging slaat ontvangers over die al een melding hebben. Is het voorstel intussen vrijgegeven, dan wordt niets meer gestuurd.
+ */
+export async function deliverReleaseNotifications(callingId: string, now: Date = new Date()): Promise<CreationDelivery> {
+  const prev = await prisma.calling.findUnique({ where: { id: callingId }, select: { releaseNotifiedAt: true, releaseNotifyClaimedAt: true } });
+  if (!prev || prev.releaseNotifiedAt) return "already-sent";
+  if (prev.releaseNotifyClaimedAt && now.getTime() - prev.releaseNotifyClaimedAt.getTime() < RELEASE_NOTIFY_LEASE_MS) return "busy";
+
+  const claimed = await prisma.calling.updateMany({
+    where: { id: callingId, releaseNotifiedAt: null, releaseNotifyClaimedAt: prev.releaseNotifyClaimedAt },
+    data: { releaseNotifyClaimedAt: now },
+  });
+  if (claimed.count !== 1) return "busy";
+
+  const isRetry = prev.releaseNotifyClaimedAt !== null;
+  try {
+    const calling = await prisma.calling.findUniqueOrThrow({ where: { id: callingId } });
+    if (calling.status === "PRESIDIUM_APPROVED") {
+      const rows = await prisma.ringMembership.findMany({
+        where: { ringId: calling.ringId, role: { in: STAFF_ROLES }, active: true, user: { active: true, role: { not: "ADMIN" } }, ring: { active: true } },
+        select: { userId: true },
+      });
+      await notify({
+        userIds: rows.map((r) => r.userId),
+        ringId: calling.ringId,
+        event: "AWAITING_RELEASE",
+        url: callingPath(calling.id),
+        callingId: calling.id,
+        skipExisting: isRetry,
+      });
+    }
+    await prisma.calling.update({ where: { id: callingId }, data: { releaseNotifiedAt: new Date() } });
+    return "sent";
+  } catch (err) {
+    console.error(`[meldingen] Melding 'wacht op vrijgave' voor voorstel ${callingId} mislukt; wordt opnieuw geprobeerd:`, err);
+    return "failed";
+  }
+}
+
+export async function retryPendingReleaseNotifications(now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - RELEASE_NOTIFY_LEASE_MS);
+  const pending = await prisma.calling.findMany({
+    where: { status: "PRESIDIUM_APPROVED", releaseNotifiedAt: null, presidiumApprovedAt: { lt: cutoff }, OR: [{ releaseNotifyClaimedAt: null }, { releaseNotifyClaimedAt: { lt: cutoff } }] },
+    select: { id: true },
+    take: 50,
+  });
+  let delivered = 0;
+  for (const p of pending) if ((await deliverReleaseNotifications(p.id, now)) === "sent") delivered++;
+  return delivered;
+}
+
 export async function createCalling(input: CreateCallingInput): Promise<Calling> {
   const { calling } = await prisma.$transaction((tx) => createCallingInTx(tx, input));
   await deliverCreationNotifications(calling.id);
@@ -396,6 +452,8 @@ async function recomputeCallingState(callingId: string): Promise<Calling> {
   if (justPaused) {
     await notifyPaused(calling);
   }
+  // Presidiumakkoord bereikt: de ringstaf krijgt (eenmalig, herstelbaar) een melding dat het voorstel op vrijgave wacht.
+  if (calling.status === "PRESIDIUM_APPROVED") await deliverReleaseNotifications(calling.id);
 
   return calling;
 }
@@ -494,6 +552,12 @@ export type GroupDecisionInput = {
  * worden niet overschreven maar vereisen een expliciete, gemotiveerde afhandeling. Idempotent per voorstel en fase.
  */
 export async function registerGroupDecision(input: GroupDecisionInput): Promise<{ calling: Calling; alreadyRegistered: boolean }> {
+  const result = await registerGroupDecisionTx(input);
+  if (result.calling.status === "PRESIDIUM_APPROVED") await deliverReleaseNotifications(result.calling.id);
+  return result;
+}
+
+async function registerGroupDecisionTx(input: GroupDecisionInput): Promise<{ calling: Calling; alreadyRegistered: boolean }> {
   const first = await prisma.calling.findUniqueOrThrow({ where: { id: input.callingId } });
   await requireRingStaff(input.actorId, first.ringId); // ringpresident, raadgevers, secretaris, administrateur
   if (input.agreed !== true) {

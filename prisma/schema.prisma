@@ -86,6 +86,8 @@ enum NotificationType {
   TASK_COMPLETED
   REMINDER_30_DAYS
   SUPPORT_REMINDER
+  // Presidiumakkoord is bereikt; het voorstel wacht op expliciete vrijgave aan de hoge raad (generiek, zonder namen).
+  AWAITING_RELEASE
   // Ontheffingen (Fase C4): bewust neutrale, generieke meldingen ("vertrouwelijk voorstel"), nooit met namen of functies.
   CONFIDENTIAL_PROPOSAL
   CONFIDENTIAL_HOGERAAD
@@ -348,6 +350,10 @@ model Calling {
   // "notifiedAt" zodra alles is afgeleverd. Een mislukte levering wordt herhaald zonder dubbele meldingen (zie deliverCreationNotifications).
   creationNotifyClaimedAt DateTime?
   creationNotifiedAt      DateTime?
+
+  // Melding aan de ringstaf dat het voorstel op vrijgave wacht (zelfde claim/lease-principe als de aanmaakmeldingen).
+  releaseNotifyClaimedAt  DateTime?
+  releaseNotifiedAt       DateTime?
 
   // Presidiumakkoord en vrijgave aan de hoge raad (geen automatische doorstart).
   presidiumApprovedAt     DateTime?

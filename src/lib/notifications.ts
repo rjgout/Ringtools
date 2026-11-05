@@ -43,6 +43,11 @@ const TEMPLATES: Record<NotificationEvent, { title: string; message: string }> =
     title: "Herinnering ondersteuningsverzoek",
     message: "Er staat nog een ondersteuningsverzoek voor je open.",
   },
+  // Bewust zonder naam of functie: alleen dat er iets op vrijgave wacht.
+  AWAITING_RELEASE: {
+    title: "Voorstel wacht op vrijgave",
+    message: "Een voorstel heeft het akkoord van het presidium en wacht op vrijgave aan de hoge raad.",
+  },
   REMINDER_30_DAYS: {
     title: "Nog te verwerken",
     message: "Een roeping staat al 30 dagen open en is nog niet verwerkt.",
