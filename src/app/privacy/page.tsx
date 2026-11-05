@@ -9,14 +9,15 @@ export default function PrivacyPage() {
     <PublicShell>
       <section className="glass-card space-y-3">
         <h1 className="text-xl font-semibold">Privacy</h1>
+        <p className="badge badge-neutral inline-block">Concept – nog vast te stellen door de eigenaar</p>
         <p className="text-sm">
-          Ringtools bewaart zo weinig mogelijk. De gegevens staan op een eigen server van de ring (geen cloudaanbieder voor de database), worden alleen versleuteld
+          Ringtools bewaart zo weinig mogelijk. De gegevens staan in een eigen database op een server van het beheer (niet bij een externe clouddatabase), worden via een beveiligde verbinding
           verzonden en zijn alleen zichtbaar voor bevoegde leden van dezelfde ring. Er zijn geen advertenties, geen analytics van derden en geen verkoop van gegevens.
         </p>
         <h2 className="font-semibold">Welke gegevens</h2>
         <ul className="list-disc space-y-2 pl-5 text-sm">
           <li>
-            <strong>Account:</strong> naam, e-mailadres, rol en functie, ringlidmaatschap. Zolang het lidmaatschap actief is; verwijdering op verzoek.
+            <strong>Account:</strong> naam, e-mailadres, rol en functie, ringlidmaatschap. Zolang het account bestaat; verwijdering op verzoek, handmatig door het technisch beheer.
           </li>
           <li>
             <strong>Roepingsvoorstellen:</strong> naam van de kandidaat en de functie, ondersteuning, taken. Verwerkte voorstellen worden 30 dagen na verwerking
