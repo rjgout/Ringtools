@@ -12,6 +12,9 @@ import { WhatsAppShareButton } from "@/components/WhatsAppShareButton";
 import { RingSync } from "@/components/RingSync";
 import { DeleteCallingButton } from "@/components/DeleteCallingButton";
 import { markProcessedAction, releaseToHogeraadAction } from "@/lib/actions/calling.actions";
+import { GroupDecisionForm } from "@/components/GroupDecisionForm";
+import { SubmitButton } from "@/components/SubmitButton";
+import { groupDecisionViews, hasGroupDecision } from "@/lib/api/service";
 
 const MELDINGEN: Record<string, (q: Record<string, string | undefined>) => string> = {
   "vrijgave-mislukt": () => "Vrijgeven is niet gelukt. Controleer of er actieve hogeraadsleden zijn ingericht.",
@@ -25,6 +28,7 @@ const MELDINGEN: Record<string, (q: Record<string, string | undefined>) => strin
   },
   "opnieuw-gevraagd": () => "Er is opnieuw om ondersteuning gevraagd.",
   "deelnemer-verwijderd": () => "De deelnemer is uit de ondersteuningsronde verwijderd.",
+  "besluit-vastgelegd": () => "Het gezamenlijke besluit is vastgelegd.",
   "niet-verwijderd": () => "Het voorstel kon niet worden verwijderd.",
 };
 
@@ -73,6 +77,14 @@ export default async function CallingDetailPage({
     getStillInvolvedUserIds(calling.ringId, "PRESIDIUM"),
     getStillInvolvedUserIds(calling.ringId, "HOGERAAD"),
   ]);
+
+  const [groupDecisions, decidedPresidium, decidedHogeraad] = staff
+    ? await Promise.all([groupDecisionViews(calling.id), hasGroupDecision(calling.id, "PRESIDIUM"), hasGroupDecision(calling.id, "HOGERAAD")])
+    : [[], true, true];
+  const canDecidePresidium = staff && (calling.status === "PRESIDIUM_VOTING" || calling.status === "PRESIDIUM_PAUSED") && !decidedPresidium;
+  const canDecideHogeraad = staff && (calling.status === "HOGERAAD_VOTING" || calling.status === "HOGERAAD_PAUSED") && !decidedHogeraad;
+  const presidiumMembers = users.filter((u) => u.role === "RINGPRESIDIUM").map((u) => ({ id: u.id, name: u.name }));
+  const today = new Date().toISOString().slice(0, 10);
 
   function participantsOf(
     eligible: typeof presidiumEligible,
@@ -131,9 +143,44 @@ export default async function CallingDetailPage({
         <form action={releaseToHogeraadAction} className="glass-card space-y-2">
           <input type="hidden" name="callingId" value={calling.id} />
           <p className="text-sm">Het presidium is akkoord. De hoge raad ontvangt pas een verzoek nadat je dit voorstel expliciet vrijgeeft.</p>
-          <button className="btn btn-primary">Vrijgeven aan de hoge raad</button>
+          <SubmitButton>Vrijgeven aan de hoge raad</SubmitButton>
         </form>
       )}
+
+      {canDecidePresidium && (
+        <GroupDecisionForm
+          callingId={calling.id}
+          stage="PRESIDIUM"
+          presidiumMembers={presidiumMembers}
+          participants={[]}
+          hasNegative={presidiumVotes.some((v) => !v.support)}
+          today={today}
+        />
+      )}
+      {canDecideHogeraad && (
+        <GroupDecisionForm
+          callingId={calling.id}
+          stage="HOGERAAD"
+          presidiumMembers={presidiumMembers}
+          participants={hogeraadEligible.map((e) => ({ id: e.userId, name: e.user.name }))}
+          hasNegative={hogeraadVotes.some((v) => !v.support)}
+          today={today}
+        />
+      )}
+
+      {groupDecisions.map((d) => (
+        <section key={d.stage} className="glass-card space-y-1" aria-label={`Gezamenlijk besluit ${d.stage === "PRESIDIUM" ? "ringpresidium" : "hoge raad"}`}>
+          <h2 className="font-semibold">Gezamenlijk besluit {d.stage === "PRESIDIUM" ? "ringpresidium" : "hoge raad"} (vergadering)</h2>
+          <p className="text-sm text-[var(--text-muted)]">
+            Besloten op {d.decidedOn}; geregistreerd door {d.registeredBy}.
+          </p>
+          {d.presiding && <p className="text-sm">Voorzitter: {d.presiding}</p>}
+          {d.present.length > 0 && <p className="text-sm">Aanwezig: {d.present.join(", ")}</p>}
+          {d.absent.length > 0 && <p className="text-sm">Afwezig (geen ondersteuning geregistreerd): {d.absent.join(", ")}</p>}
+          {d.overrodeNegativeVotes && <p className="text-sm">Negatieve reactie afgehandeld: {d.resolutionNote}</p>}
+          {d.note && <p className="text-sm text-[var(--text-muted)]">{d.note}</p>}
+        </section>
+      ))}
 
       <section className="glass-card">
         <h2 className="mb-2 font-semibold">Voortgang</h2>
@@ -229,9 +276,7 @@ export default async function CallingDetailPage({
             Alle stappen zijn afgerond. Na verwerken verdwijnt deze roeping uit de actieve werklijsten en wordt hij na 30 dagen
             automatisch verwijderd.
           </p>
-          <button type="submit" className="btn-primary w-full">
-            Markeren als verwerkt
-          </button>
+          <SubmitButton className="btn-primary w-full">Markeren als verwerkt</SubmitButton>
         </form>
       )}
 

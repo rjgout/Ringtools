@@ -316,11 +316,11 @@ async function eligibleAssigneesFor(calling: { ringId: string; functionSource: s
   return { ROEPEN: granted.appointers.map((a) => a.id), AANSTELLEN: appointed.appointers.map((a) => a.id) };
 }
 
-async function hasGroupDecision(callingId: string, stage: "PRESIDIUM" | "HOGERAAD") {
+export async function hasGroupDecision(callingId: string, stage: "PRESIDIUM" | "HOGERAAD") {
   return (await prisma.groupDecision.count({ where: { callingId, stage } })) > 0;
 }
 
-async function groupDecisionViews(callingId: string) {
+export async function groupDecisionViews(callingId: string) {
   const rows = await prisma.groupDecision.findMany({ where: { callingId }, include: { registeredBy: true, presidingUser: true }, orderBy: { registeredAt: "asc" } });
   const ids = [...new Set(rows.flatMap((r) => [...r.presentUserIds, ...r.absentUserIds]))];
   const users = ids.length ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];

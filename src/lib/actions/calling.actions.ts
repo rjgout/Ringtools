@@ -17,6 +17,7 @@ import {
   completeTask,
   markProcessed,
   releaseToHogeraad,
+  registerGroupDecision,
   WorkflowError,
   AuthorizationError,
 } from "@/lib/workflow";
@@ -138,6 +139,42 @@ export async function releaseToHogeraadAction(formData: FormData): Promise<void>
     query = "?melding=vrijgave-mislukt";
   }
   backToCalling(callingId, query);
+}
+
+/**
+ * Legt een in een vergadering daadwerkelijk genomen gezamenlijk besluit vast (presidium of hoge raad), voor ringstaf op een laptop.
+ * Zelfde workflowfunctie en controles als de app (`POST /callings/:id/group-decision`); er is geen aparte webregel. Er worden nooit reacties
+ * namens anderen aangemaakt en de registrerende secretaris/administrateur telt niet als ondersteuner. Vrijgeven blijft een aparte handeling.
+ */
+export async function registerGroupDecisionAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const callingId = String(formData.get("callingId"));
+  const stage = formData.get("stage") === "HOGERAAD" ? "HOGERAAD" : formData.get("stage") === "PRESIDIUM" ? "PRESIDIUM" : null;
+  const { user } = await requireStaffForCalling(callingId);
+  if (!stage) return { ok: false, message: "Geef aan voor welke fase het besluit geldt." };
+  const list = (name: string) => formData.getAll(name).filter((v): v is string => typeof v === "string" && v.length > 0);
+  const text = (name: string) => (typeof formData.get(name) === "string" ? String(formData.get(name)) : undefined);
+  try {
+    await registerGroupDecision({
+      callingId,
+      actorId: user.id,
+      stage,
+      decidedOn: text("decidedOn") ?? "",
+      agreed: formData.get("agreed") === "yes",
+      note: text("note"),
+      presidingUserId: text("presidingUserId") || undefined,
+      presentUserIds: list("presentUserIds"),
+      absentUserIds: list("absentUserIds"),
+      resolveNegative: formData.get("resolveNegative") === "yes",
+      resolutionNote: text("resolutionNote"),
+    });
+  } catch (err) {
+    if (err instanceof AuthorizationError) redirect("/geen-toegang");
+    if (err instanceof WorkflowError) return { ok: false, message: err.message };
+    throw err;
+  }
+  revalidatePath(`/roepingen/${callingId}`);
+  revalidatePath("/dashboard");
+  redirect(`/roepingen/${callingId}?melding=besluit-vastgelegd`);
 }
 
 /** Verwijdert een niet meer betrokken deelnemer expliciet uit de ronde. */

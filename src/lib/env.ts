@@ -38,6 +38,11 @@ export const env = {
   get appBaseUrl() {
     return (process.env.APP_BASE_URL || "http://localhost:2809").replace(/\/+$/, "");
   },
+  /** Optioneel supportadres voor de publieke pagina's (bijv. beheer@…). Wordt niet verzonnen: zonder instelling verwijst de site naar de ringbeheerder. */
+  get contactEmail(): string | null {
+    const v = (process.env.PUBLIC_CONTACT_EMAIL || "").trim();
+    return /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(v) ? v : null;
+  },
   /**
    * Native passkeys in de app (C5.2). Standaard UIT: pas aanzetten na verificatie op fysieke toestellen met
    * geverifieerde Associated Domains (iOS, `webcredentials:`) en Digital Asset Links (Android, `get_login_creds`).

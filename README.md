@@ -98,6 +98,7 @@ Dagen). Volledig self-hosted: geen externe diensten, geen betaalde API's.
 | Variabele | Verplicht | Omschrijving |
 |---|---|---|
 | `DATABASE_URL` | Ja | PostgreSQL-connectiestring. |
+| `PUBLIC_CONTACT_EMAIL` | Nee | Supportadres op de publieke pagina's Contact en Accountverwijdering. Zonder waarde verwijzen die pagina's naar de ringbeheerder (er wordt geen adres verzonnen). |
 | `APP_BASE_URL` | Ja | Basis-URL waarmee e-maillinks worden opgebouwd (bv. `https://ringapeldoorn.nl`). |
 | `BOOTSTRAP_ADMIN_USERNAME` | Nee (standaard `webmin`) | Gebruikersnaam van het admin-account, alleen gebruikt bij de allereerste start. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Ja (bij eerste start) | Wachtwoord van het admin-account bij aanmaak. Een later gewijzigd wachtwoord wordt bij herstart **nooit** overschreven. |
