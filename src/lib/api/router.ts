@@ -84,7 +84,7 @@ publicRoute("POST", "/admin/auth/totp", async ({ request, body }) => {
   return mgmt.adminVerifyTotp(token, body);
 });
 
-// Uitnodigingen (ontvanger): voorvertoning en activatie. Token of code staan in de body, nooit in de URL. Een activatie geeft geen sessie.
+// Uitnodigingen (ontvanger): voorvertoning en activatie. Token of code staan in de body, nooit in de URL. Alleen issueSession:true vraagt een sessie aan.
 const clientKeyOf = (request: Request) => request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "onbekend";
 publicRoute("POST", "/invitations/preview", async ({ request, body }) => invitations.previewInvitationApi(body, clientKeyOf(request)));
 publicRoute("POST", "/invitations/activate", async ({ request, body }) => invitations.activateInvitationApi(body, clientKeyOf(request)));
