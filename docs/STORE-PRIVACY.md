@@ -19,6 +19,7 @@ trackingfunctionaliteit.
 | Pushtoken (APNs/FCM), platform, installatie-ID | Pushmeldingen | PostgreSQL | Tot uitloggen/uitschakelen of ongeldig token |
 | Web-push-abonnement (PWA) | Pushmeldingen web | PostgreSQL | Tot afmelden |
 | Uitnodigingen (naam, e-mailadres, rol/functie, status; token en code alleen als hash) en audittrail | Accountactivatie | PostgreSQL | Tot 90 dagen na activatie/verlopen/intrekken; daarna automatisch verwijderd |
+| Native passkey-plug-in (`@capawesome/capacitor-passkeys`): geen eigen opslag, geen netwerkverkeer, geen analytics; gebruikt uitsluitend het systeem (iOS `AuthenticationServices`, Android Credential Manager). Geen nieuwe permissies; iOS: Associated Domains `webcredentials:` (alleen productie-entitlements) | Passkey-verificatie | Alleen toestel/systeem; op de server alleen de publieke sleutel (zie hieronder) | Zolang account |
 | Passkey-publieke sleutels, TOTP-geheim (versleuteld), herstelcodes (gehasht), beveiligingslogboek | MFA | PostgreSQL | Zolang account |
 | E-mails (inlogcodes/-links, meldingen) | Communicatie | Eigen SMTP | Volgens mailprovider |
 

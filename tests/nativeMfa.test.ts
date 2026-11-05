@@ -448,3 +448,15 @@ describe("Herverificatie met passkey: extra beveiligingscontroles", () => {
     expect((await call("POST", "/admin/auth/reauth/passkey/options", { token })).status).toBe(404);
   });
 });
+
+describe("Contract met de native adapter", () => {
+  it("de serveropties bevatten de RP ID (gelijk aan de website-host), een base64url-challenge en eisen user verification", async () => {
+    const u = await mfaUser("Contract");
+    const login = await startLogin(u.user.id, u.user.email);
+    const opts = (await call("POST", "/auth/mfa/passkey/options", { token: login.body.pendingToken })).body.options;
+    expect(opts.rpId).toBe(RP);
+    expect(opts.challenge).toMatch(/^[A-Za-z0-9_-]{16,512}$/);
+    expect(opts.userVerification).toBe("required");
+    expect(opts.allowCredentials).toEqual([expect.objectContaining({ id: u.key.credentialId })]);
+  });
+});

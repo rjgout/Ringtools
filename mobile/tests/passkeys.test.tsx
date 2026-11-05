@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ApiRequestError } from "../src/lib/api";
 import { nativeCapabilities } from "../src/lib/buildProfile";
-import { PasskeyCancelledError, passkeysUsable, registerPasskeyProvider, getPasskeyProvider, type PasskeyAssertion } from "../src/lib/passkeys";
+import { PasskeyCancelledError, PasskeyError, passkeysUsable, registerPasskeyProvider, getPasskeyProvider, type PasskeyAssertion } from "../src/lib/passkeys";
 
 const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../src/lib/auth", () => ({ useAuth: () => auth.value }));
@@ -113,5 +113,34 @@ describe("Inloggen met verplichte MFA in de app", () => {
     await waitFor(() => expect((auth.value.signIn as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1));
     expect(api.passkeyOptions).not.toHaveBeenCalled();
     expect(api.cancelMfa).not.toHaveBeenCalled();
+  });
+
+  it("niet-herstelbare passkeyfout (niet ondersteund/domein niet gekoppeld): wachtende login opgeruimd en terug naar het begin; herstelbare fout: opnieuw proberen", async () => {
+    registerPasskeyProvider({ authenticate: vi.fn().mockRejectedValue(new PasskeyError("domain-not-associated", "De app is nog niet gekoppeld aan de website voor passkeys. Log voorlopig in via de webapp; je beveiliging blijft ongewijzigd.")) });
+    const first = setup();
+    await toCodeStep();
+    await waitFor(() => expect(first.api.cancelMfa).toHaveBeenCalled());
+    expect((await screen.findByRole("alert")).textContent).toMatch(/nog niet gekoppeld/);
+    expect(first.finishMfa).not.toHaveBeenCalled();
+
+    cleanup();
+    registerPasskeyProvider({ authenticate: vi.fn().mockRejectedValueOnce(new PasskeyError("no-credential", "Er is op dit toestel geen passkey voor jouw account gevonden. Probeer een ander toestel of log in via de webapp.")).mockResolvedValue(ASSERTION) });
+    const second = setup();
+    await toCodeStep();
+    expect((await screen.findByRole("alert")).textContent).toMatch(/geen passkey/);
+    expect(second.api.cancelMfa).not.toHaveBeenCalled(); // opnieuw proberen mag
+    fireEvent.click(screen.getByRole("button", { name: "Verifiëren met passkey" }));
+    await waitFor(() => expect(second.finishMfa).toHaveBeenCalledTimes(1));
+  });
+
+  it("netwerkfout tijdens de passkey-stap: melding en opnieuw proberen, de login wordt niet als geslaagd behandeld", async () => {
+    registerPasskeyProvider({ authenticate: async () => ASSERTION });
+    const finishMfa = vi.fn().mockRejectedValueOnce(new ApiRequestError(0, "Geen verbinding met de server. Controleer je internetverbinding.", "network")).mockResolvedValue(undefined);
+    const { api } = setup({ finishMfa });
+    await toCodeStep();
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Geen verbinding/);
+    expect(api.cancelMfa).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Verifiëren met passkey" }));
+    await waitFor(() => expect(finishMfa).toHaveBeenCalledTimes(2));
   });
 });

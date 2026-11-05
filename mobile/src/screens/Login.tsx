@@ -3,7 +3,7 @@ import { AdminLogin } from "./AdminLogin";
 import { useAuth } from "../lib/auth";
 import { ApiRequestError } from "../lib/api";
 import { nativeCapabilities, PERSONAL_TEAM_NOTICE } from "../lib/buildProfile";
-import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, passkeysUsable } from "../lib/passkeys";
+import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, PasskeyError, passkeysUsable } from "../lib/passkeys";
 
 /** Inloggen met e-mail + 8-cijferige code uit de e-mail. De link in de mail opent deze app direct (universele link). */
 export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: string; onHaveInvitation?: () => void }) {
@@ -72,7 +72,11 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
       const assertion = await provider.authenticate(options);
       await finishMfa(token, assertion);
     } catch (err) {
-      if (err instanceof PasskeyCancelledError) setError("Je hebt de verificatie geannuleerd. Probeer het opnieuw of annuleer het inloggen.");
+      if (err instanceof PasskeyError) {
+        // Niet-herstelbaar op dit toestel (niet ondersteund, domein niet gekoppeld): de wachtende login wordt opgeruimd; anders opnieuw proberen of annuleren.
+        if (err.permanent) await leavePasskey(err.message, token);
+        else setError(err.message);
+      } else if (err instanceof PasskeyCancelledError) setError("Je hebt de verificatie geannuleerd. Probeer het opnieuw of annuleer het inloggen.");
       else if (err instanceof ApiRequestError && (err.code === "locked" || err.status === 401 && err.code !== "passkey-failed")) await leavePasskey(err.message, token);
       else setError(err instanceof ApiRequestError ? err.message : "De verificatie is niet gelukt. Probeer het opnieuw.");
     } finally {

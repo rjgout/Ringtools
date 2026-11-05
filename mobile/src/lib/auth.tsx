@@ -7,7 +7,7 @@ import { API_BASE } from "../config";
 import { isNative, platform } from "./native";
 import { registerForPush } from "./push";
 import { resumeSession } from "./resume";
-import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, passkeysUsable, type PasskeyAssertion } from "./passkeys";
+import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, PasskeyError, passkeysUsable, type PasskeyAssertion } from "./passkeys";
 import { nativeCapabilities } from "./buildProfile";
 
 type Status = "loading" | "signedOut" | "signedIn" | "unavailable";
@@ -250,6 +250,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       assertion = await provider.authenticate(options);
     } catch (err) {
       if (err instanceof PasskeyCancelledError) throw new ApiRequestError(0, "Je hebt de verificatie geannuleerd.", "passkey-cancelled");
+      if (err instanceof PasskeyError) throw new ApiRequestError(0, err.message, `passkey-${err.kind}`);
       throw err;
     }
     const result = await api.reauthPasskeyVerify(assertion);

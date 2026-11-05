@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Controleert op macOS (xcodebuild) dat de iOS-configuraties zich gedragen zoals bedoeld, zonder signing:
-#   Debug / Release     → productie-entitlements (aps-environment + applinks), buildprofiel "standard"
+#   Debug / Release     → productie-entitlements (aps-environment + applinks + webcredentials), buildprofiel "standard"
 #   Debug-PersonalTeam  → GEEN entitlements (geen push, geen Associated Domains), buildprofiel "personal-team"
 # Bouwt elk voor de simulator en inspecteert de effectieve entitlements (.xcent) en het buildprofiel in de app-bundel.
 # Let op: gebruik hier geen `echo "$x" | grep -q` (SIGPIPE + pipefail geeft willekeurige valse fouten); gebruik here-strings.
@@ -47,6 +47,7 @@ $(strings -a "$app/App" 2>/dev/null | grep -E 'aps-environment|associated-domain
     grep -q 'aps-environment' <<<"$ent" || fail "$cfg: aps-environment ontbreekt in de effectieve entitlements"
     grep -q 'com.apple.developer.associated-domains' <<<"$ent" || fail "$cfg: associated-domains ontbreekt in de effectieve entitlements"
     grep -q 'applinks:ringapeldoorn.nl' <<<"$ent" || fail "$cfg: applinks-domein ontbreekt in de effectieve entitlements"
+    grep -q 'webcredentials:ringapeldoorn.nl' <<<"$ent" || fail "$cfg: webcredentials-domein (native passkeys) ontbreekt in de effectieve entitlements"
   else
     ! grep -q 'aps-environment' <<<"$ent" || fail "$cfg: aps-environment staat in de effectieve entitlements"
     ! grep -q 'associated-domains' <<<"$ent" || fail "$cfg: associated-domains staat in de effectieve entitlements"

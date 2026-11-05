@@ -30,6 +30,18 @@ export class PasskeyCancelledError extends Error {
   }
 }
 
+/** Een passkey-ceremonie kon niet worden uitgevoerd (los van annuleren). `kind` bepaalt of opnieuw proberen zin heeft. */
+export type PasskeyErrorKind = "not-supported" | "domain-not-associated" | "no-credential" | "invalid-options" | "failed";
+export class PasskeyError extends Error {
+  constructor(public readonly kind: PasskeyErrorKind, message: string) {
+    super(message);
+  }
+  /** Opnieuw proberen op dit toestel zonder iets te wijzigen heeft geen zin. */
+  get permanent() {
+    return this.kind === "not-supported" || this.kind === "domain-not-associated" || this.kind === "invalid-options";
+  }
+}
+
 export interface PasskeyProvider {
   /** Voert de native passkey-ceremonie uit. Gooit PasskeyCancelledError als de gebruiker annuleert. */
   authenticate(options: PasskeyRequestOptions): Promise<PasskeyAssertion>;

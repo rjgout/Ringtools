@@ -29,8 +29,10 @@ ok(appIdsIos.length === 2 && appIdsIos.every((i) => i === idDefault), `iOS bundl
 const manifest = read("android/app/src/main/AndroidManifest.xml");
 const androidHosts = [...new Set([...manifest.matchAll(/android:host="([^"]+)"/g)].map((m) => m[1]))];
 const iosHosts = [...read("ios/App/App/App.entitlements").matchAll(/applinks:([^<]+)</g)].map((m) => m[1]);
+const iosCredentialHosts = [...read("ios/App/App/App.entitlements").matchAll(/webcredentials:([^<]+)</g)].map((m) => m[1]);
 ok(androidHosts.length === 1, `Android App Links: precies één host verwacht, gevonden: ${androidHosts.join(", ")}.`);
 ok(iosHosts.length === 1 && iosHosts[0] === androidHosts[0], `iOS-host (${iosHosts}) ≠ Android-host (${androidHosts}).`);
+ok(iosCredentialHosts.length === 1 && iosCredentialHosts[0] === androidHosts[0], `iOS webcredentials-host (${iosCredentialHosts}) ≠ link-host (${androidHosts}); native passkeys (C5.2) vereisen dezelfde RP-host.`);
 ok(/android:autoVerify="true"/.test(manifest), "AndroidManifest: autoVerify ontbreekt.");
 ok(/android:pathPrefix="\/open\/"/.test(manifest) && /android:pathPrefix="\/roepingen\/"/.test(manifest) && /android:pathPrefix="\/uitnodiging\/"/.test(manifest), "AndroidManifest: paden /open/, /roepingen/ en /uitnodiging/ ontbreken.");
 ok(/android:allowBackup="false"/.test(manifest), "AndroidManifest: allowBackup moet false zijn.");
@@ -52,7 +54,7 @@ ok(/^CODE_SIGN_ENTITLEMENTS =\s*$/m.test(personalXc), "PersonalTeam.xcconfig: CO
 ok(/^RINGTOOLS_BUILD_PROFILE = personal-team$/m.test(personalXc), "PersonalTeam.xcconfig: RINGTOOLS_BUILD_PROFILE = personal-team ontbreekt.");
 const personalId = /^PRODUCT_BUNDLE_IDENTIFIER = (\S+)$/m.exec(personalXc)?.[1];
 ok(personalId && personalId !== idDefault, "PersonalTeam.xcconfig: gebruik een afwijkende bundle-ID zodat de productie-ID niet door een Personal Team wordt geclaimd.");
-ok(!/^(aps-environment|applinks)/m.test(personalXc), "PersonalTeam.xcconfig mag geen push/associated-domains-configuratie bevatten.");
+ok(!/^(aps-environment|applinks|webcredentials)/m.test(personalXc), "PersonalTeam.xcconfig mag geen push/associated-domains-configuratie bevatten.");
 const scheme = read("ios/App/App.xcodeproj/xcshareddata/xcschemes/App-PersonalTeam.xcscheme");
 ok(/<LaunchAction\s+buildConfiguration = "Debug-PersonalTeam"/.test(scheme) && /<ArchiveAction\s+buildConfiguration = "Release"/.test(scheme), "Scheme App-PersonalTeam: Run moet Debug-PersonalTeam en Archive moet Release gebruiken.");
 const stdScheme = read("ios/App/App.xcodeproj/xcshareddata/xcschemes/App.xcscheme");

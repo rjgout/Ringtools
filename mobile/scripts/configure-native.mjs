@@ -22,4 +22,4 @@ function edit(rel, fn) {
 }
 
 edit("android/app/src/main/AndroidManifest.xml", (s) => s.replace(/android:host="[^"]*"/g, `android:host="${host}"`));
-edit("ios/App/App/App.entitlements", (s) => s.replace(/applinks:[^<]*/g, `applinks:${host}`));
+edit("ios/App/App/App.entitlements", (s) => s.replace(/applinks:[^<]*/g, `applinks:${host}`).replace(/webcredentials:[^<]*/g, `webcredentials:${host}`));
