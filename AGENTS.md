@@ -12,6 +12,7 @@ tenzij de eigenaar uitdrukkelijk anders heeft opgedragen. (Bij de invoering van 
 > en beveiligingsregels als de app; **geen apart accountsysteem**; verplichte MFA en herverificatie blijven gelden. Bestaande webtoegang voor andere rollen wordt **niet** zonder afzonderlijke toestemming ingetrokken.
 > De web-login wordt niet uitgeschakeld. De webmin-beheeromgeving blijft afzonderlijk beveiligd (wachtwoord + verplichte TOTP).
 
+- **Gepland (alleen ontwerp, nog niet gebouwd of geactiveerd; keuzes bij de eigenaar):** web-MFA-keuze (app met number matching, passkey, authenticator-app) – `docs/WEB-MFA-ONTWERP.md`; verplichte app-ontgrendeling met biometrie/toestelcode – `docs/APP-ONTGRENDELING-ONTWERP.md`. Number matching is **niet** phishingbestendig en wordt nooit als WebAuthn-equivalent gepresenteerd; lokale ontgrendeling vervangt geen serverauthenticatie, MFA of herverificatie.
 - **Ringtools is app-first.** De native apps voor **iOS en Android (Capacitor)** zijn het hoofdproduct en de primaire gebruikersplatforms.
 - **De website (`ringapeldoorn.nl`) heeft twee delen:** een **publiek, informatief deel** (startpagina, privacy, contact, accountverwijdering, later links naar de stores; geen vertrouwelijke gegevens,
   geen sessie nodig, duidelijke knop **Inloggen**) en een **beveiligde webomgeving** voor bevoegde gebruikers (`/login` → `src/app/(app)`), met de bestaande rollen en bevoegdheden.

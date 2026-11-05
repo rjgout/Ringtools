@@ -27,6 +27,9 @@ overzicht, voorstellen, voorstel bekijken, **ondersteunen / niet ondersteunen**,
 aangemelde toestellen bekijken/intrekken, deep links (universele links, App Links, pushmelding-tik), offline-/foutstatus,
 Android-terugknop, veilige schermranden, dark mode, native statusbar/splash/toetsenbord.
 
+### Gepland (ontwerp, niet gebouwd)
+- Verplichte app-ontgrendeling met biometrie/toestelcode: [`APP-ONTGRENDELING-ONTWERP.md`](APP-ONTGRENDELING-ONTWERP.md). Vertrouwd-toestel-goedkeuring (number matching) voor web-MFA: [`WEB-MFA-ONTWERP.md`](WEB-MFA-ONTWERP.md). Er is geen plug-in geïnstalleerd; `App-PersonalTeam` blijft ongewijzigd.
+
 ### Nog niet geïmplementeerd (bewust)
 - Native passkeys, uitnodigingsprocedure en ontheffingen in de app: zie `docs/MIGRATIE-APP-ONLY.md` (Fasen C–D). _Fase B is gerealiseerd_ (gebruikers- en ringbeheer, webmin-login met TOTP, herverificatie): nog op een fysiek toestel te testen.
 - _Fase A is gerealiseerd_ (nieuw voorstel, verantwoordelijken, herinneren, opnieuw vragen, ronde-deelnemers, taken, verwerken, verwijderen): nog op een fysiek toestel te testen.
