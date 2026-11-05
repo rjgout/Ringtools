@@ -13,7 +13,7 @@ import {
   requireRole,
   requireRecentMfa,
 } from "@/lib/session";
-import { promoteSessionToMfaVerified, destroySessionById, markSessionFactorProved, hasFreshFactorProof } from "@/lib/auth";
+import { promoteSessionToMfaVerified, SessionNoLongerValidError, destroySessionById, markSessionFactorProved, hasFreshFactorProof } from "@/lib/auth";
 import { startTotpEnrollment, verifyTotpCode, confirmTotpEnrollment, consumeRecoveryCode, regenerateRecoveryCodes, isTotpConfirmed } from "@/lib/mfa";
 import { hasPasskeys } from "@/lib/webauthn";
 import { logSecurityEvent } from "@/lib/securityEvents";
@@ -23,8 +23,18 @@ import { totpCodeSchema, recoveryCodeSchema } from "@/lib/validation";
 export type ActionResult = { ok: boolean; message: string };
 export type TotpEnrollResult = { ok: boolean; message: string; recoveryCodes?: string[] };
 
+/** Promotie van de sessie; een gelijktijdig verzoek dat al gewonnen heeft laat deze sessie verlopen zijn (terug naar inloggen, geen fout). */
+async function promoteOrLogin(sessionId: string, userId: string): Promise<{ rawToken: string }> {
+  try {
+    return await promoteSessionToMfaVerified(sessionId, userId, await getRequestUserAgent());
+  } catch (err) {
+    if (err instanceof SessionNoLongerValidError) redirect("/login");
+    throw err;
+  }
+}
+
 async function finishAwaitingMfaLogin(sessionId: string, userId: string, redirectTo: string): Promise<never> {
-  const { rawToken } = await promoteSessionToMfaVerified(sessionId, userId, await getRequestUserAgent());
+  const { rawToken } = await promoteOrLogin(sessionId, userId);
   await setSessionCookie(rawToken);
   await logSecurityEvent({ userId, type: "MFA_VERIFIED" });
   redirect(redirectTo);
@@ -127,7 +137,7 @@ export async function reverifyTotpAction(_prev: ActionResult | null, formData: F
     return { ok: false, message: outcome === "LOCKED" ? "Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw." : "Ongeldige code." };
   }
 
-  const { rawToken } = await promoteSessionToMfaVerified(session.sessionId, session.user.id, await getRequestUserAgent());
+  const { rawToken } = await promoteOrLogin(session.sessionId, session.user.id);
   await setSessionCookie(rawToken);
   await logSecurityEvent({ userId: session.user.id, type: "MFA_VERIFIED" });
   const redirectTo = safeInternalPath(String(formData.get("redirect") || "")) || "/profiel/beveiliging";

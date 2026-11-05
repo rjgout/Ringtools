@@ -889,6 +889,8 @@ model RingInvitation {
   codeAttempts       Int                @default(0)
   expiresAt          DateTime
   sentAt             DateTime?
+  // Verzendclaim (lease): wie een verzending start zet dit; gelijktijdige verzoeken zien het en versturen niet nogmaals (idempotent).
+  sendClaimedAt      DateTime?
   sendCount          Int                @default(0)
   revokedAt          DateTime?
   acceptedAt         DateTime?

@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { resolveMfaActor, mayEnrollFirstFactorWhilePending } from "@/lib/mfaActor";
 import { verifyPasskeyRegistration } from "@/lib/webauthn";
-import { isRecentlyMfaVerified, promoteSessionToMfaVerified } from "@/lib/auth";
+import { isRecentlyMfaVerified, promoteSessionToMfaVerified, SessionNoLongerValidError } from "@/lib/auth";
 import { setSessionCookie, safeInternalPath, getRequestUserAgent } from "@/lib/session";
 import { logSecurityEvent } from "@/lib/securityEvents";
 
@@ -32,7 +32,13 @@ export async function POST(request: NextRequest) {
   // In "pending"-context (tijdens inloggen) is dit meteen de eerste
   // passkey van een gebruiker zonder MFA: registratie rondt de login af.
   if (actor.mode === "pending") {
-    const { rawToken } = await promoteSessionToMfaVerified(actor.sessionId, actor.userId, await getRequestUserAgent());
+    let rawToken: string;
+    try {
+      ({ rawToken } = await promoteSessionToMfaVerified(actor.sessionId, actor.userId, await getRequestUserAgent()));
+    } catch (err) {
+      if (err instanceof SessionNoLongerValidError) return Response.json({ error: "Je inlogsessie is verlopen. Log opnieuw in." }, { status: 401 });
+      throw err;
+    }
     await setSessionCookie(rawToken);
     await logSecurityEvent({ userId: actor.userId, type: "MFA_VERIFIED" });
     const redirectTo = safeInternalPath(body.redirect) || "/dashboard";

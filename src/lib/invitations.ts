@@ -144,6 +144,7 @@ export async function createInvitation(input: InvitationInput) {
         tokenHash: hashToken(secrets.rawToken),
         codeHash: "pending",
         expiresAt: new Date(now.getTime() + INVITATION_TTL_MS),
+        sendClaimedAt: now, // de eerste verzending is al geclaimd: een gelijktijdige 'opnieuw versturen' stuurt niet nogmaals
       },
     })).id;
     const invitation = await tx.ringInvitation.update({ where: { id }, data: { codeHash: hashCode(id, secrets.code) } });
@@ -151,12 +152,22 @@ export async function createInvitation(input: InvitationInput) {
     return { invitation, ringName: ring.name };
   });
 
-  const sent = await deliver(created.invitation.id, created.ringName, secrets, input.actorId);
+  const sent = await deliver(created.invitation.id, created.ringName, secrets, input.actorId, null);
   return { id: created.invitation.id, sent };
 }
 
-/** Verstuurt de mail; bij een SMTP-storing blijft `sentAt` leeg en wordt dit vastgelegd (zonder tekst van de fout met gevoelige inhoud). */
-async function deliver(invitationId: string, ringName: string, secrets: IssuedSecrets, actorId: string): Promise<boolean> {
+/** Een verzending die langer dan dit geclaimd staat (bijv. na een crash) mag opnieuw worden gestart. */
+export const INVITATION_SEND_LEASE_MS = 2 * 60 * 1000;
+
+type PreviousSecrets = { tokenHash: string; codeHash: string; codeAttempts: number; expiresAt: Date; sentAt: Date | null };
+
+/**
+ * Verstuurt de mail voor een reeds GECLAIMDE uitnodiging (`sendClaimedAt` gezet in dezelfde transactie als het aanmaken/roteren van token en code).
+ * - Succes: `sentAt` gezet, claim vrijgegeven.
+ * - SMTP-storing: claim vrijgegeven en vastgelegd (zonder foutdetails). Was er al eerder een mail bezorgd, dan worden de vorige token/code/geldigheid
+ *   hersteld (compare-and-set op het nieuwe token), zodat de eerder verstuurde link blijft werken; anders blijft de status "niet verstuurd".
+ */
+async function deliver(invitationId: string, ringName: string, secrets: IssuedSecrets, actorId: string, previous: PreviousSecrets | null): Promise<boolean> {
   const inv = await prisma.ringInvitation.findUniqueOrThrow({ where: { id: invitationId } });
   const link = `${env.appBaseUrl}/uitnodiging/${secrets.rawToken}`;
   const { subject, text } = invitationEmail({
@@ -166,14 +177,21 @@ async function deliver(invitationId: string, ringName: string, secrets: IssuedSe
     code: formatInvitationCode(secrets.code),
     expiresAt: inv.expiresAt,
   });
+  const currentHash = hashToken(secrets.rawToken);
   try {
     await sendMail({ to: inv.email, subject, text });
   } catch (err) {
     console.error("[uitnodiging] Versturen mislukt:", err instanceof Error ? err.name : "fout");
+    await prisma.ringInvitation.updateMany({
+      where: { id: invitationId, tokenHash: currentHash },
+      data: previous?.sentAt
+        ? { tokenHash: previous.tokenHash, codeHash: previous.codeHash, codeAttempts: previous.codeAttempts, expiresAt: previous.expiresAt, sendClaimedAt: null }
+        : { sendClaimedAt: null },
+    });
     await audit(prisma, invitationId, "SEND_FAILED", actorId);
     return false;
   }
-  await prisma.ringInvitation.update({ where: { id: invitationId }, data: { sentAt: new Date(), sendCount: { increment: 1 } } });
+  await prisma.ringInvitation.updateMany({ where: { id: invitationId, tokenHash: currentHash }, data: { sentAt: new Date(), sendCount: { increment: 1 }, sendClaimedAt: null } });
   await audit(prisma, invitationId, "SENT", actorId);
   return true;
 }
@@ -186,17 +204,18 @@ async function loadManaged(db: Prisma.TransactionClient | typeof prisma, actorId
   return inv;
 }
 
-/** Opnieuw versturen/herinneren: nieuwe token en code (de oude link vervalt), nieuwe geldigheid. Werkt ook voor een verlopen of niet-verstuurde uitnodiging. */
+/**
+ * Opnieuw versturen/herinneren: nieuwe token en code (de oude link vervalt), nieuwe geldigheid. Werkt ook voor een verlopen of niet-verstuurde uitnodiging.
+ * Betrouwbaar en idempotent bij gelijktijdige verzoeken: de rij wordt vergrendeld en het roteren van token en code gaat samen met een verzendclaim.
+ * Een tweede verzoek terwijl de eerste nog verstuurt, krijgt `inProgress` en verstuurt niets (dus geen mail met een link die meteen ongeldig is);
+ * een verzoek vlak ná een geslaagde verzending valt onder de wachttijd.
+ */
 export async function resendInvitation(input: { actorId: string; invitationId: string }) {
   const secrets = issueSecrets();
-  const result = await prisma.$transaction(async (tx) => {
+  const claim = await prisma.$transaction(async (tx) => {
     const inv = await loadManaged(tx, input.actorId, input.invitationId);
     if (!inv.ring.active) throw new RingError("Deze ring is niet actief.");
-    // Gelijktijdige verzoeken (dubbeltik) leiden niet tot meerdere e-mails: hooguit twee pogingen per wachttijd (één extra voor een mislukte verzending).
-    if (!rateLimit(`invite-resend-inv:${inv.id}`, 2, INVITATION_RESEND_COOLDOWN_MS).allowed) {
-      throw new RingError("Deze uitnodiging is net verstuurd. Wacht een paar minuten voordat je hem opnieuw verstuurt.");
-    }
-    await lockRing(tx, inv.ringId);
+    await tx.$queryRaw`SELECT "id" FROM "RingInvitation" WHERE "id" = ${inv.id} FOR UPDATE`;
     const fresh = await tx.ringInvitation.findUniqueOrThrow({ where: { id: inv.id } });
     if (fresh.acceptedAt) throw new RingError("Deze uitnodiging is al geactiveerd.");
     if (fresh.revokedAt) throw new RingError("Deze uitnodiging is ingetrokken. Maak een nieuwe uitnodiging aan.");
@@ -204,14 +223,23 @@ export async function resendInvitation(input: { actorId: string; invitationId: s
     if (fresh.sentAt && Date.now() - fresh.sentAt.getTime() < INVITATION_RESEND_COOLDOWN_MS) {
       throw new RingError("Deze uitnodiging is net verstuurd. Wacht een paar minuten voordat je hem opnieuw verstuurt.");
     }
+    if (fresh.sendClaimedAt && Date.now() - fresh.sendClaimedAt.getTime() < INVITATION_SEND_LEASE_MS) return { inProgress: true as const, id: fresh.id };
+    const previous: PreviousSecrets = { tokenHash: fresh.tokenHash, codeHash: fresh.codeHash, codeAttempts: fresh.codeAttempts, expiresAt: fresh.expiresAt, sentAt: fresh.sentAt };
     await tx.ringInvitation.update({
       where: { id: fresh.id },
-      data: { tokenHash: hashToken(secrets.rawToken), codeHash: hashCode(fresh.id, secrets.code), codeAttempts: 0, expiresAt: new Date(Date.now() + INVITATION_TTL_MS) },
+      data: {
+        tokenHash: hashToken(secrets.rawToken),
+        codeHash: hashCode(fresh.id, secrets.code),
+        codeAttempts: 0,
+        expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
+        sendClaimedAt: new Date(),
+      },
     });
-    return { id: fresh.id, ringName: inv.ring.name };
+    return { inProgress: false as const, id: fresh.id, ringName: inv.ring.name, previous };
   });
-  const sent = await deliver(result.id, result.ringName, secrets, input.actorId);
-  return { id: result.id, sent };
+  if (claim.inProgress) return { id: claim.id, sent: false, inProgress: true };
+  const sent = await deliver(claim.id, claim.ringName, secrets, input.actorId, claim.previous);
+  return { id: claim.id, sent, inProgress: false };
 }
 
 export async function revokeInvitation(input: { actorId: string; invitationId: string }) {

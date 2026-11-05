@@ -220,11 +220,21 @@ export async function rotateSessionIfDue(rawToken: string | undefined | null): P
  * verifiëren van een al volledig ingelogde sessie voor gevoelige acties
  * (dezelfde rotatie, gewoon opnieuw toegepast op de huidige sessie-rij).
  */
+/** De sessie die gepromoveerd moest worden bestaat niet meer (al gebruikt, verlopen of ingetrokken, bijvoorbeeld door een gelijktijdig verzoek). */
+export class SessionNoLongerValidError extends Error {
+  constructor() {
+    super("Sessie niet meer geldig");
+  }
+}
+
 export async function promoteSessionToMfaVerified(sessionId: string, userId: string, userAgent?: string | null): Promise<{ rawToken: string; expiresAt: Date }> {
   const rawToken = generateRawToken();
   const expiresAt = new Date(Date.now() + SESSION_IDLE_TTL_MS);
   await prisma.$transaction(async (tx) => {
-    await tx.session.deleteMany({ where: { id: sessionId } });
+    // Eenmalig: precies één aanroep verwijdert de huidige (wachtende of te herverifiëren) sessie. Bij gelijktijdige aanroepen wacht de
+    // tweede op de rijvergrendeling, vindt de rij weg (count 0) en geeft géén tweede sessie uit.
+    const removed = await tx.session.deleteMany({ where: { id: sessionId, userId } });
+    if (removed.count !== 1) throw new SessionNoLongerValidError();
     await tx.session.create({
       data: { userId, tokenHash: hashToken(rawToken), expiresAt, mfaAt: new Date(), userAgent: userAgent || null },
     });

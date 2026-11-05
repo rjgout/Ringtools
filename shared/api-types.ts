@@ -145,6 +145,8 @@ export type ManagedUser = {
 };
 
 /** Uitnodiging in het gebruikersbeheer. Bevat nooit een token of code. */
+/** Antwoord op (opnieuw) versturen. `inProgress`: een andere verzending loopt al; er is niets extra verstuurd. */
+export type InvitationSendResult = { id: string; sent: boolean; inProgress?: boolean };
 export type InvitationStatus = "NIET_VERSTUURD" | "VERSTUURD" | "VERLOPEN" | "INGETROKKEN" | "GEACTIVEERD";
 export type InvitationItem = {
   id: string;

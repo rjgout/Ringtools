@@ -364,3 +364,51 @@ describe("Origins en configuratie", () => {
     expect((await call("GET", "/meta")).body.nativePasskeys).toBe(false);
   });
 });
+
+describe("Gelijktijdigheid: challenge en sessie zijn eenmalig te verbruiken", () => {
+  it("meerdere gelijktijdige verificaties van dezelfde assertion: precies één slaagt en er ontstaat precies één volledige sessie", async () => {
+    const u = await mfaUser("Race Verify");
+    const { pendingToken, challenge } = await pendingWithOptions(u);
+    const assertion = u.key.assert({ challenge, counter: 1 });
+    // 4 parallelle verzoeken: blijft onder de vergrendelingsdrempel (5 mislukte pogingen), zodat het resultaat uitsluitend van de atomaire verbruiksregels afhangt.
+    const results = await Promise.all(Array.from({ length: 4 }, () => verifyCall(pendingToken, assertion)));
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(results.filter((r) => r.status !== 200).every((r) => r.status === 401 && r.body.token === undefined)).toBe(true);
+    expect(await prisma.session.count({ where: { userId: u.user.id, mfaAt: { not: null } } })).toBe(1);
+    expect(await prisma.session.count({ where: { userId: u.user.id, mfaAt: null } })).toBe(0);
+    const winner = results.find((r) => r.status === 200)!;
+    expect((await call("GET", "/me", { token: winner.body.token })).status).toBe(200);
+  });
+
+  it("de challenge zelf (bibliotheekniveau) is atomair: gelijktijdige verificaties met één challenge geven hooguit één succes", async () => {
+    const u = await mfaUser("Race Challenge");
+    for (let round = 0; round < 5; round++) {
+      const opts = (await startPasskeyAuthentication(u.user.id))!;
+      const assertion = u.key.assert({ challenge: opts.challenge, counter: round + 1 });
+      const results = await Promise.all(Array.from({ length: 6 }, () => verifyPasskeyAuthentication(u.user.id, assertion as never, { native: true })));
+      expect(results.filter((r) => r.ok), `ronde ${round}`).toHaveLength(1);
+    }
+  });
+
+  it("promoteSessionToMfaVerified geeft bij gelijktijdige aanroepen voor één sessie hooguit één nieuwe sessie uit", async () => {
+    const { promoteSessionToMfaVerified, SessionNoLongerValidError } = await import("@/lib/auth");
+    const u = await mfaUser("Race Promote");
+    const pending = await createSession(u.user.id, "Ringtools-app (wacht op passkey)");
+    const row = await prisma.session.findFirstOrThrow({ where: { userId: u.user.id } });
+    const results = await Promise.allSettled(Array.from({ length: 8 }, () => promoteSessionToMfaVerified(row.id, u.user.id, "Test")));
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((r) => r.status === "rejected").every((r) => (r as PromiseRejectedResult).reason instanceof SessionNoLongerValidError)).toBe(true);
+    expect(await prisma.session.count({ where: { userId: u.user.id } })).toBe(1);
+    expect(pending.rawToken).toBeTruthy();
+  });
+
+  it("gelijktijdige herverificaties met één assertion: hooguit één rotatie, de oude sessie is daarna weg", async () => {
+    const u = await mfaUser("Race Reauth");
+    const token = (await createVerifiedSession(u.user.id, "Test")).rawToken;
+    const opts = await call("POST", "/auth/reauth/passkey/options", { token });
+    const assertion = u.key.assert({ challenge: opts.body.options.challenge, counter: 1 });
+    const results = await Promise.all(Array.from({ length: 4 }, () => call("POST", "/auth/reauth/passkey/verify", { token, body: { response: assertion } })));
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(await prisma.session.count({ where: { userId: u.user.id } })).toBe(1);
+  });
+});

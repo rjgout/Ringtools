@@ -437,14 +437,121 @@ describe("Robuustheid", () => {
     expect(await prisma.ringMembership.count({ where: { userId: legacy.id, ringId: s.ringA.id } })).toBe(1);
   });
 
-  it("gelijktijdig opnieuw versturen (dubbeltik) levert niet meer dan twee pogingen en één geldige link op", async () => {
+});
+
+
+describe("Betrouwbaar en idempotent (opnieuw) versturen", () => {
+  const slowMail = (ms: number) => sendMailMock.mockImplementation(() => new Promise((r) => setTimeout(r, ms)));
+  const expireCooldown = (id: string) => prisma.ringInvitation.update({ where: { id }, data: { sentAt: new Date(Date.now() - INVITATION_RESEND_COOLDOWN_MS - 1000) } });
+
+  it("gelijktijdig opnieuw versturen: precies één e-mail, de link daarin is geldig en de andere verzoeken versturen niets", async () => {
     const s = await setup();
     await invite(s);
     const id = (await prisma.ringInvitation.findFirstOrThrow()).id;
-    await prisma.ringInvitation.update({ where: { id }, data: { sentAt: new Date(Date.now() - INVITATION_RESEND_COOLDOWN_MS - 1000) } });
+    await expireCooldown(id);
     sendMailMock.mockClear();
-    const res = await Promise.all(Array.from({ length: 5 }, () => call("POST", `/invitations/${id}/resend`, { token: s.token })));
-    expect(res.filter((r) => r.status === 200).length).toBeLessThanOrEqual(2);
-    expect(sendMailMock.mock.calls.length).toBeLessThanOrEqual(2);
+    slowMail(150); // de verzending duurt even: de overige verzoeken overlappen
+    const res = await Promise.all(Array.from({ length: 6 }, () => call("POST", `/invitations/${id}/resend`, { token: s.token })));
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    expect(res.every((r) => r.status === 200)).toBe(true);
+    expect(res.filter((r) => r.body.sent === true)).toHaveLength(1);
+    expect(res.filter((r) => r.body.inProgress === true)).toHaveLength(5);
+    const { token } = lastMail();
+    expect((await prisma.ringInvitation.findUniqueOrThrow({ where: { id } })).tokenHash).toBe(hashToken(token)); // het enige verstuurde token is het geldige
+    expect((await prisma.ringInvitation.findUniqueOrThrow({ where: { id } })).sendClaimedAt).toBeNull();
+    expect((await call("POST", "/invitations/activate", { body: { token } })).status).toBe(200);
+  });
+
+  it("een verzoek tijdens de eerste verzending na het aanmaken wordt samengevoegd; direct daarna geldt de wachttijd", async () => {
+    const s = await setup();
+    slowMail(150);
+    const created = call("POST", `/rings/${s.ringA.id}/invitations`, { token: s.token, body: body() });
+    await new Promise((r) => setTimeout(r, 60));
+    const id = (await prisma.ringInvitation.findFirstOrThrow()).id;
+    const during = await call("POST", `/invitations/${id}/resend`, { token: s.token });
+    expect(during.body).toMatchObject({ sent: false, inProgress: true });
+    expect((await created).body.sent).toBe(true);
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const after = await call("POST", `/invitations/${id}/resend`, { token: s.token });
+    expect(after.status).toBe(400); // net verstuurd: wachttijd
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("een verzoek dat is samengevoegd roteert token en code niet", async () => {
+    const s = await setup();
+    await invite(s);
+    const row = await prisma.ringInvitation.findFirstOrThrow();
+    await expireCooldown(row.id);
+    await prisma.ringInvitation.update({ where: { id: row.id }, data: { sendClaimedAt: new Date() } }); // andere verzending bezig
+    const before = await prisma.ringInvitation.findUniqueOrThrow({ where: { id: row.id } });
+    sendMailMock.mockClear();
+    const res = await call("POST", `/invitations/${row.id}/resend`, { token: s.token });
+    expect(res.body.inProgress).toBe(true);
+    const after = await prisma.ringInvitation.findUniqueOrThrow({ where: { id: row.id } });
+    expect([after.tokenHash, after.codeHash, after.expiresAt.getTime()]).toEqual([before.tokenHash, before.codeHash, before.expiresAt.getTime()]);
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("een achtergebleven claim (bijv. na een crash) verloopt: daarna kan opnieuw worden verstuurd", async () => {
+    const s = await setup();
+    await invite(s);
+    const row = await prisma.ringInvitation.findFirstOrThrow();
+    await expireCooldown(row.id);
+    await prisma.ringInvitation.update({ where: { id: row.id }, data: { sendClaimedAt: new Date(Date.now() - 3 * 60 * 1000) } });
+    sendMailMock.mockClear();
+    const res = await call("POST", `/invitations/${row.id}/resend`, { token: s.token });
+    expect(res.body).toMatchObject({ sent: true, inProgress: false });
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("SMTP-storing bij opnieuw versturen: de eerder verstuurde link blijft werken, status blijft 'verstuurd', claim vrij en herhalen lukt", async () => {
+    const s = await setup();
+    const first = await invite(s);
+    const row = await prisma.ringInvitation.findFirstOrThrow();
+    await expireCooldown(row.id);
+    const before = await prisma.ringInvitation.findUniqueOrThrow({ where: { id: row.id } });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    sendMailMock.mockRejectedValueOnce(new Error("smtp down"));
+    const failed = await call("POST", `/invitations/${row.id}/resend`, { token: s.token });
+    errSpy.mockRestore();
+    expect(failed.body).toMatchObject({ sent: false, inProgress: false });
+    const after = await prisma.ringInvitation.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.tokenHash).toBe(before.tokenHash); // vorige token/code/geldigheid hersteld
+    expect(after.codeHash).toBe(before.codeHash);
+    expect(after.expiresAt.getTime()).toBe(before.expiresAt.getTime());
+    expect(after.sentAt?.getTime()).toBe(before.sentAt?.getTime());
+    expect(after.sendClaimedAt).toBeNull();
+    expect(after.sendCount).toBe(before.sendCount);
+    expect((await call("GET", `/rings/${s.ringA.id}/invitations`, { token: s.token })).body.invitations[0].status).toBe("VERSTUURD");
+    expect((await prisma.ringInvitationAudit.findMany()).map((a) => a.action)).toContain("SEND_FAILED");
+    // Herstel: opnieuw proberen lukt, en de eerste mail was intussen nog bruikbaar.
+    const retry = await call("POST", `/invitations/${row.id}/resend`, { token: s.token });
+    expect(retry.body.sent).toBe(true);
+    expect(first.token).not.toBe(lastMail().token);
+  });
+
+  it("SMTP-storing bij de allereerste verzending met gelijktijdige herhalingen: één poging tegelijk, daarna herstel", async () => {
+    const s = await setup();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    sendMailMock.mockRejectedValueOnce(new Error("smtp down"));
+    expect((await call("POST", `/rings/${s.ringA.id}/invitations`, { token: s.token, body: body() })).body.sent).toBe(false);
+    errSpy.mockRestore();
+    const id = (await prisma.ringInvitation.findFirstOrThrow()).id;
+    expect((await prisma.ringInvitation.findUniqueOrThrow({ where: { id } })).sendClaimedAt).toBeNull();
+    sendMailMock.mockClear();
+    slowMail(120);
+    const res = await Promise.all(Array.from({ length: 4 }, () => call("POST", `/invitations/${id}/resend`, { token: s.token })));
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    expect(res.filter((r) => r.body.sent === true)).toHaveLength(1);
+    expect((await call("POST", "/invitations/activate", { body: { token: lastMail().token } })).status).toBe(200);
+  });
+
+  it("herhaalde verzoeken na een geslaagde verzending versturen niets extra (wachttijd), ook niet na een verlopen claim", async () => {
+    const s = await setup();
+    await invite(s);
+    const id = (await prisma.ringInvitation.findFirstOrThrow()).id;
+    sendMailMock.mockClear();
+    for (let i = 0; i < 3; i++) expect((await call("POST", `/invitations/${id}/resend`, { token: s.token })).status).toBe(400);
+    expect(sendMailMock).not.toHaveBeenCalled();
   });
 });

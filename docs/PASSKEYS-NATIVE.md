@@ -42,6 +42,10 @@ Associated Domains / Digital Asset Links. Wat daarvoor nodig is staat onderaan (
 | `capacitor-webauthn` | 8.0.0 · 2026-03-24 | MIT | Eén maintainer, GitLab; iOS 16+/Android 9+. Minste voorkeur. |
 Bij de keuze: versie vastpinnen (geen `^`), lockfile reviewen, `npm audit`, en de broncode van de native delen (Swift/Kotlin) doorlopen vóór opname. Android-origin hangt af van de app-handtekening, niet van de website — zie de vingerafdrukken hierboven.
 
+### Gelijktijdigheid
+- De challenge wordt atomair verbruikt (`DELETE … RETURNING`; tweede verzoek vindt niets) en `promoteSessionToMfaVerified` verwijdert de wachtende/te verifiëren sessie in dezelfde transactie en eist `count === 1`: bij parallelle verzoeken met één assertion slaagt hooguit één en ontstaat precies één volledige sessie.
+  Regressietests: `tests/nativeMfa.test.ts` ("Gelijktijdigheid"). De RP ID-, origin-, user verification- en tellercontroles zijn ongewijzigd.
+
 ## Wat nog moet gebeuren vóór activering (externe configuratie en toesteltests)
 1. **Eigenaar levert aan:** definitieve app-ID, Apple Team-ID (`APPLE_APP_ID = <TEAM-ID>.<bundle-id>`), en de SHA-256-vingerafdruk(ken) van het Android-**release**-ondertekeningscertificaat (Play Console → App-integriteit; ook de Play-app-signing-sleutel) in `ANDROID_SHA256_FINGERPRINTS`.
 2. **Apple Developer (betaald programma):** capability *Associated Domains* met `webcredentials:ringapeldoorn.nl` naast `applinks:`. Pas dan `ios/App/App/App.entitlements` aan (productie-entitlements blijven verder ongewijzigd); **niet** in `Debug-PersonalTeam`. Draai `npm run check:native-config` en `scripts/verify-ios-configs.sh`.

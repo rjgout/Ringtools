@@ -186,7 +186,7 @@ function Invitations({ items, error, onChanged }: { items: InvitationItem[]; err
     try {
       if (kind === "resend") {
         const res = await run(() => api.resendInvitation(id));
-        await onChanged(res.sent ? "De uitnodiging is opnieuw verstuurd." : "Versturen is niet gelukt. Probeer het later opnieuw.");
+        await onChanged(res.inProgress ? "De uitnodiging wordt al verstuurd. Even geduld." : res.sent ? "De uitnodiging is opnieuw verstuurd." : "Versturen is niet gelukt. Probeer het later opnieuw.");
       } else {
         await run(() => api.revokeInvitation(id));
         await onChanged("De uitnodiging is ingetrokken.");

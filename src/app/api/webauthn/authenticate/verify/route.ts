@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { resolveMfaActor } from "@/lib/mfaActor";
 import { verifyPasskeyAuthentication } from "@/lib/webauthn";
-import { promoteSessionToMfaVerified } from "@/lib/auth";
+import { promoteSessionToMfaVerified, SessionNoLongerValidError } from "@/lib/auth";
 import { setSessionCookie, safeInternalPath, getRequestUserAgent } from "@/lib/session";
 import { logSecurityEvent } from "@/lib/securityEvents";
 
@@ -23,7 +23,13 @@ export async function POST(request: NextRequest) {
   // Elke geslaagde verificatie roteert de sessie en zet mfaAt=nu, zowel bij
   // het afronden van een login ("pending") als bij het herverifiëren van
   // een al volledig ingelogde sessie voor een gevoelige actie ("full").
-  const { rawToken } = await promoteSessionToMfaVerified(actor.sessionId, actor.userId, await getRequestUserAgent());
+  let rawToken: string;
+  try {
+    ({ rawToken } = await promoteSessionToMfaVerified(actor.sessionId, actor.userId, await getRequestUserAgent()));
+  } catch (err) {
+    if (err instanceof SessionNoLongerValidError) return Response.json({ error: "Je inlogsessie is verlopen. Log opnieuw in." }, { status: 401 });
+    throw err;
+  }
   await setSessionCookie(rawToken);
   await logSecurityEvent({ userId: actor.userId, type: "MFA_VERIFIED" });
 

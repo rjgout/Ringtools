@@ -6,6 +6,7 @@ import {
   type VerifiedRegistrationResponse,
 } from "@simplewebauthn/server";
 import type { RegistrationResponseJSON, AuthenticationResponseJSON } from "@simplewebauthn/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { env } from "./env";
 import { logSecurityEvent } from "./securityEvents";
@@ -58,12 +59,19 @@ async function storeChallenge(userId: string, challenge: string): Promise<void> 
   });
 }
 
+/**
+ * Verbruikt de challenge van een gebruiker atomair: één `DELETE … RETURNING`. Bij gelijktijdige verzoeken wacht het tweede op de
+ * rijvergrendeling en vindt daarna niets meer (P2025), zodat een challenge nooit twee keer kan slagen. Een verlopen challenge is
+ * ook verbruikt (en dus weg) maar levert niets op.
+ */
 async function takeChallenge(userId: string): Promise<string | null> {
-  const row = await prisma.webAuthnChallenge.findUnique({ where: { userId } });
-  if (!row) return null;
-  await prisma.webAuthnChallenge.delete({ where: { userId } }).catch(() => {});
-  if (row.expiresAt.getTime() < Date.now()) return null;
-  return row.challenge;
+  try {
+    const row = await prisma.webAuthnChallenge.delete({ where: { userId } });
+    return row.expiresAt.getTime() < Date.now() ? null : row.challenge;
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") return null; // al verbruikt (of nooit uitgegeven)
+    throw err;
+  }
 }
 
 export async function hasPasskeys(userId: string): Promise<boolean> {

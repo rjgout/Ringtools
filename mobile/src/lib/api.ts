@@ -10,6 +10,7 @@ import type {
   EligibleAppointers,
   InvitationActivation,
   InvitationItem,
+  InvitationSendResult,
   InvitationPreview,
   ApiMeta,
   AppNotification,
@@ -183,7 +184,7 @@ export class ApiClient {
     return this.request<{ id: string; sent: boolean }>("POST", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/invitations`, input);
   }
   resendInvitation(id: string) {
-    return this.request<{ id: string; sent: boolean }>("POST", `${this.admin ? "/admin" : ""}/invitations/${encodeURIComponent(id)}/resend`, {});
+    return this.request<InvitationSendResult>("POST", `${this.admin ? "/admin" : ""}/invitations/${encodeURIComponent(id)}/resend`, {});
   }
   revokeInvitation(id: string) {
     return this.request<{ ok: boolean }>("POST", `${this.admin ? "/admin" : ""}/invitations/${encodeURIComponent(id)}/revoke`, {});
