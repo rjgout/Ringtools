@@ -99,7 +99,7 @@ describe("Uitnodigen en activeren", () => {
     expect(await prisma.user.count({ where: { email: "nieuw@test.ringapeldoorn.nl" } })).toBe(0);
 
     const sessionsBefore = await prisma.session.count();
-    const act = await call("POST", "/invitations/activate", { body: { token } });
+    const act = await call("POST", "/invitations/activate", { body: { token, issueSession: true } });
     expect(act.status).toBe(200);
     expect(act.body).toMatchObject({ ok: true, email: "nieuw@test.ringapeldoorn.nl", ringName: "Ring A", mfaRequired: false });
     // Zonder verplichte MFA is de gebruiker na activatie direct ingelogd (uitnodiging = bewijs van controle over het e-mailadres).
@@ -633,7 +633,7 @@ describe("Direct ingelogd na activatie", () => {
   it("de uitgegeven sessie is een gewone volledige sessie: zelfde levensduur, mfaAt, servercontroles, ringisolatie, verversen en uitloggen", async () => {
     const s = await setup();
     const { token } = await invite(s, { role: "HOGERAAD", churchFunctionCode: "HOGERAADSLID", churchFunction: "Hogeraadslid" });
-    const act = await call("POST", "/invitations/activate", { body: { token, deviceName: "iPhone van Eva" } });
+    const act = await call("POST", "/invitations/activate", { body: { token, issueSession: true, deviceName: "iPhone van Eva" } });
     expect(act.status).toBe(200);
     expect(act.body.user.email).toBe("nieuw@test.ringapeldoorn.nl");
     expect(act.body.rings).toEqual([expect.objectContaining({ id: s.ringA.id, role: "HOGERAAD", isRingManager: false })]);
@@ -664,7 +664,7 @@ describe("Direct ingelogd na activatie", () => {
   it("een uitnodiging met ringbeheerder-vlag geeft precies die rechten (niet meer) in de sessie; een machtiging blijft ontbreken", async () => {
     const s = await setup();
     const { token } = await invite(s, { isRingManager: true });
-    const act = await call("POST", "/invitations/activate", { body: { token } });
+    const act = await call("POST", "/invitations/activate", { body: { token, issueSession: true } });
     expect(act.body.rings[0]).toMatchObject({ isRingManager: true });
     expect((await call("GET", `/rings/${s.ringA.id}/users`, { token: act.body.token })).status).toBe(200);
     expect((await prisma.ringMembership.findFirstOrThrow({ where: { user: { email: "nieuw@test.ringapeldoorn.nl" } } })).appointAuthority).toBe("NONE");
@@ -676,7 +676,7 @@ describe("Direct ingelogd na activatie", () => {
     await prisma.user.update({ where: { id: elsewhere.id }, data: { activatedAt: new Date() } });
     const usersBefore = await prisma.user.count();
     const { token } = await invite(s, { name: "Elders", email: "elders@test.ringapeldoorn.nl", role: "HOGERAAD", churchFunctionCode: "HOGERAADSLID" });
-    const act = await call("POST", "/invitations/activate", { body: { token } });
+    const act = await call("POST", "/invitations/activate", { body: { token, issueSession: true } });
     expect(act.body.signedIn).toBe(true);
     expect(act.body.user.id).toBe(elsewhere.id);
     expect(act.body.rings.map((r: { id: string }) => r.id).sort()).toEqual([s.ringA.id, s.ringB.id].sort());
@@ -689,7 +689,7 @@ describe("Direct ingelogd na activatie", () => {
     await prisma.user.update({ where: { id: mfaUser.id }, data: { mfaEnabled: true, activatedAt: new Date() } });
     const { token } = await invite(s, { email: "mfa.direct@test.ringapeldoorn.nl", role: "HOGERAAD", churchFunctionCode: "HOGERAADSLID" });
     const sessionsBefore = await prisma.session.count();
-    const act = await call("POST", "/invitations/activate", { body: { token } });
+    const act = await call("POST", "/invitations/activate", { body: { token, issueSession: true } });
     expect(act.status).toBe(200);
     expect(act.body).toMatchObject({ ok: true, signedIn: false, mfaRequired: true });
     expect(act.body.token).toBeUndefined();
@@ -699,6 +699,27 @@ describe("Direct ingelogd na activatie", () => {
     const login403 = await call("POST", "/auth/login", { body: { email: mfaUser.email, code } });
     expect(login403.status).toBe(403);
     expect(login403.body.token).toBeUndefined();
+  });
+
+  it("oude apps zonder issueSession maken geen sessie aan (standaard fail-closed)", async () => {
+    const s = await setup();
+    const { token } = await invite(s);
+    const before = await prisma.session.count();
+    const act = await call("POST", "/invitations/activate", { body: { token } });
+    expect(act.status).toBe(200);
+    expect(act.body).toMatchObject({ ok: true, signedIn: false, mfaRequired: false });
+    expect(act.body.token).toBeUndefined();
+    expect(await prisma.session.count()).toBe(before);
+    expect((await prisma.ringMembership.findFirst({ where: { ringId: s.ringA.id, user: { email: "nieuw@test.ringapeldoorn.nl" } } }))?.active).toBe(true);
+  });
+
+  it("ook bij de service zelf geeft ontbrekende issueSession geen sessie uit", async () => {
+    const s = await setup();
+    const { token } = await invite(s);
+    const before = await prisma.session.count();
+    const act = await activateInvitation({ token }, freshIp());
+    expect(act.session).toBeUndefined();
+    expect(await prisma.session.count()).toBe(before);
   });
 
   it("de client kan om geen sessie vragen (issueSession=false, bijv. als er al iemand is ingelogd): activatie slaagt zonder token", async () => {
@@ -730,7 +751,7 @@ describe("Direct ingelogd na activatie", () => {
     await prisma.ringInvitation.update({ where: { id }, data: { expiresAt: new Date(Date.now() + 1e6), revokedAt: new Date() } });
     await noToken(await call("POST", "/invitations/activate", { body: { token: a.token } })); // ingetrokken
     await prisma.ringInvitation.update({ where: { id }, data: { revokedAt: null } });
-    expect((await call("POST", "/invitations/activate", { body: { token: a.token } })).body.signedIn).toBe(true); // nu wel
+    expect((await call("POST", "/invitations/activate", { body: { token: a.token, issueSession: true } })).body.signedIn).toBe(true); // nu wel
     await noToken(await call("POST", "/invitations/activate", { body: { token: a.token } })); // hergebruik
     expect(await sessions()).toBe(base + 1);
 
@@ -749,7 +770,7 @@ describe("Direct ingelogd na activatie", () => {
   it("gelijktijdige activaties (token en code): hooguit één activatie en precies één sessie", async () => {
     const s = await setup();
     const { token, code } = await invite(s);
-    const byToken = await Promise.all(Array.from({ length: 6 }, () => call("POST", "/invitations/activate", { body: { token } })));
+    const byToken = await Promise.all(Array.from({ length: 6 }, () => call("POST", "/invitations/activate", { body: { token, issueSession: true } })));
     expect(byToken.filter((r) => r.status === 200)).toHaveLength(1);
     expect(byToken.filter((r) => r.body.token)).toHaveLength(1);
     expect(await prisma.session.count({ where: { user: { email: "nieuw@test.ringapeldoorn.nl" } } })).toBe(1);
@@ -757,7 +778,7 @@ describe("Direct ingelogd na activatie", () => {
     await resetDatabase();
     const t = await setup();
     const second = await invite(t, { email: "code@test.ringapeldoorn.nl" });
-    const byCode = await Promise.all(Array.from({ length: 5 }, () => call("POST", "/invitations/activate", { body: { email: "code@test.ringapeldoorn.nl", code: second.code } })));
+    const byCode = await Promise.all(Array.from({ length: 5 }, () => call("POST", "/invitations/activate", { body: { email: "code@test.ringapeldoorn.nl", code: second.code, issueSession: true } })));
     expect(byCode.filter((r) => r.body.token)).toHaveLength(1);
     expect(await prisma.session.count({ where: { user: { email: "code@test.ringapeldoorn.nl" } } })).toBe(1);
     expect(code).toBeTruthy();
@@ -766,7 +787,7 @@ describe("Direct ingelogd na activatie", () => {
   it("onderbroken verbinding: de uitnodiging is verbruikt, een nieuwe poging geeft geen tweede sessie; gewoon inloggen met de e-mailcode blijft mogelijk", async () => {
     const s = await setup();
     const { token } = await invite(s);
-    const first = await call("POST", "/invitations/activate", { body: { token } }); // antwoord 'verloren' bij de client
+    const first = await call("POST", "/invitations/activate", { body: { token, issueSession: true } }); // antwoord 'verloren' bij de client
     expect(first.body.token).toBeTruthy();
     const retry = await call("POST", "/invitations/activate", { body: { token } });
     expect(retry.status).toBe(400);
@@ -781,7 +802,7 @@ describe("Direct ingelogd na activatie", () => {
     const { token } = await invite(s);
     const spies = [vi.spyOn(console, "log"), vi.spyOn(console, "error"), vi.spyOn(console, "warn"), vi.spyOn(console, "info")].map((x) => x.mockImplementation(() => {}));
     const url = new URL("http://localhost/api/mobile/v1/invitations/activate");
-    const res = await handleApi(new Request(url, { method: "POST", headers: { "Content-Type": "application/json", "x-forwarded-for": freshIp() }, body: JSON.stringify({ token }) }), ["invitations", "activate"]);
+    const res = await handleApi(new Request(url, { method: "POST", headers: { "Content-Type": "application/json", "x-forwarded-for": freshIp() }, body: JSON.stringify({ token, issueSession: true }) }), ["invitations", "activate"]);
     expect(res.headers.get("cache-control")).toBe("no-store");
     const body = (await res.json()) as { token: string };
     const logged = spies.flatMap((x) => x.mock.calls).map((c) => c.map(String).join(" ")).join("\n");
