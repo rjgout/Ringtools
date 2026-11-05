@@ -14,8 +14,8 @@ type Phase =
 
 /**
  * Account activeren met een uitnodiging. Twee wegen: de link uit de e-mail (token) of — als de link de app niet opent —
- * het e-mailadres en de activeringscode uit dezelfde mail. Activeren geeft nooit een sessie: daarna logt de gebruiker in
- * met zijn e-mailadres (en, waar verplicht, de tweede factor). Token en code verlaten het toestel alleen richting de eigen backend.
+ * het e-mailadres en de activeringscode uit dezelfde mail. Alleen een expliciet aangevraagde sessie geeft zonder verplichte MFA
+ * direct toegang; bij verplichte MFA volgt de bestaande inlogroute. Token en code verlaten het toestel alleen richting de eigen backend.
  */
 export function Activate({ token, onFinished, onCancel }: { token?: string; onFinished: (email: string, signedIn: boolean) => void; onCancel: () => void }) {
   const { api, status, finishActivation } = useAuth();
