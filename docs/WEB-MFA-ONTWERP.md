@@ -1,8 +1,9 @@
-# Ontwerp: MFA-keuze voor webgebruikers (fase E2 – E2.1 gebouwd achter vlag UIT; rest nog NIET gebouwd)
+# Ontwerp: MFA-keuze voor webgebruikers (fase E2 – E2.1 op main, achter vlag UIT; E2.2 op ontwikkelbranch; rest nog NIET gebouwd)
 
-> **Status (bijgewerkt na E2.1):**
-> - **E2.1 is gebouwd op de ontwikkelbranch, achter de functievlag `WEB_TOTP_ENABLED` (standaard UIT, niet geactiveerd, niet op main).** Beschrijving en beveiligingskeuzes: zie §9 onderaan.
-> - **E2.2 t/m E2.5 (passkey als keuzemethode in een nieuw keuzescherm, vertrouwd toestel, number matching, beleid zoals verplichte MFA per rol) zijn alleen ontwerp.** Number matching is niet gebouwd en wordt niet als WebAuthn-equivalent gepresenteerd.
+> **Status:**
+> - **E2.1 (authenticator-app voor gewone webgebruikers) staat op main** (`7ebbfbd`), achter de functievlag `WEB_TOTP_ENABLED` (standaard UIT, niet geactiveerd op de NAS). Zie §9.
+> - **E2.2 (methodekeuze bij het inloggen, passkey als voorkeur) is gebouwd op de ontwikkelbranch `claude/e2-2-methodekeuze`, nog niet op main.** Zie §10.
+> - **E2.3 (vertrouwd toestel), E2.4 (number matching) en E2.5 (beleid, o.a. verplichte MFA per rol; `Session.mfaMethod`)** zijn alleen ontwerp en uitgesteld. Number matching is niet gebouwd en wordt niet als WebAuthn-equivalent gepresenteerd.
 > - Zonder de vlag is het gedrag ongewijzigd: gewone gebruikers kennen alleen optionele passkey-verificatie; webmin = wachtwoord + verplichte TOTP; e-mailcode blijft eerste factor.
 
 ## 1. Doel
@@ -124,3 +125,18 @@ Per stap: backendtests (race/replay/expiry/ringisolatie), clienttests, Playwrigh
 **Open punten voor de eigenaar vóór activeren:** (1) bevestig dat de interne meldingsmail bij een reset acceptabel is; (2) bevestig het bewust beperkte bereik van herstelcodes (alleen bij TOTP); (3) verplichte MFA per rol en `Session.mfaMethod` zijn door de eigenaar uitgesteld; (4) back-up/herstel op de NAS eerst oefenen (`docs/BACKUP-HERSTEL.md`).
 
 **Tests:** `tests/webTotp.test.ts` (22), `e2e/webTotp.spec.ts` (aan: 8, uit: 4; draai de spec met `E2E_WEB_TOTP=on|off` en een server met dezelfde `WEB_TOTP_ENABLED`; volgorde aan → uit → aan test het terugzetten van de vlag). **Activeren:** `WEB_TOTP_ENABLED=true` in de omgeving van de container, pas na akkoord van de eigenaar.
+
+## 10. E2.2 – methodekeuze bij het inloggen (ontwikkelbranch; geen schemawijziging, geen nieuwe crypto)
+
+**Al aanwezig na E2.1 (niet opnieuw gebouwd):** pending-login en sessiepromotie; WebAuthn-registratie en -verificatie met herverificatie; TOTP met replay-/lockoutbescherming; een eerste keuzescherm; doorsturen bij één methode; profielbeheer van passkeys en authenticator-app met recente MFA; de invariant dat de laatste bruikbare methode niet verwijderd kan worden; geen passkey-lockout (annuleren kan dus nooit blokkeren).
+
+**Ontbrak en is nu gebouwd:**
+- `loginPlan()` (`src/lib/mfaMethods.ts`): één bron die bepaalt of er direct passkey, direct TOTP, een keuze, een eerste inschrijving of "niet beschikbaar" (vlag uit + alleen TOTP) volgt. Beide pagina's (`/mfa/passkey`, `/mfa/totp`) gebruiken hem.
+- Keuzescherm met de passkey als **aanbevolen** methode (phishingbestendig) en een korte uitleg per methode.
+- **Wisselen zonder nieuwe e-mailcode:** vanaf de passkeyverificatie naar de authenticator-app en omgekeerd (en terug naar het keuzescherm). De links verschijnen alleen als de gebruiker beide methoden werkelijk heeft.
+- Passkeyverificatie: geannuleerd, verlopen of mislukt geeft een begrijpelijke melding (geen interne foutteksten), "Opnieuw proberen" en — indien beschikbaar — "Een andere methode gebruiken". Een verlopen inlogsessie (401) toont een duidelijke melding met "Opnieuw inloggen".
+- Profiel: overzicht van de ingestelde methoden (aantal passkeys, authenticator-app) met aanbeveling voor een passkey.
+
+**Ongewijzigd:** webmin-login; native app; herstelcodes uitsluitend bij TOTP; vlag uit = bestaand gedrag (passkey direct, TOTP-rij telt niet; alleen-TOTP is "niet beschikbaar", nooit e-mail-only); verplichte MFA per rol en `Session.mfaMethod` blijven uitgesteld.
+
+**Tests:** `tests/loginPlan.test.ts` (3), `e2e/mfaKeuze.spec.ts` (aan: 7, uit: 2) met `E2E_WEB_TOTP=on|off`: alleen passkey, alleen TOTP, beide + wisselen in beide richtingen, passkey mislukt → TOTP, verlopen sessie, geen toegang/geen methode bijzetten met alleen de e-mailcode, profieloverzicht, vlag uit.

@@ -45,6 +45,17 @@ export default async function BeveiligingPage() {
       ) : (
         <div className="glass-card space-y-3">
           <h2 className="font-semibold">{totpOn ? "Verificatie (optioneel)" : "Passkey-verificatie (optioneel)"}</h2>
+          <ul className="space-y-1 rounded-xl bg-black/5 p-3 text-sm dark:bg-white/5" data-testid="methods-overview" aria-label="Ingestelde verificatiemethoden">
+            <li>
+              Passkey: <strong>{passkeys.length > 0 ? `${passkeys.length} geregistreerd` : "niet ingesteld"}</strong>
+              {passkeys.length > 0 && <span className="text-[var(--text-muted)]"> · aanbevolen, beschermt tegen phishing</span>}
+            </li>
+            {totpOn && (
+              <li>
+                Authenticator-app: <strong>{totpConfigured ? "ingesteld" : "niet ingesteld"}</strong>
+              </li>
+            )}
+          </ul>
           <UserMfaToggle enabled={user.mfaEnabled} hasMethod={passkeys.length > 0 || totpConfigured} totpEnabled={totpOn} />
           <h3 className="pt-2 text-sm font-medium">Passkeys</h3>
           <PasskeyManager credentials={passkeys} mfaEnabled={user.mfaEnabled} />

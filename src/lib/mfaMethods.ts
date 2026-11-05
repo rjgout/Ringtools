@@ -26,6 +26,24 @@ export async function enrolledMethods(user: { id: string; role: string }): Promi
   return methods;
 }
 
+/**
+ * Welke stap volgt na de e-mailcode voor een gewone gebruiker met verplichte MFA (E2.2)? Eén bron voor de pagina's `/mfa/passkey` en `/mfa/totp`.
+ * - `passkey` / `totp`: alleen die methode is ingesteld, direct verifiëren.
+ * - `choose`: beide zijn ingesteld; keuzescherm (passkey is de voorkeur, want phishingbestendig).
+ * - `enroll`: werkelijk geen methode; eerste inschrijving is toegestaan (nooit als er wel een methode bestaat).
+ * - `unavailable`: er bestaat alleen een authenticator-app terwijl de vlag uit staat; fail-closed, geen inschrijving en geen e-mail-only.
+ */
+export type LoginPlan = "passkey" | "totp" | "choose" | "enroll" | "unavailable";
+
+export async function loginPlan(user: { id: string; role: string }): Promise<{ plan: LoginPlan; methods: MfaMethod[] }> {
+  const methods = await enrolledMethods(user);
+  if (methods.includes("passkey") && methods.includes("totp")) return { plan: "choose", methods };
+  if (methods.includes("passkey")) return { plan: "passkey", methods };
+  if (methods.includes("totp")) return { plan: "totp", methods };
+  if (!totpAllowedForUser(user.role) && (await isTotpConfirmed(user.id))) return { plan: "unavailable", methods };
+  return { plan: "enroll", methods };
+}
+
 // ---- Gelijktijdigheidsveilig beheer van methoden (E2.1) ----
 //
 // Invariant: een account met ingeschakelde verificatie (`mfaEnabled`) houdt altijd minstens één BRUIKBARE methode. Het verwijderen van

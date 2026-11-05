@@ -1,13 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startAuthentication, browserSupportsWebAuthn } from "@simplewebauthn/browser";
 
-export function PasskeyVerifyPanel({ redirectTo }: { redirectTo: string }) {
+/** Fout met een tekst die rechtstreeks aan de gebruiker getoond mag worden (afkomstig van onze eigen server, geen technische details). */
+class UserFacingError extends Error {
+  constructor(message: string, readonly sessionExpired = false) {
+    super(message);
+  }
+}
+
+/**
+ * `alternativeHref`: link naar een andere ingestelde methode (alleen meegeven als die bestaat). Annuleren of mislukken blokkeert nooit:
+ * de gebruiker kan opnieuw proberen of — zonder nieuwe e-mailcode — een andere methode kiezen.
+ */
+export function PasskeyVerifyPanel({ redirectTo, alternativeHref }: { redirectTo: string; alternativeHref?: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [expired, setExpired] = useState(false);
   const supported = typeof window !== "undefined" ? browserSupportsWebAuthn() : true;
 
   async function verify() {
@@ -15,8 +28,9 @@ export function PasskeyVerifyPanel({ redirectTo }: { redirectTo: string }) {
     setError(null);
     try {
       const optionsRes = await fetch("/api/webauthn/authenticate/options", { method: "POST" });
-      const options = await optionsRes.json();
-      if (!optionsRes.ok) throw new Error(options?.error || "Kon niet starten.");
+      const options = await optionsRes.json().catch(() => ({}));
+      if (optionsRes.status === 401) throw new UserFacingError("Je inlogsessie is verlopen. Log opnieuw in.", true);
+      if (!optionsRes.ok) throw new UserFacingError(options?.error || "De verificatie kon niet worden gestart. Probeer het opnieuw.");
 
       const authResp = await startAuthentication({ optionsJSON: options });
 
@@ -25,14 +39,21 @@ export function PasskeyVerifyPanel({ redirectTo }: { redirectTo: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ response: authResp, redirect: redirectTo }),
       });
-      const result = await verifyRes.json();
-      if (!verifyRes.ok || !result.ok) throw new Error(result.error || "Verificatie mislukt.");
+      const result = await verifyRes.json().catch(() => ({}));
+      if (verifyRes.status === 401) throw new UserFacingError("Je inlogsessie is verlopen. Log opnieuw in.", true);
+      if (!verifyRes.ok || !result.ok) throw new UserFacingError(result.error || "De verificatie met je passkey is niet gelukt. Probeer het opnieuw.");
 
       router.push(result.redirect || redirectTo);
     } catch (err) {
-      // Een geannuleerde of mislukte ceremonie geeft hier een foutmelding;
-      // nooit automatisch opnieuw proberen zonder dat de gebruiker ernaar vraagt.
-      setError(err instanceof Error ? err.message : "Verificatie mislukt. Probeer het opnieuw.");
+      // Geannuleerd, verlopen of mislukt: nooit automatisch opnieuw proberen en geen interne details tonen.
+      if (err instanceof UserFacingError) {
+        setError(err.message);
+        if (err.sessionExpired) setExpired(true);
+      } else if (err instanceof Error && (err.name === "NotAllowedError" || err.name === "AbortError")) {
+        setError("De passkey-verificatie is geannuleerd of verlopen. Probeer het opnieuw" + (alternativeHref ? " of kies een andere methode." : "."));
+      } else {
+        setError("De verificatie met je passkey is niet gelukt. Probeer het opnieuw" + (alternativeHref ? " of kies een andere methode." : "."));
+      }
     } finally {
       setBusy(false);
     }
@@ -64,10 +85,25 @@ export function PasskeyVerifyPanel({ redirectTo }: { redirectTo: string }) {
           Gebruik Face ID, Touch ID, Windows Hello of de schermvergrendeling van je apparaat.
         </p>
       </div>
-      <button type="button" onClick={verify} disabled={busy} className="btn-primary w-full">
-        {busy ? "Even geduld…" : "Opnieuw proberen"}
-      </button>
-      {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
+      {expired ? (
+        <Link href="/login" className="btn-primary block w-full">
+          Opnieuw inloggen
+        </Link>
+      ) : (
+        <button type="button" onClick={verify} disabled={busy} className="btn-primary w-full">
+          {busy ? "Even geduld…" : "Opnieuw proberen"}
+        </button>
+      )}
+      {error && (
+        <p role="alert" className="text-sm text-[var(--danger)]">
+          {error}
+        </p>
+      )}
+      {alternativeHref && !expired && (
+        <Link href={alternativeHref} className="block text-sm text-[var(--text-muted)] underline">
+          Een andere methode gebruiken (authenticator-app)
+        </Link>
+      )}
     </div>
   );
 }

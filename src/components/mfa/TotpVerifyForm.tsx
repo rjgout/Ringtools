@@ -1,11 +1,12 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import Link from "next/link";
 import { verifyTotpLoginAction, useRecoveryCodeLoginAction, type ActionResult } from "@/lib/actions/mfa.actions";
 
 const initialState: ActionResult = { ok: false, message: "" };
 
-export function TotpVerifyForm({ redirectTo, allowRecovery = true }: { redirectTo: string; allowRecovery?: boolean }) {
+export function TotpVerifyForm({ redirectTo, allowRecovery = true, switchHref }: { redirectTo: string; allowRecovery?: boolean; switchHref?: string }) {
   const [mode, setMode] = useState<"code" | "recovery">("code");
   const [codeState, codeAction, codePending] = useActionState(verifyTotpLoginAction, initialState);
   const [recoveryState, recoveryAction, recoveryPending] = useActionState(useRecoveryCodeLoginAction, initialState);
@@ -62,6 +63,11 @@ export function TotpVerifyForm({ redirectTo, allowRecovery = true }: { redirectT
         {codePending ? "Even geduld…" : "Inloggen"}
       </button>
       {codeState.message && <p className="text-center text-sm text-[var(--danger)]">{codeState.message}</p>}
+      {switchHref && (
+        <Link href={switchHref} className="block w-full text-center text-sm text-[var(--text-muted)] underline">
+          Een andere methode kiezen
+        </Link>
+      )}
       {allowRecovery && (
         <button type="button" onClick={() => setMode("recovery")} className="w-full text-center text-sm text-[var(--text-muted)] underline">
           Ik heb geen toegang tot mijn authenticator

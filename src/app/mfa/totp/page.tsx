@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import { prisma } from "@/lib/prisma";
 import { getAwaitingMfaUser, safeInternalPath } from "@/lib/session";
 import { startTotpEnrollment, isTotpConfirmed } from "@/lib/mfa";
-import { enrolledMethods, totpAllowedForUser } from "@/lib/mfaMethods";
+import { loginPlan, totpAllowedForUser } from "@/lib/mfaMethods";
 import { TotpEnrollForm } from "@/components/mfa/TotpEnrollForm";
 import { TotpVerifyForm } from "@/components/mfa/TotpVerifyForm";
 
@@ -20,14 +20,17 @@ export default async function TotpMfaPage({ searchParams }: { searchParams: Prom
   if (!isAdmin && !totpAllowedForUser(awaiting.user.role)) redirect(toPasskey);
 
   let confirmed = true;
+  let canSwitch = false;
   const hasRecoveryCodes = !isAdmin && (await prisma.recoveryCode.count({ where: { userId: awaiting.userId, usedAt: null } })) > 0;
   if (isAdmin) {
     confirmed = await isTotpConfirmed(awaiting.userId);
   } else {
-    const methods = await enrolledMethods(awaiting.user);
-    confirmed = methods.includes("totp");
-    // Heeft de gebruiker al een andere methode (passkey), dan wordt er hier géén zwakkere factor bijgezet met alleen een e-mailcode.
-    if (!confirmed && methods.length > 0) redirect(toPasskey);
+    const { plan } = await loginPlan(awaiting.user);
+    // Alleen een passkey (of niets bruikbaars): TOTP hoort hier niet. Heeft de gebruiker al een andere methode, dan wordt er hier
+    // géén zwakkere factor bijgezet met alleen een e-mailcode.
+    if (plan === "passkey" || plan === "unavailable") redirect(toPasskey);
+    confirmed = plan === "totp" || plan === "choose";
+    canSwitch = plan === "choose";
   }
 
   let enrollment: { qrDataUrl: string; secret: string } | null = null;
@@ -44,7 +47,7 @@ export default async function TotpMfaPage({ searchParams }: { searchParams: Prom
           <p className="mt-1 text-sm text-[var(--text-muted)]">Welkom, {awaiting.user.name}</p>
         </div>
         {confirmed || !enrollment ? (
-          <TotpVerifyForm redirectTo={redirectTo} allowRecovery={isAdmin || hasRecoveryCodes} />
+          <TotpVerifyForm redirectTo={redirectTo} allowRecovery={isAdmin || hasRecoveryCodes} switchHref={canSwitch ? toPasskey : undefined} />
         ) : (
           <TotpEnrollForm qrDataUrl={enrollment.qrDataUrl} secret={enrollment.secret} redirectTo={redirectTo} />
         )}
