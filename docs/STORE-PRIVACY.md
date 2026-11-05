@@ -20,6 +20,7 @@ trackingfunctionaliteit.
 | Web-push-abonnement (PWA) | Pushmeldingen web | PostgreSQL | Tot afmelden |
 | Uitnodigingen (naam, e-mailadres, rol/functie, status; token en code alleen als hash) en audittrail | Accountactivatie | PostgreSQL | Tot 90 dagen na activatie/verlopen/intrekken; daarna automatisch verwijderd |
 | Native passkey-plug-in (`@capawesome/capacitor-passkeys`): geen eigen opslag, geen netwerkverkeer, geen analytics; gebruikt uitsluitend het systeem (iOS `AuthenticationServices`, Android Credential Manager). Geen nieuwe permissies; iOS: Associated Domains `webcredentials:` (alleen productie-entitlements) | Passkey-verificatie | Alleen toestel/systeem; op de server alleen de publieke sleutel (zie hieronder) | Zolang account |
+| Appvergrendeling (E3; `@aparajita/capacitor-biometric-auth`, `@capacitor-community/privacy-screen`): uitsluitend lokale systeemverificatie (iOS `LocalAuthentication`, Android `BiometricPrompt`). **Geen biometrische gegevens** worden door Ringtools opgeslagen, gelezen of verzonden; de plug-ins hebben geen netwerkverkeer, geen opslag en geen analytics. Nieuwe toestemmingen: iOS `NSFaceIDUsageDescription` (tekst), Android `USE_BIOMETRIC` | Extra lokale toegangscontrole | Alleen toestel/systeem | n.v.t. |
 | Passkey-publieke sleutels, TOTP-geheim (versleuteld), herstelcodes (gehasht), beveiligingslogboek | MFA | PostgreSQL | Zolang account |
 | E-mails (inlogcodes/-links, meldingen) | Communicatie | Eigen SMTP | Volgens mailprovider |
 
@@ -70,3 +71,4 @@ Leg in App Store Connect (App Review Information → Notes) en Play Console (App
 6. Vliegtuigstand: duidelijke offline-melding en herstel zodra er weer verbinding is.
 7. Dark mode, iPad en kleine telefoon, grote tekst, toetsenbord bij inloggen, Android-terugknop.
 8. Universal Links/App Links verificatie (`adb shell pm get-app-links`, Apple AASA-validatie) nadat de echte Team-ID en vingerafdrukken op de server staan.
+9. Appvergrendeling (E3): koude start vraagt altijd Face ID/Touch ID/vingerafdruk/toestelcode; annuleren blijft vergrendeld; toestel zonder schermvergrendeling krijgt de uitlegmelding; na 30 s achtergrond opnieuw ontgrendelen, korter niet; app-switcher/recente apps tonen geen inhoud; Android-screenshot geblokkeerd; iOS-screenshot (kan niet worden geblokkeerd); pushtik en link uit koude start en achtergrond openen pas na ontgrendelen; Android-terugknop; ook in `App-PersonalTeam` (zie `docs/APP-ONTGRENDELING-ONTWERP.md` §12.6).
