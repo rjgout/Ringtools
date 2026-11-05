@@ -5,6 +5,7 @@ import { createVerifiedSession, createMagicLinkToken } from "@/lib/auth";
 import { resetDatabase, createTestUser, createTestRing } from "./setup";
 import {
   INVITATION_RESEND_COOLDOWN_MS,
+  INVITATION_SEND_LEASE_MS,
   INVITATION_MAX_SENDS,
   activateInvitation,
   deleteOldInvitations,
@@ -553,5 +554,71 @@ describe("Betrouwbaar en idempotent (opnieuw) versturen", () => {
     sendMailMock.mockClear();
     for (let i = 0; i < 3; i++) expect((await call("POST", `/invitations/${id}/resend`, { token: s.token })).status).toBe(400);
     expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("lease verloopt terwijl een eerdere verzending nog niet is afgerond: de tweede verzending neemt over; de late eerste kan de status niet meer beïnvloeden", async () => {
+    // In de praktijk is dit uitgesloten (de SMTP-totaaltijd is korter dan de lease); dit test het veiligheidsnet voor als een verzending toch blijft hangen.
+    const s = await setup();
+    await invite(s);
+    const row = await prisma.ringInvitation.findFirstOrThrow();
+    await expireCooldown(row.id);
+    let releaseFirst: () => void = () => {};
+    sendMailMock.mockClear();
+    sendMailMock.mockImplementationOnce(() => new Promise<void>((resolve) => { releaseFirst = resolve; })); // eerste verzending hangt
+    const first = call("POST", `/invitations/${row.id}/resend`, { token: s.token });
+    await new Promise((r) => setTimeout(r, 100));
+    const firstMail = (await prisma.ringInvitation.findUniqueOrThrow({ where: { id: row.id } }));
+    expect(firstMail.sendClaimedAt).not.toBeNull();
+
+    // Binnen de lease: een tweede verzoek verstuurt niets.
+    const during = await call("POST", `/invitations/${row.id}/resend`, { token: s.token });
+    expect(during.body).toMatchObject({ sent: false, inProgress: true });
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+
+    // De lease verloopt terwijl de eerste nog hangt.
+    await prisma.ringInvitation.update({ where: { id: row.id }, data: { sendClaimedAt: new Date(Date.now() - INVITATION_SEND_LEASE_MS - 1000) } });
+    sendMailMock.mockResolvedValueOnce(undefined);
+    const second = await call("POST", `/invitations/${row.id}/resend`, { token: s.token });
+    expect(second.body).toMatchObject({ sent: true, inProgress: false });
+    const secondToken = lastMail().token;
+    const afterSecond = await prisma.ringInvitation.findUniqueOrThrow({ where: { id: row.id } });
+    expect(afterSecond.tokenHash).toBe(hashToken(secondToken));
+    expect(afterSecond.sentAt).not.toBeNull();
+    expect(afterSecond.sendCount).toBe(2); // eerste verzending + tweede
+
+    // Nu komt de late eerste verzending alsnog terug: zij mag niets overschrijven en telt niet mee.
+    releaseFirst();
+    expect((await first).body).toMatchObject({ sent: false, inProgress: false });
+    const final = await prisma.ringInvitation.findUniqueOrThrow({ where: { id: row.id } });
+    expect([final.tokenHash, final.codeHash, final.sendCount, final.sentAt?.getTime(), final.sendClaimedAt]).toEqual([afterSecond.tokenHash, afterSecond.codeHash, afterSecond.sendCount, afterSecond.sentAt?.getTime(), null]);
+    expect((await prisma.ringInvitationAudit.findMany({ where: { invitationId: row.id, action: "SEND_FAILED" } })).map((a) => a.detail)).toContain("verouderde verzending: token inmiddels vervangen");
+    // Alleen de link van de tweede (laatste) mail is geldig.
+    expect((await call("POST", "/invitations/activate", { body: { token: secondToken } })).status).toBe(200);
+  });
+
+  it("SMTP-time-out (onbekende afleverstatus) wordt als mislukt vastgelegd met die aantekening; eerder bezorgde link blijft werken, bij een eerste verzending blijft de nieuwe link geldig", async () => {
+    const { SmtpDeadlineError } = await import("@/lib/mailer");
+    const s = await setup();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Eerste verzending: time-out.
+    sendMailMock.mockRejectedValueOnce(new SmtpDeadlineError());
+    const created = await call("POST", `/rings/${s.ringA.id}/invitations`, { token: s.token, body: body() });
+    expect(created.body.sent).toBe(false);
+    const row = await prisma.ringInvitation.findFirstOrThrow();
+    expect(row.sendClaimedAt).toBeNull();
+    expect(row.sentAt).toBeNull();
+    // De nieuwe link (mogelijk toch aangekomen) is niet ingetrokken.
+    expect((await prisma.ringInvitationAudit.findMany({ where: { action: "SEND_FAILED" } })).map((a) => a.detail)).toContain("time-out; afleverstatus onbekend");
+
+    // Opnieuw versturen lukt; daarna time-out bij een herinnering: de bezorgde link blijft werken.
+    expect((await call("POST", `/invitations/${row.id}/resend`, { token: s.token })).body.sent).toBe(true);
+    const delivered = lastMail().token;
+    await expireCooldown(row.id);
+    sendMailMock.mockRejectedValueOnce(new SmtpDeadlineError());
+    const failed = await call("POST", `/invitations/${row.id}/resend`, { token: s.token });
+    errSpy.mockRestore();
+    expect(failed.body.sent).toBe(false);
+    expect((await prisma.ringInvitation.findUniqueOrThrow({ where: { id: row.id } })).tokenHash).toBe(hashToken(delivered));
+    expect((await call("POST", "/invitations/activate", { body: { token: delivered } })).status).toBe(200);
   });
 });

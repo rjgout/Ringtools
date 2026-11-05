@@ -127,7 +127,7 @@ jobs:
           tests/rings.test.ts tests/hardening.test.ts tests/notifications.test.ts
           tests/proposals.test.ts tests/ontheffingen.test.ts tests/release.test.ts tests/catalog.test.ts
           tests/ringsetup.test.ts tests/management.test.ts tests/workflow.test.ts tests/churchfunctions.test.ts
-          tests/invitations.test.ts tests/nativeMfa.test.ts
+          tests/invitations.test.ts tests/nativeMfa.test.ts tests/mailer.test.ts
 
   client:
     name: Client en native configuratie

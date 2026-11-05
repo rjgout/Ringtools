@@ -4,7 +4,7 @@ import { prisma } from "./prisma";
 import { env } from "./env";
 import { generateRawToken, hashToken } from "./crypto";
 import { functionFitsRole } from "./churchFunctions";
-import { sendMail, invitationEmail } from "./mailer";
+import { sendMail, invitationEmail, SmtpDeadlineError } from "./mailer";
 import { rateLimit } from "./rateLimit";
 import { ROLE_LABELS } from "./format";
 import { AuthorizationError, RingError, assertCanManageRing, assertMembershipRole, lockRing, resolveFunctionAndAuthority } from "./rings";
@@ -156,7 +156,10 @@ export async function createInvitation(input: InvitationInput) {
   return { id: created.invitation.id, sent };
 }
 
-/** Een verzending die langer dan dit geclaimd staat (bijv. na een crash) mag opnieuw worden gestart. */
+/**
+ * Een verzending die langer dan dit geclaimd staat (bijv. na een crash) mag opnieuw worden gestart. Moet ruim boven de harde SMTP-totaaltijd liggen
+ * (`SMTP_SEND_DEADLINE_MAX_MS`, 60 s): een lopende verzending is dan altijd afgerond (geslaagd of mislukt, claim vrijgegeven) vóór de lease verloopt.
+ */
 export const INVITATION_SEND_LEASE_MS = 2 * 60 * 1000;
 
 type PreviousSecrets = { tokenHash: string; codeHash: string; codeAttempts: number; expiresAt: Date; sentAt: Date | null };
@@ -181,6 +184,9 @@ async function deliver(invitationId: string, ringName: string, secrets: IssuedSe
   try {
     await sendMail({ to: inv.email, subject, text });
   } catch (err) {
+    // Bij een time-out is de afleverstatus onbekend: de mail kan alsnog zijn aangenomen. We behandelen dit als mislukt en herstellen een eerder
+    // bezorgde link (zodat de ontvanger zeker één geldige link heeft); zonder eerdere verzending blijft de nieuwe link geldig voor het geval de mail toch aankomt.
+    const timedOut = err instanceof SmtpDeadlineError;
     console.error("[uitnodiging] Versturen mislukt:", err instanceof Error ? err.name : "fout");
     await prisma.ringInvitation.updateMany({
       where: { id: invitationId, tokenHash: currentHash },
@@ -188,10 +194,15 @@ async function deliver(invitationId: string, ringName: string, secrets: IssuedSe
         ? { tokenHash: previous.tokenHash, codeHash: previous.codeHash, codeAttempts: previous.codeAttempts, expiresAt: previous.expiresAt, sendClaimedAt: null }
         : { sendClaimedAt: null },
     });
-    await audit(prisma, invitationId, "SEND_FAILED", actorId);
+    await audit(prisma, invitationId, "SEND_FAILED", actorId, timedOut ? "time-out; afleverstatus onbekend" : undefined);
     return false;
   }
-  await prisma.ringInvitation.updateMany({ where: { id: invitationId, tokenHash: currentHash }, data: { sentAt: new Date(), sendCount: { increment: 1 }, sendClaimedAt: null } });
+  const marked = await prisma.ringInvitation.updateMany({ where: { id: invitationId, tokenHash: currentHash }, data: { sentAt: new Date(), sendCount: { increment: 1 }, sendClaimedAt: null } });
+  if (marked.count !== 1) {
+    // Intussen is het token vervangen (een latere verzending nam het over): deze mail bevat een verouderde link en mag de status niet beïnvloeden.
+    await audit(prisma, invitationId, "SEND_FAILED", actorId, "verouderde verzending: token inmiddels vervangen");
+    return false;
+  }
   await audit(prisma, invitationId, "SENT", actorId);
   return true;
 }
