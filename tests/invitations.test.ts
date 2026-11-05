@@ -72,7 +72,7 @@ async function invite(s: Awaited<ReturnType<typeof setup>>, over: Record<string,
 }
 
 describe("Uitnodigen en activeren", () => {
-  it("nieuwe uitnodiging: mail met link en code, geen leesbare token in de database of lijst, activatie maakt account + lidmaatschap zonder sessie", async () => {
+  it("nieuwe uitnodiging: mail met link en code, geen leesbare token in de database of lijst, activatie maakt account + lidmaatschap en logt direct in", async () => {
     const s = await setup();
     const { res, mail, token, code } = await invite(s);
     expect(res.status).toBe(200);
@@ -102,8 +102,10 @@ describe("Uitnodigen en activeren", () => {
     const act = await call("POST", "/invitations/activate", { body: { token } });
     expect(act.status).toBe(200);
     expect(act.body).toMatchObject({ ok: true, email: "nieuw@test.ringapeldoorn.nl", ringName: "Ring A", mfaRequired: false });
-    expect(act.body.token).toBeUndefined();
-    expect(await prisma.session.count()).toBe(sessionsBefore); // activeren geeft nooit een sessie
+    // Zonder verplichte MFA is de gebruiker na activatie direct ingelogd (uitnodiging = bewijs van controle over het e-mailadres).
+    expect(act.body).toMatchObject({ signedIn: true, mfaRequired: false });
+    expect(typeof act.body.token).toBe("string");
+    expect(await prisma.session.count()).toBe(sessionsBefore + 1);
 
     const user = await prisma.user.findUniqueOrThrow({ where: { email: "nieuw@test.ringapeldoorn.nl" }, include: { memberships: true } });
     expect(user.activatedAt).not.toBeNull();
@@ -114,7 +116,8 @@ describe("Uitnodigen en activeren", () => {
     const actions = (await prisma.ringInvitationAudit.findMany({ orderBy: { createdAt: "asc" } })).map((a) => a.action);
     expect(actions).toEqual(expect.arrayContaining(["CREATED", "SENT", "ACCEPTED"]));
 
-    // Daarna inloggen via de bestaande e-mailcode-route.
+    // De uitgegeven sessie werkt direct; daarnaast blijft inloggen via de bestaande e-mailcode-route mogelijk.
+    expect((await call("GET", "/me", { token: act.body.token })).status).toBe(200);
     const { code: loginCode } = await createMagicLinkToken(user.id, { withCode: true });
     const li = await call("POST", "/auth/login", { body: { email: user.email, code: loginCode } });
     expect(li.status).toBe(200);
@@ -620,5 +623,169 @@ describe("Betrouwbaar en idempotent (opnieuw) versturen", () => {
     expect(failed.body.sent).toBe(false);
     expect((await prisma.ringInvitation.findUniqueOrThrow({ where: { id: row.id } })).tokenHash).toBe(hashToken(delivered));
     expect((await call("POST", "/invitations/activate", { body: { token: delivered } })).status).toBe(200);
+  });
+});
+
+
+describe("Direct ingelogd na activatie", () => {
+  const SESSION_TTL = 60 * 24 * 60 * 60 * 1000;
+
+  it("de uitgegeven sessie is een gewone volledige sessie: zelfde levensduur, mfaAt, servercontroles, ringisolatie, verversen en uitloggen", async () => {
+    const s = await setup();
+    const { token } = await invite(s, { role: "HOGERAAD", churchFunctionCode: "HOGERAADSLID", churchFunction: "Hogeraadslid" });
+    const act = await call("POST", "/invitations/activate", { body: { token, deviceName: "iPhone van Eva" } });
+    expect(act.status).toBe(200);
+    expect(act.body.user.email).toBe("nieuw@test.ringapeldoorn.nl");
+    expect(act.body.rings).toEqual([expect.objectContaining({ id: s.ringA.id, role: "HOGERAAD", isRingManager: false })]);
+    const session = await prisma.session.findFirstOrThrow({ where: { user: { email: "nieuw@test.ringapeldoorn.nl" } } });
+    expect(session.mfaAt).not.toBeNull();
+    expect(session.userAgent).toBe("Ringtools-app (iPhone van Eva)");
+    expect(session.tokenHash).toBe(hashToken(act.body.token));
+    expect(Math.abs(session.expiresAt.getTime() - (Date.now() + SESSION_TTL))).toBeLessThan(60_000); // zelfde levensduur als een gewone login
+    // Het token staat nergens leesbaar in de database.
+    expect(JSON.stringify(session)).not.toContain(act.body.token);
+
+    const t = act.body.token as string;
+    expect((await call("GET", "/me", { token: t })).status).toBe(200);
+    expect((await call("GET", "/dashboard?ring=" + s.ringA.id, { token: t })).status).toBe(200);
+    // Alleen eigen (nieuwe) lidmaatschap: niet in een andere ring, niet voor beheer.
+    expect((await call("GET", "/dashboard?ring=" + s.ringB.id, { token: t })).status).toBe(404);
+    expect((await call("GET", `/rings/${s.ringA.id}/users`, { token: t })).status).toBe(404); // geen ringbeheerder
+    expect((await call("GET", "/admin/me", { token: t })).status).toBe(403);
+    // Normale sessie-functies.
+    expect((await call("GET", "/sessions", { token: t })).body.sessions).toHaveLength(1);
+    await prisma.session.update({ where: { id: session.id }, data: { rotatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) } });
+    const refreshed = await call("POST", "/auth/refresh", { token: t });
+    expect(refreshed.status).toBe(200);
+    expect((await call("POST", "/auth/logout", { token: refreshed.body.token ?? t })).status).toBe(200);
+    expect(await prisma.session.count({ where: { userId: session.userId } })).toBe(0);
+  });
+
+  it("een uitnodiging met ringbeheerder-vlag geeft precies die rechten (niet meer) in de sessie; een machtiging blijft ontbreken", async () => {
+    const s = await setup();
+    const { token } = await invite(s, { isRingManager: true });
+    const act = await call("POST", "/invitations/activate", { body: { token } });
+    expect(act.body.rings[0]).toMatchObject({ isRingManager: true });
+    expect((await call("GET", `/rings/${s.ringA.id}/users`, { token: act.body.token })).status).toBe(200);
+    expect((await prisma.ringMembership.findFirstOrThrow({ where: { user: { email: "nieuw@test.ringapeldoorn.nl" } } })).appointAuthority).toBe("NONE");
+  });
+
+  it("bestaand account (tweede ring, zonder MFA) wordt direct ingelogd en ziet beide ringen; geen nieuw account", async () => {
+    const s = await setup();
+    const elsewhere = await createTestUser("HOGERAAD", "Elders Lid", { ringId: s.ringB.id, email: "elders@test.ringapeldoorn.nl" });
+    await prisma.user.update({ where: { id: elsewhere.id }, data: { activatedAt: new Date() } });
+    const usersBefore = await prisma.user.count();
+    const { token } = await invite(s, { name: "Elders", email: "elders@test.ringapeldoorn.nl", role: "HOGERAAD", churchFunctionCode: "HOGERAADSLID" });
+    const act = await call("POST", "/invitations/activate", { body: { token } });
+    expect(act.body.signedIn).toBe(true);
+    expect(act.body.user.id).toBe(elsewhere.id);
+    expect(act.body.rings.map((r: { id: string }) => r.id).sort()).toEqual([s.ringA.id, s.ringB.id].sort());
+    expect(await prisma.user.count()).toBe(usersBefore);
+  });
+
+  it("verplichte MFA wordt nooit omzeild: geen token, wel het bestaande veilige gedrag (ook met native passkeys uit)", async () => {
+    const s = await setup();
+    const mfaUser = await createTestUser("HOGERAAD", "Mfa Lid", { ringId: s.ringB.id, email: "mfa.direct@test.ringapeldoorn.nl" });
+    await prisma.user.update({ where: { id: mfaUser.id }, data: { mfaEnabled: true, activatedAt: new Date() } });
+    const { token } = await invite(s, { email: "mfa.direct@test.ringapeldoorn.nl", role: "HOGERAAD", churchFunctionCode: "HOGERAADSLID" });
+    const sessionsBefore = await prisma.session.count();
+    const act = await call("POST", "/invitations/activate", { body: { token } });
+    expect(act.status).toBe(200);
+    expect(act.body).toMatchObject({ ok: true, signedIn: false, mfaRequired: true });
+    expect(act.body.token).toBeUndefined();
+    expect(act.body.user).toBeUndefined();
+    expect(await prisma.session.count()).toBe(sessionsBefore);
+    const { code } = await createMagicLinkToken(mfaUser.id, { withCode: true });
+    const login403 = await call("POST", "/auth/login", { body: { email: mfaUser.email, code } });
+    expect(login403.status).toBe(403);
+    expect(login403.body.token).toBeUndefined();
+  });
+
+  it("de client kan om geen sessie vragen (issueSession=false, bijv. als er al iemand is ingelogd): activatie slaagt zonder token", async () => {
+    const s = await setup();
+    const { token } = await invite(s);
+    const sessionsBefore = await prisma.session.count();
+    const act = await call("POST", "/invitations/activate", { body: { token, issueSession: false } });
+    expect(act.body).toMatchObject({ ok: true, signedIn: false, mfaRequired: false });
+    expect(act.body.token).toBeUndefined();
+    expect(await prisma.session.count()).toBe(sessionsBefore);
+  });
+
+  it("mislukte activaties leveren nooit een sessie op: onbekend/verlopen/ingetrokken/hergebruikt token, foute code, gedeactiveerd account, uitnodiger niet meer bevoegd", async () => {
+    const s = await setup();
+    const sessions = () => prisma.session.count({ where: { mfaAt: { not: null }, user: { email: { not: s.manager.email } } } });
+    const base = await sessions();
+    const noToken = async (res: { status: number; body: Record<string, any> }) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(res.body.token).toBeUndefined();
+      expect(res.body.signedIn).toBeUndefined();
+    };
+    await noToken(await call("POST", "/invitations/activate", { body: { token: "x".repeat(43) } }));
+    await noToken(await call("POST", "/invitations/activate", { body: { email: "nieuw@test.ringapeldoorn.nl", code: "AAAA-BBBB-CCCC" } }));
+
+    const a = await invite(s);
+    const id = (await prisma.ringInvitation.findFirstOrThrow()).id;
+    await prisma.ringInvitation.update({ where: { id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    await noToken(await call("POST", "/invitations/activate", { body: { token: a.token } })); // verlopen
+    await prisma.ringInvitation.update({ where: { id }, data: { expiresAt: new Date(Date.now() + 1e6), revokedAt: new Date() } });
+    await noToken(await call("POST", "/invitations/activate", { body: { token: a.token } })); // ingetrokken
+    await prisma.ringInvitation.update({ where: { id }, data: { revokedAt: null } });
+    expect((await call("POST", "/invitations/activate", { body: { token: a.token } })).body.signedIn).toBe(true); // nu wel
+    await noToken(await call("POST", "/invitations/activate", { body: { token: a.token } })); // hergebruik
+    expect(await sessions()).toBe(base + 1);
+
+    // gedeactiveerd account
+    await prisma.user.create({ data: { name: "Uit", email: "uit2@test.ringapeldoorn.nl", role: "HOGERAAD", active: false } });
+    const b = await invite(s, { email: "uit2@test.ringapeldoorn.nl" });
+    await noToken(await call("POST", "/invitations/activate", { body: { token: b.token } }));
+    // uitnodiger niet meer bevoegd
+    const c = await invite(s, { email: "derde@test.ringapeldoorn.nl" });
+    await createTestUser("RINGPRESIDIUM", "Reserve", { ringId: s.ringA.id, isRingManager: true });
+    await prisma.ringMembership.updateMany({ where: { userId: s.manager.id }, data: { isRingManager: false } });
+    await noToken(await call("POST", "/invitations/activate", { body: { token: c.token } }));
+    expect(await sessions()).toBe(base + 1); // alleen de ene geslaagde activatie heeft een sessie opgeleverd
+  });
+
+  it("gelijktijdige activaties (token en code): hooguit één activatie en precies één sessie", async () => {
+    const s = await setup();
+    const { token, code } = await invite(s);
+    const byToken = await Promise.all(Array.from({ length: 6 }, () => call("POST", "/invitations/activate", { body: { token } })));
+    expect(byToken.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(byToken.filter((r) => r.body.token)).toHaveLength(1);
+    expect(await prisma.session.count({ where: { user: { email: "nieuw@test.ringapeldoorn.nl" } } })).toBe(1);
+
+    await resetDatabase();
+    const t = await setup();
+    const second = await invite(t, { email: "code@test.ringapeldoorn.nl" });
+    const byCode = await Promise.all(Array.from({ length: 5 }, () => call("POST", "/invitations/activate", { body: { email: "code@test.ringapeldoorn.nl", code: second.code } })));
+    expect(byCode.filter((r) => r.body.token)).toHaveLength(1);
+    expect(await prisma.session.count({ where: { user: { email: "code@test.ringapeldoorn.nl" } } })).toBe(1);
+    expect(code).toBeTruthy();
+  });
+
+  it("onderbroken verbinding: de uitnodiging is verbruikt, een nieuwe poging geeft geen tweede sessie; gewoon inloggen met de e-mailcode blijft mogelijk", async () => {
+    const s = await setup();
+    const { token } = await invite(s);
+    const first = await call("POST", "/invitations/activate", { body: { token } }); // antwoord 'verloren' bij de client
+    expect(first.body.token).toBeTruthy();
+    const retry = await call("POST", "/invitations/activate", { body: { token } });
+    expect(retry.status).toBe(400);
+    expect(retry.body.token).toBeUndefined();
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: "nieuw@test.ringapeldoorn.nl" } });
+    const { code } = await createMagicLinkToken(user.id, { withCode: true });
+    expect((await call("POST", "/auth/login", { body: { email: user.email, code } })).status).toBe(200);
+  });
+
+  it("de respons met het sessietoken wordt niet gecachet en het token komt niet in de log", async () => {
+    const s = await setup();
+    const { token } = await invite(s);
+    const spies = [vi.spyOn(console, "log"), vi.spyOn(console, "error"), vi.spyOn(console, "warn"), vi.spyOn(console, "info")].map((x) => x.mockImplementation(() => {}));
+    const url = new URL("http://localhost/api/mobile/v1/invitations/activate");
+    const res = await handleApi(new Request(url, { method: "POST", headers: { "Content-Type": "application/json", "x-forwarded-for": freshIp() }, body: JSON.stringify({ token }) }), ["invitations", "activate"]);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const body = (await res.json()) as { token: string };
+    const logged = spies.flatMap((x) => x.mock.calls).map((c) => c.map(String).join(" ")).join("\n");
+    expect(logged).not.toContain(body.token);
+    spies.forEach((x) => x.mockRestore());
   });
 });

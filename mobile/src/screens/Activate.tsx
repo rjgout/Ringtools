@@ -1,23 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { InvitationPreview } from "@shared/api-types";
 import { useAuth } from "../lib/auth";
 import { ApiRequestError } from "../lib/api";
 import { Spinner } from "../components/ui";
+import { platform } from "../lib/native";
 
 type Phase =
   | { kind: "checking" }
   | { kind: "ready"; preview: Extract<InvitationPreview, { valid: true }> }
   | { kind: "problem"; reason: "expired" | "invalid" | "network"; message?: string }
   | { kind: "manual" }
-  | { kind: "done"; email: string; ringName: string; mfaRequired: boolean };
+  | { kind: "done"; email: string; ringName: string; mfaRequired: boolean; signedIn: boolean };
 
 /**
  * Account activeren met een uitnodiging. Twee wegen: de link uit de e-mail (token) of — als de link de app niet opent —
  * het e-mailadres en de activeringscode uit dezelfde mail. Activeren geeft nooit een sessie: daarna logt de gebruiker in
  * met zijn e-mailadres (en, waar verplicht, de tweede factor). Token en code verlaten het toestel alleen richting de eigen backend.
  */
-export function Activate({ token, onFinished, onCancel }: { token?: string; onFinished: (email: string) => void; onCancel: () => void }) {
-  const { api } = useAuth();
+export function Activate({ token, onFinished, onCancel }: { token?: string; onFinished: (email: string, signedIn: boolean) => void; onCancel: () => void }) {
+  const { api, status, finishActivation } = useAuth();
   const [phase, setPhase] = useState<Phase>(token ? { kind: "checking" } : { kind: "manual" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,13 +37,33 @@ export function Activate({ token, onFinished, onCancel }: { token?: string; onFi
   }, [api, token]);
   useEffect(() => void check(), [check]);
 
+  // Na een geslaagde activatie waarbij je direct bent ingelogd: kort bevestigen en vanzelf door naar het overzicht.
+  const finished = useRef(false);
+  const finish = useCallback((email: string, signedIn: boolean) => {
+    if (finished.current) return;
+    finished.current = true;
+    onFinished(email, signedIn);
+  }, [onFinished]);
+  useEffect(() => {
+    if (phase.kind !== "done" || !phase.signedIn) return;
+    const timer = setTimeout(() => finish(phase.email, true), 1500);
+    return () => clearTimeout(timer);
+  }, [phase, finish]);
+
   async function activate(input: { token: string } | { email: string; code: string }) {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await api.activateInvitation(input);
-      setPhase({ kind: "done", email: res.email, ringName: res.ringName, mfaRequired: res.mfaRequired });
+      // Is er al iemand ingelogd, dan vragen we geen sessie (er wordt nooit stilzwijgend van account gewisseld).
+      const res = await api.activateInvitation({
+        ...input,
+        deviceName: platform === "web" ? "Browser" : platform === "ios" ? "iPhone/iPad" : "Android",
+        issueSession: status !== "signedIn",
+      });
+      // Zonder verplichte MFA: direct ingelogd; het token gaat meteen naar Keychain/Keystore (nooit via een URL).
+      if (res.signedIn) await finishActivation(res);
+      setPhase({ kind: "done", email: res.email, ringName: res.ringName, mfaRequired: res.mfaRequired, signedIn: res.signedIn });
     } catch (err) {
       // Bij een onderbroken verbinding is de uitnodiging mogelijk wel verwerkt: de gebruiker kan opnieuw proberen of gewoon inloggen.
       setError(err instanceof ApiRequestError ? err.message : "Er ging iets mis. Probeer het opnieuw.");
@@ -115,7 +136,17 @@ export function Activate({ token, onFinished, onCancel }: { token?: string; onFi
           </form>
         )}
 
-        {phase.kind === "done" && (
+        {phase.kind === "done" && phase.signedIn && (
+          <>
+            <div role="status">
+              <strong>Je account is geactiveerd</strong>
+              <p className="muted">Je bent ingelogd bij {phase.ringName}. We brengen je naar het overzicht…</p>
+            </div>
+            <button className="btn btn-primary btn-block" onClick={() => finish(phase.email, true)}>Naar het overzicht</button>
+          </>
+        )}
+
+        {phase.kind === "done" && !phase.signedIn && (
           <>
             <div role="status">
               <strong>Je account is geactiveerd</strong>
@@ -124,7 +155,7 @@ export function Activate({ token, onFinished, onCancel }: { token?: string; onFi
                 {phase.mfaRequired ? " Voor jouw account is extra verificatie met een passkey ingesteld; die gebruik je bij het inloggen." : ""}
               </p>
             </div>
-            <button className="btn btn-primary btn-block" onClick={() => onFinished(phase.email)}>Verder naar inloggen</button>
+            <button className="btn btn-primary btn-block" onClick={() => finish(phase.email, false)}>{status === "signedIn" ? "Terug naar het overzicht" : "Verder naar inloggen"}</button>
           </>
         )}
       </div>

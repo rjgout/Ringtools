@@ -23,6 +23,8 @@ type AuthValue = {
   isAdmin: boolean;
   /** Geeft `{ pendingToken }` terug als er nog een passkey-verificatie nodig is (verplichte MFA); dan bestaat er nog géén sessie. */
   signIn: (email: string, code: string) => Promise<{ pendingToken: string } | void>;
+  /** Neemt de sessie over die een geslaagde uitnodigingsactivatie (zonder verplichte MFA) uitgaf; het token gaat direct naar Keychain/Keystore. */
+  finishActivation: (result: LoginResult) => Promise<void>;
   /** Rondt een pending-login af na een geslaagde passkey-ceremonie; pas hierna bestaat er een sessie. */
   finishMfa: (pendingToken: string, assertion: PasskeyAssertion) => Promise<void>;
   /** Webmin stap 1 (wachtwoord): geeft een wachtend token dat alleen voor stap 2 geldt. */
@@ -186,6 +188,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [api, applyMe]
   );
 
+  const finishActivation = useCallback(
+    async (result: LoginResult) => {
+      tokenRef.current = result.token;
+      await storage.setToken(result.token);
+      await applyMe({ user: result.user, rings: result.rings, pendingCount: result.pendingCount });
+      setStatus("signedIn");
+    },
+    [applyMe]
+  );
+
   const finishMfa = useCallback(
     async (pendingToken: string, assertion: PasskeyAssertion) => {
       const result = await api.passkeyVerify(pendingToken, assertion);
@@ -252,8 +264,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const ring = me?.rings.find((r) => r.id === ringId) ?? null;
   const value = useMemo<AuthValue>(
-    () => ({ status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
-    [status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
+    () => ({ status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishActivation, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
+    [status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishActivation, adminStart, adminFinish, reauth, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

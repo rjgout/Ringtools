@@ -3,6 +3,7 @@ import type { ChurchFunctionCode, InvitationAuditAction, Prisma, Role } from "@p
 import { prisma } from "./prisma";
 import { env } from "./env";
 import { generateRawToken, hashToken } from "./crypto";
+import { SESSION_TTL_MS } from "./auth";
 import { functionFitsRole } from "./churchFunctions";
 import { sendMail, invitationEmail, SmtpDeadlineError } from "./mailer";
 import { rateLimit } from "./rateLimit";
@@ -357,17 +358,24 @@ async function creatorStillAllowed(db: Prisma.TransactionClient | typeof prisma,
   return !!m && m.active && m.isRingManager;
 }
 
-export type ActivationResult = { email: string; ringName: string; mfaRequired: boolean };
+/**
+ * `session` is alleen gevuld als de activatie én alle controles geslaagd zijn, het account geen verplichte MFA heeft en de aanroeper erom vroeg;
+ * dit is een gewone volledige sessie (zelfde levensduur, `mfaAt` gezet, zelfde servercontroles) — het token verlaat de server alleen in de JSON-respons.
+ */
+export type ActivationResult = { email: string; ringName: string; mfaRequired: boolean; userId: string; session?: { rawToken: string; expiresAt: Date } };
+export type ActivationOptions = { issueSession?: boolean; deviceName?: string };
 
 type Credentials = { token: string } | { email: string; code: string };
 
 /**
  * Activeert een uitnodiging met het token uit de link, of met e-mailadres + code (terugval als de link de app niet opent).
  * - Maakt een nieuw account aan, of koppelt een bestaand account aan de ring; wijzigt daarbij nooit naam, e-mail of beveiliging van een bestaand account.
- * - Geeft GEEN sessie: de gebruiker logt daarna in via de normale route (e-mailcode; bij verplichte MFA geldt de bestaande tweede factor).
+ * - Sessie (zodat de gebruiker direct is ingelogd, zonder tweede e-mailcode): de geldige, eenmalige uitnodiging bewijst de controle over het e-mailadres, net als een inlogcode.
+ *   De sessie wordt in DEZELFDE transactie als het verbruiken van de uitnodiging aangemaakt: gelijktijdige pogingen leveren hooguit één activatie en één sessie op, en een mislukte activatie
+ *   (rollback) laat nooit een sessie achter. Nooit voor een account met verplichte MFA (passkey) of het beheerdersaccount: daar blijft de bestaande tweede factor noodzakelijk.
  * - Voorkomt enumeratie: elk ongeldig geval geeft hetzelfde antwoord; codepogingen worden per uitnodiging en per e-mailadres beperkt.
  */
-export async function activateInvitation(credentials: Credentials, clientKey: string): Promise<ActivationResult> {
+export async function activateInvitation(credentials: Credentials, clientKey: string, options: ActivationOptions = {}): Promise<ActivationResult> {
   if (!rateLimit(`invite-activate-ip:${clientKey}`, 30, 15 * 60 * 1000).allowed) {
     throw new InvitationError("Te veel pogingen. Probeer het later opnieuw.", "rate-limited");
   }
@@ -387,7 +395,18 @@ export async function activateInvitation(credentials: Credentials, clientKey: st
     }
   }
 
+  const device = (options.deviceName ?? "").slice(0, 60).replace(/[^\p{L}\p{N} ._-]/gu, "");
   const outcome = await prisma.$transaction(async (tx) => {
+    // Volledige sessie, alleen voor een actief, niet-beheerders, niet-MFA-account; aangeroepen als laatste stap vóór het afronden van de transactie.
+    const issueSession = async (u: { id: string; role: string; active: boolean; mfaEnabled: boolean }, ringActive: boolean) => {
+      if (options.issueSession === false || !u.active || !ringActive || mfaApplies(u)) return undefined;
+      const rawToken = generateRawToken();
+      const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+      await tx.session.create({
+        data: { userId: u.id, tokenHash: hashToken(rawToken), expiresAt, mfaAt: new Date(), userAgent: `Ringtools-app${device ? ` (${device})` : ""}` },
+      });
+      return { rawToken, expiresAt };
+    };
     let inv;
     if (tokenHash) {
       inv = await tx.ringInvitation.findUnique({ where: { tokenHash }, include: { ring: true } });
@@ -439,7 +458,7 @@ export async function activateInvitation(credentials: Credentials, clientKey: st
       // Intussen al lid (bijvoorbeeld via de webmin): de uitnodiging verleent niets extra's.
       await tx.ringInvitation.update({ where: { id: inv.id }, data: { acceptedById: user.id } });
       await audit(tx, inv.id, "ACCEPTED", user.id, "was al lid; geen wijziging");
-      return { done: { email: inv.email, ringName: inv.ring.name, mfaRequired: mfaApplies(user) }, membershipId: null as string | null };
+      return { done: { email: inv.email, ringName: inv.ring.name, mfaRequired: mfaApplies(user), userId: user.id, session: await issueSession(user, inv.ring.active) }, membershipId: null as string | null };
     }
 
     let fn: Awaited<ReturnType<typeof resolveFunctionAndAuthority>>;
@@ -465,7 +484,7 @@ export async function activateInvitation(credentials: Credentials, clientKey: st
       : await tx.ringMembership.create({ data: { userId: user.id, ringId: inv.ringId, ...data } });
     await tx.ringInvitation.update({ where: { id: inv.id }, data: { acceptedById: user.id } });
     await audit(tx, inv.id, "ACCEPTED", user.id, note || (existing ? "bestaand account gekoppeld" : "nieuw account"));
-    return { done: { email: inv.email, ringName: inv.ring.name, mfaRequired: mfaApplies(user) }, membershipId: saved.id };
+    return { done: { email: inv.email, ringName: inv.ring.name, mfaRequired: mfaApplies(user), userId: user.id, session: await issueSession(user, inv.ring.active) }, membershipId: saved.id };
   }).catch(async (err) => {
     if (err instanceof RollbackWithAudit) {
       await audit(prisma, err.invitationId, "ACCEPT_REFUSED", null, "account niet beschikbaar");

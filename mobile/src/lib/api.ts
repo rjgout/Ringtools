@@ -193,7 +193,7 @@ export class ApiClient {
   previewInvitation(token: string) {
     return this.request<InvitationPreview>("POST", "/invitations/preview", { token }, null);
   }
-  activateInvitation(input: { token: string } | { email: string; code: string }) {
+  activateInvitation(input: ({ token: string } | { email: string; code: string }) & { deviceName?: string; issueSession?: boolean }) {
     return this.request<InvitationActivation>("POST", "/invitations/activate", input, null);
   }
   dashboard(ringId: string) {

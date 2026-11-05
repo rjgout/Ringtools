@@ -6,6 +6,7 @@ import { rateLimit } from "../rateLimit";
 import { ApiError, str } from "./http";
 import { assertCanSeeRingUsers, requireFreshAuth, ringErrors } from "./management";
 import type { ApiAuth } from "./auth";
+import * as svc from "./service";
 
 const roleSchema = z.enum(["RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR", "HOGERAAD"], { message: "Kies een rol binnen Ringtools." });
 
@@ -89,12 +90,18 @@ export async function previewInvitationApi(body: Record<string, unknown>, client
 export async function activateInvitationApi(body: Record<string, unknown>, clientKey: string) {
   const token = str(body.token);
   const credentials = token ? { token } : { email: str(body.email), code: str(body.code) };
-  const result = await invitationErrors(() => activateInvitation(credentials, clientKey));
+  const result = await invitationErrors(() =>
+    activateInvitation(credentials, clientKey, { issueSession: body.issueSession !== false, deviceName: str(body.deviceName) })
+  );
+  const base = { ok: true as const, email: result.email, ringName: result.ringName, mfaRequired: result.mfaRequired };
+  // Zonder verplichte MFA: direct een gewone volledige sessie (het token staat alleen in deze JSON-respons, nooit in een URL of log).
+  // Met verplichte MFA (of als de aanroeper geen sessie wil): geen token; inloggen verloopt dan via de bestaande route en tweede factor.
+  if (!result.session) return { ...base, signedIn: false };
   return {
-    ok: true,
-    email: result.email,
-    ringName: result.ringName,
-    // De app laat de gebruiker daarna inloggen; met verplichte MFA volgt de bestaande tweede factor (nooit omzeild).
-    mfaRequired: result.mfaRequired,
+    ...base,
+    signedIn: true,
+    token: result.session.rawToken,
+    expiresAt: result.session.expiresAt.toISOString(),
+    ...(await svc.getMe(result.userId)),
   };
 }

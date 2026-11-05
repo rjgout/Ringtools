@@ -4,8 +4,8 @@ import { MemoryRouter } from "react-router-dom";
 import { parseTarget, routeFor } from "../src/lib/links";
 import { ApiRequestError } from "../src/lib/api";
 
-const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
-vi.mock("../src/lib/auth", () => ({ useAuth: () => auth.value }));
+const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown>, finish: vi.fn(async () => {}) }));
+vi.mock("../src/lib/auth", () => ({ useAuth: () => ({ status: "signedOut", finishActivation: auth.finish, ...auth.value }) }));
 vi.mock("../src/components/Reauth", () => ({ useReauth: () => ({ run: (fn: () => Promise<unknown>) => fn(), dialog: null }) }));
 
 const { Activate } = await import("../src/screens/Activate");
@@ -27,9 +27,13 @@ describe("Uitnodigingslinks", () => {
 });
 
 describe("Account activeren", () => {
-  it("toont de uitnodiging, activeert met één tik en leidt daarna naar inloggen met het e-mailadres; token alleen in de body", async () => {
+  const FULL = { ok: true as const, signedIn: true as const, mfaRequired: false as const, email: "eva@example.nl", ringName: "Ring Zuid", token: "T".repeat(43), expiresAt: "2030-01-01T00:00:00Z", user: { id: "u1", name: "Eva", email: "eva@example.nl", emailNotificationsEnabled: true, mfaEnabled: false }, rings: [], pendingCount: 0 };
+
+  it("toont de uitnodiging, activeert met één tik, neemt de sessie over, bevestigt kort en gaat vanzelf naar het overzicht (geen tweede e-mailcode)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    auth.finish.mockClear();
     const previewInvitation = vi.fn(async () => ({ valid: true as const, name: "Eva", ringName: "Ring Zuid", roleLabel: "Ringsecretaris", expiresAt: "2030-01-01T00:00:00Z" }));
-    const activateInvitation = vi.fn(async () => ({ ok: true as const, email: "eva@example.nl", ringName: "Ring Zuid", mfaRequired: false }));
+    const activateInvitation = vi.fn(async () => FULL);
     auth.value = { api: { previewInvitation, activateInvitation } };
     const onFinished = vi.fn();
     render(<Activate token={TOKEN} onFinished={onFinished} onCancel={() => {}} />);
@@ -38,9 +42,53 @@ describe("Account activeren", () => {
     expect(activateInvitation).not.toHaveBeenCalled(); // voorvertoning verbruikt niets
     fireEvent.click(screen.getByRole("button", { name: "Account activeren" }));
     expect(await screen.findByText("Je account is geactiveerd")).toBeTruthy();
-    expect(activateInvitation).toHaveBeenCalledWith({ token: TOKEN });
+    expect(screen.getByText(/Je bent ingelogd bij Ring Zuid/)).toBeTruthy();
+    expect(screen.queryByText(/code van 8 cijfers/)).toBeNull();
+    expect(activateInvitation).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN, issueSession: true }));
+    expect(auth.finish).toHaveBeenCalledWith(FULL); // token gaat naar de bestaande beveiligde opslag via finishActivation
+    expect(onFinished).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(onFinished).toHaveBeenCalledTimes(1);
+    expect(onFinished).toHaveBeenCalledWith("eva@example.nl", true);
+    // Handmatig doorgaan na het automatisch doorgaan geeft geen tweede aanroep.
+    fireEvent.click(screen.getByRole("button", { name: "Naar het overzicht" }));
+    expect(onFinished).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("direct doorgaan met de knop (zonder te wachten)", async () => {
+    auth.finish.mockClear();
+    auth.value = { api: { previewInvitation: vi.fn(async () => ({ valid: true as const, name: "Eva", ringName: "Ring Zuid", roleLabel: "x", expiresAt: "2030-01-01T00:00:00Z" })), activateInvitation: vi.fn(async () => FULL) } };
+    const onFinished = vi.fn();
+    render(<Activate token={TOKEN} onFinished={onFinished} onCancel={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Account activeren" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Naar het overzicht" }));
+    expect(onFinished).toHaveBeenCalledWith("eva@example.nl", true);
+  });
+
+  it("verplichte MFA: geen sessie overgenomen; uitleg en door naar inloggen met het e-mailadres", async () => {
+    auth.finish.mockClear();
+    const activateInvitation = vi.fn(async () => ({ ok: true as const, signedIn: false as const, mfaRequired: true, email: "mfa@example.nl", ringName: "Ring Zuid" }));
+    auth.value = { api: { previewInvitation: vi.fn(async () => ({ valid: true as const, name: "Mfa", ringName: "Ring Zuid", roleLabel: "x", expiresAt: "2030-01-01T00:00:00Z" })), activateInvitation } };
+    const onFinished = vi.fn();
+    render(<Activate token={TOKEN} onFinished={onFinished} onCancel={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Account activeren" }));
+    expect(await screen.findByText(/passkey/)).toBeTruthy();
+    expect(auth.finish).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Verder naar inloggen" }));
-    expect(onFinished).toHaveBeenCalledWith("eva@example.nl");
+    expect(onFinished).toHaveBeenCalledWith("mfa@example.nl", false);
+  });
+
+  it("is er al iemand ingelogd, dan wordt geen sessie gevraagd en wordt niet van account gewisseld", async () => {
+    auth.finish.mockClear();
+    const activateInvitation = vi.fn(async () => ({ ok: true as const, signedIn: false as const, mfaRequired: false as const, email: "andere@example.nl", ringName: "Ring Zuid" }));
+    auth.value = { status: "signedIn", api: { previewInvitation: vi.fn(async () => ({ valid: true as const, name: "Andere", ringName: "Ring Zuid", roleLabel: "x", expiresAt: "2030-01-01T00:00:00Z" })), activateInvitation } };
+    render(<Activate token={TOKEN} onFinished={() => {}} onCancel={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Account activeren" }));
+    await screen.findByText("Je account is geactiveerd");
+    expect(activateInvitation).toHaveBeenCalledWith(expect.objectContaining({ issueSession: false }));
+    expect(auth.finish).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Terug naar het overzicht" })).toBeTruthy();
   });
 
   it("verlopen uitnodiging: duidelijke uitleg, geen technische termen, terugval naar activeringscode", async () => {
@@ -70,7 +118,7 @@ describe("Account activeren", () => {
     const activateInvitation = vi
       .fn()
       .mockRejectedValueOnce(new ApiRequestError(0, "Geen verbinding met de server. Controleer je internetverbinding.", "network"))
-      .mockResolvedValue({ ok: true, email: "eva@example.nl", ringName: "Ring Zuid", mfaRequired: true });
+      .mockResolvedValue({ ok: true, signedIn: false, email: "eva@example.nl", ringName: "Ring Zuid", mfaRequired: true });
     auth.value = { api: { previewInvitation, activateInvitation } };
     render(<Activate token={TOKEN} onFinished={() => {}} onCancel={() => {}} />);
     expect(await screen.findByText("Geen verbinding")).toBeTruthy();
@@ -83,7 +131,7 @@ describe("Account activeren", () => {
   });
 
   it("handmatig met e-mailadres en code uit de mail (als de link de app niet opent)", async () => {
-    const activateInvitation = vi.fn(async () => ({ ok: true as const, email: "eva@example.nl", ringName: "Ring Zuid", mfaRequired: false }));
+    const activateInvitation = vi.fn(async () => FULL);
     auth.value = { api: { previewInvitation: vi.fn(), activateInvitation } };
     render(<Activate onFinished={() => {}} onCancel={() => {}} />);
     const button = screen.getByRole("button", { name: "Account activeren" }) as HTMLButtonElement;
@@ -93,7 +141,7 @@ describe("Account activeren", () => {
     await waitFor(() => expect((screen.getByRole("button", { name: "Account activeren" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Account activeren" }));
     expect(await screen.findByText("Je account is geactiveerd")).toBeTruthy();
-    expect(activateInvitation).toHaveBeenCalledWith({ email: "eva@example.nl", code: "abcd-efgh-jkmn" });
+    expect(activateInvitation).toHaveBeenCalledWith(expect.objectContaining({ email: "eva@example.nl", code: "abcd-efgh-jkmn" }));
   });
 
   it("foutmelding van de server (bijv. te veel pogingen) blijft zichtbaar en leest als gewone taal", async () => {

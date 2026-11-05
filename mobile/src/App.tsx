@@ -102,9 +102,10 @@ function Shell() {
         <Activate
           token={activation.token}
           onCancel={() => setActivation(null)}
-          onFinished={(email) => {
+          onFinished={(email, signedIn) => {
             setActivation(null);
-            if (status === "signedOut") setLoginEmail(email);
+            if (signedIn) navigate("/", { replace: true }); // direct ingelogd door de activatie: naar het overzicht
+            else if (status === "signedOut") setLoginEmail(email);
             else void reloadMe(); // al ingelogd (bijvoorbeeld een extra ring): ringlijst verversen
           }}
         />

@@ -166,8 +166,11 @@ export type InvitationItem = {
 export type InvitationPreview =
   | { valid: true; name: string; ringName: string; roleLabel: string; expiresAt: string }
   | { valid: false; reason: "expired" | "invalid" };
-/** Resultaat van een activatie: geen sessie; de gebruiker logt daarna in (met verplichte MFA waar die geldt). */
-export type InvitationActivation = { ok: true; email: string; ringName: string; mfaRequired: boolean };
+/** Resultaat van een activatie: zonder verplichte MFA direct ingelogd; met verplichte MFA geen sessie (de gebruiker logt daarna in met de bestaande tweede factor). */
+export type InvitationActivation =
+  | { ok: true; email: string; ringName: string; mfaRequired: boolean; signedIn: false }
+  /** Zonder verplichte MFA direct een gewone volledige sessie (zelfde vorm als een login). */
+  | ({ ok: true; email: string; ringName: string; mfaRequired: false; signedIn: true } & LoginResult);
 
 export type AppointAuthority = "NONE" | "RINGPRESIDENT" | "AANGEWEZEN_RAADGEVER" | "AANGEWEZEN_HOGERAADSLID";
 
