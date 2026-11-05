@@ -9,3 +9,4 @@ tests
 vitest.config.ts
 README.md
 mobile
+playwright.config.ts
