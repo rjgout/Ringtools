@@ -651,6 +651,11 @@ staan in [`docs/BACKUP-HERSTEL.md`](docs/BACKUP-HERSTEL.md).
 
 ## Tests
 
+**Testdatabase (verplicht gescheiden van productie).** De Vitest-suite wist gegevens en Playwright maakt veel gegevens aan. Beide weigeren te starten tenzij de database ondubbelzinnig een
+testdatabase is (`tests/dbGuard.ts`: naam eindigt op `_test`, `_ci` of `_e2e`, host lokaal, naam ≠ `POSTGRES_DB`; productie heet `ringtools` en draait op host `db`). Maak een aparte database
+(`CREATE DATABASE ringtools_test`, `DATABASE_URL=… npx prisma migrate deploy`) en draai `TEST_DATABASE_URL=postgresql://…/ringtools_test?schema=public npx vitest run`. Voor Playwright:
+`E2E_DATABASE_URL=…/ringtools_e2e…`, en start de server met dezelfde `DATABASE_URL`. In CI (`ringtools_ci`) werkt dit zonder extra instelling. `resetDatabase()` controleert bovendien vlak vóór het wissen opnieuw.
+
 E2.1 (authenticator-app voor webgebruikers, vlag `WEB_TOTP_ENABLED`): `e2e/webTotp.spec.ts` draait alleen met `E2E_WEB_TOTP=on|off` en een server met dezelfde vlagwaarde.
 Draai achter elkaar `on`, `off`, `on` om ook het terugzetten van de vlag te testen. Let op: `npx vitest run` leegt de testdatabase, inclusief de
 webmin; verwijder daarna het testaccount (`DELETE FROM "User" WHERE role='ADMIN'`) en start de server opnieuw voor de Playwright-tests met webmin.

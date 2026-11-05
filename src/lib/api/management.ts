@@ -9,7 +9,7 @@ import {
   promoteSessionToMfaVerified,
   verifyAdminPassword,
 } from "../auth";
-import { consumeRecoveryCode, isTotpConfirmed, verifyTotpCode } from "../mfa";
+import { consumeRecoveryCodeLimited, isTotpConfirmed, verifyTotpCode } from "../mfa";
 import { logSecurityEvent } from "../securityEvents";
 import { addMemberSchema, createRingSchema, recoveryCodeSchema, ringNameSchema, totpCodeSchema, updateMemberSchema } from "../validation";
 import { AuthorizationError, RingError, addMember, createRing, listRingMembers, listRingsOverview, renameRing, setRingActive, updateMember } from "../rings";
@@ -71,9 +71,9 @@ export async function adminVerifyTotp(pendingToken: string, body: Record<string,
   const recovery = str(body.recoveryCode);
   if (recovery) {
     const parsed = recoveryCodeSchema.safeParse(recovery);
-    if (!parsed.success || !(await consumeRecoveryCode(awaiting.userId, parsed.data))) {
-      throw new ApiError(401, "Ongeldige of al gebruikte herstelcode.", "invalid-code");
-    }
+    const outcome = parsed.success ? await consumeRecoveryCodeLimited(awaiting.userId, parsed.data) : "INVALID";
+    if (outcome === "LOCKED") throw new ApiError(429, "Te veel herstelpogingen. Probeer het over 15 minuten opnieuw.", "locked");
+    if (outcome !== "OK") throw new ApiError(401, "Ongeldige of al gebruikte herstelcode.", "invalid-code");
   } else {
     const code = totpCodeSchema.safeParse(str(body.code));
     if (!code.success) throw new ApiError(400, code.error.issues[0]?.message ?? "Ongeldige code.", "validation");

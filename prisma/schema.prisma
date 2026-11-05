@@ -249,6 +249,9 @@ model TotpCredential {
   lastUsedCounter        Int?
   failedAttempts         Int       @default(0)
   lockedUntil            DateTime?
+  // Herstelcodepogingen hebben een eigen teller en tijdelijke lockout (los van TOTP-pogingen).
+  recoveryFailedAttempts Int       @default(0)
+  recoveryLockedUntil    DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 }

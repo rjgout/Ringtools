@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { assertTestDatabaseNow } from "./dbGuard";
 import { createCalling as createCallingInRing } from "@/lib/workflow";
 
 let defaultRingId: string | null = null;
 
 export async function resetDatabase() {
+  assertTestDatabaseNow(); // nooit wissen op een database die niet ondubbelzinnig een testdatabase is
   // Volgorde belangrijk vanwege foreign keys zonder cascade op User/Ring.
   await prisma.ontheffing.deleteMany();
   await prisma.callingDraft.deleteMany();

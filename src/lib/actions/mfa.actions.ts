@@ -14,7 +14,7 @@ import {
   requireRecentMfa,
 } from "@/lib/session";
 import { promoteSessionToMfaVerified, SessionNoLongerValidError, destroySessionById, markSessionFactorProved, hasFreshFactorProof } from "@/lib/auth";
-import { startTotpEnrollment, verifyTotpCode, confirmTotpEnrollment, consumeRecoveryCode, regenerateRecoveryCodes, isTotpConfirmed } from "@/lib/mfa";
+import { startTotpEnrollment, verifyTotpCode, confirmTotpEnrollment, consumeRecoveryCodeLimited, regenerateRecoveryCodes, isTotpConfirmed } from "@/lib/mfa";
 import { enrolledMethods, totpAllowedForUser, removePasskeyGuarded, removeTotpGuarded, enableMfaGuarded } from "@/lib/mfaMethods";
 import { sendMail, mfaResetEmail } from "@/lib/mailer";
 import { hasPasskeys } from "@/lib/webauthn";
@@ -135,8 +135,9 @@ export async function useRecoveryCodeLoginAction(_prev: ActionResult | null, for
   const { allowed } = rateLimit(`recovery-login:${awaiting.userId}`, 10, 15 * 60 * 1000);
   if (!allowed) return { ok: false, message: "Te veel pogingen. Probeer het later opnieuw." };
 
-  const ok = await consumeRecoveryCode(awaiting.userId, parsed.data);
-  if (!ok) return { ok: false, message: "Ongeldige of al gebruikte herstelcode." };
+  const outcome = await consumeRecoveryCodeLimited(awaiting.userId, parsed.data);
+  if (outcome === "LOCKED") return { ok: false, message: "Te veel herstelpogingen. Probeer het over 15 minuten opnieuw." };
+  if (outcome !== "OK") return { ok: false, message: "Ongeldige of al gebruikte herstelcode." };
 
   const redirectTo = safeInternalPath(String(formData.get("redirect") || "")) || "/dashboard";
   await finishAwaitingMfaLogin(awaiting.sessionId, awaiting.userId, redirectTo);
@@ -269,16 +270,28 @@ export async function resetUserMfaAction(_prev: ActionResult | null, formData: F
     return { ok: false, message: "Het ingetypte e-mailadres komt niet overeen met dat van de gebruiker." };
   }
 
-  await prisma.$transaction([
-    prisma.webAuthnCredential.deleteMany({ where: { userId: target.id } }),
-    prisma.webAuthnChallenge.deleteMany({ where: { userId: target.id } }),
-    prisma.recoveryCode.deleteMany({ where: { userId: target.id } }),
-    prisma.totpCredential.deleteMany({ where: { userId: target.id } }),
-    prisma.session.deleteMany({ where: { userId: target.id } }),
-    prisma.securityEvent.create({
-      data: { userId: target.id, actorUserId: admin.id, type: "MFA_RESET_BY_ADMIN", detail: `Gereset door ${admin.name}; identiteit gecontroleerd` },
-    }),
-  ]);
+  // Eindtoestand (eenduidig): `mfaEnabled` blijft precies zoals het vóór de reset was — de reset verandert nooit stilzwijgend de keuze van de
+  // gebruiker. Aan = geen methode + geen sessie, dus de volgende inlog vraagt een EERSTE inschrijving (alleen toegestaan omdat er werkelijk
+  // geen methode meer is). Uit = de gebruiker logt gewoon met de e-mailcode in; er valt niets te herstellen. De rij wordt vergrendeld, zodat
+  // een gelijktijdige verwijdering/inschakeling van een methode serieel verloopt.
+  const resultState = await prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<{ mfaEnabled: boolean }[]>`SELECT "mfaEnabled" FROM "User" WHERE "id" = ${target.id} FOR UPDATE`;
+    if (locked.length === 0) throw new Error("Gebruiker bestaat niet meer.");
+    await tx.webAuthnCredential.deleteMany({ where: { userId: target.id } });
+    await tx.webAuthnChallenge.deleteMany({ where: { userId: target.id } });
+    await tx.recoveryCode.deleteMany({ where: { userId: target.id } });
+    await tx.totpCredential.deleteMany({ where: { userId: target.id } });
+    await tx.session.deleteMany({ where: { userId: target.id } });
+    await tx.securityEvent.create({
+      data: {
+        userId: target.id,
+        actorUserId: admin.id,
+        type: "MFA_RESET_BY_ADMIN",
+        detail: `Gereset door ${admin.name}; identiteit gecontroleerd; verificatie was ${locked[0].mfaEnabled ? "aan" : "uit"} en blijft zo`,
+      },
+    });
+    return { mfaEnabled: locked[0].mfaEnabled };
+  });
 
   let notified = true;
   try {
@@ -287,12 +300,14 @@ export async function resetUserMfaAction(_prev: ActionResult | null, formData: F
   } catch (err) {
     notified = false;
     console.error("[mfa] Melding van MFA-reset kon niet worden verstuurd:", err instanceof Error ? err.message : err);
+    // Blijvend zichtbaar in het auditspoor (niet alleen in deze melding aan de webmin).
+    await logSecurityEvent({ userId: target.id, actorUserId: admin.id, type: "MFA_RESET_BY_ADMIN", detail: "Melding aan de gebruiker kon niet worden verstuurd" }).catch(() => undefined);
   }
 
   revalidatePath("/gebruikers");
   return {
     ok: true,
-    message: `Verificatie van ${target.name} is gereset; alle sessies zijn ingetrokken. Bij de volgende inlog stelt deze gebruiker opnieuw een methode in.${notified ? " De gebruiker is per e-mail op de hoogte gebracht." : " Let op: de e-mailmelding aan de gebruiker kon niet worden verstuurd; breng de gebruiker zelf op de hoogte."}`,
+    message: `Verificatie van ${target.name} is gereset; alle sessies zijn ingetrokken. ${resultState.mfaEnabled ? "Verificatie blijft ingeschakeld: bij de volgende inlog stelt deze gebruiker opnieuw een methode in." : "Verificatie stond uit en blijft uit: deze gebruiker logt gewoon met de e-mailcode in."}${notified ? " De gebruiker is per e-mail op de hoogte gebracht." : " Let op: de e-mailmelding aan de gebruiker kon niet worden verstuurd; breng de gebruiker zelf op de hoogte."}`,
   };
 }
 

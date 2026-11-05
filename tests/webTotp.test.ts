@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createSession, hasFreshFactorProof } from "@/lib/auth";
 import { startTotpEnrollment, confirmTotpEnrollment, isTotpConfirmed, removeTotp, verifyTotpCode, regenerateRecoveryCodes } from "@/lib/mfa";
 import { removePasskeyGuarded, removeTotpGuarded, enableMfaGuarded } from "@/lib/mfaMethods";
+import { claimTotpStep, consumeRecoveryCodeLimited } from "@/lib/mfa";
 import { enrolledMethods } from "@/lib/mfaMethods";
 import { resetDatabase, createTestUser } from "./setup";
 
@@ -334,9 +335,130 @@ describe("E2.1 – beheer in het profiel", () => {
     expect(await prisma.webAuthnCredential.count({ where: { userId: target.id } })).toBe(0);
     expect(await prisma.recoveryCode.count({ where: { userId: target.id } })).toBe(0);
     expect(await prisma.session.count({ where: { userId: target.id } })).toBe(0);
-    expect(await prisma.securityEvent.count({ where: { userId: target.id, type: "MFA_RESET_BY_ADMIN", actorUserId: admin.id } })).toBe(1);
+    const events = await prisma.securityEvent.findMany({ where: { userId: target.id, type: "MFA_RESET_BY_ADMIN", actorUserId: admin.id } });
+    expect(events.some((e) => e.detail?.includes("identiteit gecontroleerd") && e.detail.includes("verificatie was aan en blijft zo"))).toBe(true);
+    // Verzendfout (SMTP is in de test niet ingesteld) blijft zichtbaar: in de melding én blijvend in het auditspoor
+    expect(res.message).toContain("kon niet worden verstuurd");
+    expect(events.some((e) => e.detail === "Melding aan de gebruiker kon niet worden verstuurd")).toBe(true);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).mfaEnabled).toBe(true);
     expect(await isTotpConfirmed(other.id)).toBe(true); // andere gebruiker onaangetast
     // Eindtoestand: MFA aan, geen methode -> eerste inschrijving is dan toegestaan
     expect((await enrolledMethods(target))).toEqual([]);
+  });
+
+  it("webmin-reset: verificatie die al uit stond blijft uit; geen stille wijziging van de keuze van de gebruiker", async () => {
+    const admin = await createTestUser("ADMIN", "Webmin");
+    const target = await createTestUser("HOGERAAD", "Doel");
+    await confirmedTotp(target.id, target.email); // methode aanwezig, maar verificatie staat uit
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).mfaEnabled).toBe(false);
+    await fullFor(admin.id);
+    const res = await actions.resetUserMfaAction(null, form({ userId: target.id, identityChecked: "yes", confirmEmail: target.email }));
+    expect(res.ok).toBe(true);
+    expect(res.message).toContain("stond uit en blijft uit");
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    expect(user.mfaEnabled).toBe(false);
+    expect(await enrolledMethods(user)).toEqual([]);
+    // Eindtoestand uit: geen wachtende MFA-stap; de gebruiker kan zich normaal aanmelden (mfaRequired = false)
+    const { mfaRequired } = await import("@/lib/auth");
+    expect(mfaRequired(user)).toBe(false);
+  });
+
+  it("webmin-reset met verificatie aan: eerste inschrijving daarna toegestaan (werkelijk geen methode), niet eerder", async () => {
+    const admin = await createTestUser("ADMIN", "Webmin");
+    const target = await createTestUser("HOGERAAD", "Doel");
+    await addPasskey(target.id);
+    await prisma.user.update({ where: { id: target.id }, data: { mfaEnabled: true } });
+    const { mayEnrollFirstFactorWhilePending } = await import("@/lib/mfaActor");
+    const actor = { userId: target.id, sessionId: "s", mode: "pending" as const, mfaAt: null, email: target.email, name: "x", mfaRequired: true };
+    expect(await mayEnrollFirstFactorWhilePending(actor)).toBe(false); // vóór de reset: bestaande methode
+    await fullFor(admin.id);
+    await actions.resetUserMfaAction(null, form({ userId: target.id, identityChecked: "yes", confirmEmail: target.email }));
+    expect(await mayEnrollFirstFactorWhilePending(actor)).toBe(true); // na de reset: geen methode meer
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).mfaEnabled).toBe(true);
+  });
+});
+
+describe("E2.1 – TOTP: claim versus lockout, herstelcodes begrenzen", () => {
+  it("claimTotpStep weigert tijdens een lockout en bij replay, accepteert na het verlopen van de lockout", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    await confirmedTotp(user.id, user.email);
+    const c = Math.floor(Date.now() / 1000 / 30) + 5;
+    await prisma.totpCredential.update({ where: { userId: user.id }, data: { lockedUntil: new Date(Date.now() + 60_000), failedAttempts: 5 } });
+    expect(await claimTotpStep(user.id, c)).toBe(false); // geldige code, maar vergrendeld
+    await prisma.totpCredential.update({ where: { userId: user.id }, data: { lockedUntil: new Date(Date.now() - 1000) } }); // verlopen
+    expect(await claimTotpStep(user.id, c)).toBe(true);
+    expect(await claimTotpStep(user.id, c)).toBe(false); // replay
+    expect((await prisma.totpCredential.findUniqueOrThrow({ where: { userId: user.id } })).failedAttempts).toBe(0);
+  });
+
+  it("de ‘gat’-toestand (5 fouten geteld, lockout nog niet gezet) accepteert geen code", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    await confirmedTotp(user.id, user.email);
+    await prisma.totpCredential.update({ where: { userId: user.id }, data: { failedAttempts: 5, lockedUntil: null } });
+    expect(await claimTotpStep(user.id, Math.floor(Date.now() / 1000 / 30) + 5)).toBe(false);
+  });
+
+  it("race: laatste foute poging en een geldige code tegelijk — nooit OK én vergrendeld", async () => {
+    for (let i = 0; i < 15; i++) {
+      await resetDatabase();
+      const user = await createTestUser("HOGERAAD", "Gebruiker");
+      const secret = await confirmedTotp(user.id, user.email);
+      await prisma.totpCredential.update({ where: { userId: user.id }, data: { failedAttempts: 4, lastUsedCounter: null } });
+      const [valid, wrong] = await Promise.all([verifyTotpCode(user.id, user.email, code(secret, 1)), verifyTotpCode(user.id, user.email, "000000")]);
+      const row = await prisma.totpCredential.findUniqueOrThrow({ where: { userId: user.id } });
+      const locked = row.lockedUntil !== null && row.lockedUntil.getTime() > Date.now();
+      if (valid === "OK") expect(locked && wrong === "LOCKED" && row.failedAttempts >= 5).toBe(false);
+      if (locked) expect(valid).not.toBe("OK");
+    }
+  });
+
+  it("na de lockout: verlopen lockout begint de teller opnieuw (geen blijvende blokkade)", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    const secret = await confirmedTotp(user.id, user.email);
+    await prisma.totpCredential.update({ where: { userId: user.id }, data: { failedAttempts: 5, lockedUntil: new Date(Date.now() - 1000), lastUsedCounter: null } });
+    expect(await verifyTotpCode(user.id, user.email, code(secret, 1))).toBe("OK");
+  });
+
+  it("herstelcodes: na 5 foute pogingen tijdelijke lockout, ook voor de juiste code; persistent in de database; TOTP blijft bruikbaar", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    const secret = await confirmedTotp(user.id, user.email);
+    const [good] = await regenerateRecoveryCodes(user.id);
+    for (let i = 0; i < 4; i++) expect(await consumeRecoveryCodeLimited(user.id, "AAAAA-BBBBB")).toBe("INVALID");
+    expect(await consumeRecoveryCodeLimited(user.id, "AAAAA-BBBBB")).toBe("LOCKED"); // 5e fout vergrendelt
+    expect(await consumeRecoveryCodeLimited(user.id, good)).toBe("LOCKED"); // juiste code telt niet tijdens lockout
+    const row = await prisma.totpCredential.findUniqueOrThrow({ where: { userId: user.id } });
+    expect(row.recoveryLockedUntil!.getTime()).toBeGreaterThan(Date.now()); // staat in de database: overleeft een herstart
+    expect(await verifyTotpCode(user.id, user.email, code(secret, 1))).toBe("OK"); // TOTP onafhankelijk
+    // Tijdelijk, niet permanent: na het verlopen werkt de juiste code weer en de teller is gewist
+    await prisma.totpCredential.update({ where: { userId: user.id }, data: { recoveryLockedUntil: new Date(Date.now() - 1000) } });
+    expect(await consumeRecoveryCodeLimited(user.id, good)).toBe("OK");
+    const after = await prisma.totpCredential.findUniqueOrThrow({ where: { userId: user.id } });
+    expect(after.recoveryFailedAttempts).toBe(0);
+    expect(after.recoveryLockedUntil).toBeNull();
+  });
+
+  it("herstelcodes: parallelle gokpogingen worden allemaal geteld (hooguit 5 controles per lockout)", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    await confirmedTotp(user.id, user.email);
+    const results = await Promise.all(Array.from({ length: 12 }, () => consumeRecoveryCodeLimited(user.id, "AAAAA-BBBBB")));
+    expect(results.filter((r) => r === "INVALID" || (r === "LOCKED")).length).toBe(12);
+    expect(results.filter((r) => r === "LOCKED").length).toBeGreaterThanOrEqual(7);
+  });
+
+  it("herstelcodes zonder TOTP-instelling: altijd ongeldig, geen fout", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    expect(await consumeRecoveryCodeLimited(user.id, "AAAAA-BBBBB")).toBe("INVALID");
+  });
+
+  it("herstelcode-login: de actie meldt de tijdelijke lockout en logt niet in", async () => {
+    const user = await createTestUser("HOGERAAD", "Gebruiker");
+    await confirmedTotp(user.id, user.email);
+    const [good] = await regenerateRecoveryCodes(user.id);
+    await pendingFor(user.id);
+    for (let i = 0; i < 5; i++) await actions.useRecoveryCodeLoginAction(null, form({ code: "AAAAA-BBBBB" }));
+    const res = await actions.useRecoveryCodeLoginAction(null, form({ code: good }));
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain("15 minuten");
+    expect(await prisma.session.count({ where: { userId: user.id, mfaAt: { not: null } } })).toBe(0);
   });
 });

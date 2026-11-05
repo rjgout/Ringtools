@@ -1,4 +1,9 @@
 import { defineConfig } from "@playwright/test";
+import { assertSafeTestDatabaseUrl } from "./tests/dbGuard";
+
+// De e2e-tests maken veel gegevens aan en delen de database met de server onder test: alleen een afzonderlijke testdatabase (E2E_DATABASE_URL of DATABASE_URL).
+// Start de server met dezelfde DATABASE_URL.
+process.env.DATABASE_URL = assertSafeTestDatabaseUrl(process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL);
 
 export default defineConfig({
   testDir: "./e2e",

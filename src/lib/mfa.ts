@@ -71,15 +71,37 @@ export async function startTotpEnrollment(userId: string, label: string, forceNe
 
 export type TotpOutcome = "OK" | "INVALID" | "LOCKED" | "NOT_CONFIGURED";
 
+const LOCKOUT_MINUTES = LOCKOUT_MS / 60000;
+
 /**
- * Registreert een mislukte poging atomair (`increment`, geen lees-schrijf-race tussen gelijktijdige pogingen) en vergrendelt bij de
- * vijfde fout. Geeft terug of de instelling nu vergrendeld is.
+ * Registreert een mislukte poging in één SQL-statement (tellen; een eerder verlopen lockout begint de teller opnieuw) en
+ * vergrendelt bij de vijfde fout. Databaseklok (UTC). Geeft terug of de instelling nu vergrendeld is.
  */
 async function registerFailedAttempt(userId: string): Promise<boolean> {
-  const updated = await prisma.totpCredential.update({ where: { userId }, data: { failedAttempts: { increment: 1 } } });
-  if (updated.failedAttempts < MAX_FAILED_ATTEMPTS) return false;
-  await prisma.totpCredential.update({ where: { userId }, data: { lockedUntil: new Date(Date.now() + LOCKOUT_MS) } });
+  const rows = await prisma.$queryRaw<{ locked: boolean }[]>`
+    UPDATE "TotpCredential" SET
+      "failedAttempts" = CASE WHEN "lockedUntil" IS NOT NULL AND "lockedUntil" <= timezone('UTC', now()) THEN 1 ELSE "failedAttempts" + 1 END,
+      "lockedUntil" = CASE WHEN "lockedUntil" IS NOT NULL AND "lockedUntil" <= timezone('UTC', now()) THEN NULL ELSE "lockedUntil" END
+    WHERE "userId" = ${userId}
+    RETURNING "failedAttempts" >= ${MAX_FAILED_ATTEMPTS} AS locked`;
+  if (!rows[0]?.locked) return false;
+  await prisma.$executeRaw`UPDATE "TotpCredential" SET "lockedUntil" = timezone('UTC', now()) + make_interval(mins => ${LOCKOUT_MINUTES}::int) WHERE "userId" = ${userId} AND "lockedUntil" IS NULL`;
   return true;
+}
+
+/**
+ * Claimt een TOTP-tijdstap atomair. Slaagt alleen als de teller strikt oploopt (geen replay) EN de instelling niet vergrendeld is
+ * (ook niet "bijna": failedAttempts < MAX dekt het venster tussen tellen en vergrendelen) — alles in dezelfde UPDATE. Een code
+ * wordt dus nooit geaccepteerd nadat een lockout effectief is geworden; gelijktijdige verzoeken serialiseren op de rij.
+ */
+export async function claimTotpStep(userId: string, counter: number): Promise<boolean> {
+  const count = await prisma.$executeRaw`
+    UPDATE "TotpCredential" SET "lastUsedCounter" = ${counter}, "failedAttempts" = 0, "lockedUntil" = NULL
+    WHERE "userId" = ${userId}
+      AND ("lastUsedCounter" IS NULL OR "lastUsedCounter" < ${counter})
+      AND ("lockedUntil" IS NULL OR "lockedUntil" <= timezone('UTC', now()))
+      AND ("lockedUntil" IS NOT NULL OR "failedAttempts" < ${MAX_FAILED_ATTEMPTS})`;
+  return count === 1;
 }
 
 /**
@@ -114,11 +136,12 @@ export async function verifyTotpCode(userId: string, label: string, code: string
 
   // Atomair "claimen" van deze tijdstap: alleen de aanroep die lastUsedCounter werkelijk verhoogt, slaagt. Twee gelijktijdige
   // verzoeken met dezelfde code zien allebei een oude waarde, maar de voorwaarde in de UPDATE laat er precies één door.
-  const claimed = await prisma.totpCredential.updateMany({
-    where: { userId, OR: [{ lastUsedCounter: null }, { lastUsedCounter: { lt: matchedCounter } }] },
-    data: { lastUsedCounter: matchedCounter, failedAttempts: 0, lockedUntil: null },
-  });
-  if (claimed.count !== 1) return fail("Code al eerder gebruikt");
+  if (!(await claimTotpStep(userId, matchedCounter))) {
+    // Vergrendeld, replay of gelijktijdig geclaimd: een geldige code telt dan niet.
+    const fresh = await prisma.totpCredential.findUnique({ where: { userId } });
+    if (fresh?.lockedUntil && fresh.lockedUntil.getTime() > Date.now()) return "LOCKED";
+    return fail("Code al eerder gebruikt");
+  }
   return "OK";
 }
 
@@ -143,8 +166,9 @@ export async function confirmTotpEnrollment(
       await logSecurityEvent({ userId, type: locked ? "TOTP_LOCKED" : "TOTP_FAILED_ATTEMPT", detail: "Ongeldige code (opnieuw instellen)" });
       return { ok: false, outcome: locked ? "LOCKED" : "INVALID" };
     }
-    await prisma.totpCredential.update({
-      where: { userId },
+    // Alleen als de instelling nu niet vergrendeld is (zelfde voorwaarde als bij het claimen van een code).
+    const swapped = await prisma.totpCredential.updateMany({
+      where: { userId, OR: [{ lockedUntil: null }, { lockedUntil: { lte: new Date() } }] },
       data: {
         secretEncrypted: credential.pendingSecretEncrypted as string,
         pendingSecretEncrypted: null,
@@ -155,6 +179,7 @@ export async function confirmTotpEnrollment(
         lockedUntil: null,
       },
     });
+    if (swapped.count !== 1) return { ok: false, outcome: "LOCKED" };
     const recoveryCodes = opts.issueRecoveryCodes === false ? [] : await regenerateRecoveryCodes(userId);
     await logSecurityEvent({ userId, type: "TOTP_ENROLLED" });
     return { ok: true, recoveryCodes };
@@ -223,4 +248,42 @@ export async function consumeRecoveryCode(userId: string, rawCode: string): Prom
     return true;
   }
   return false;
+}
+
+export type RecoveryOutcome = "OK" | "INVALID" | "LOCKED";
+const RECOVERY_MAX_ATTEMPTS = 5;
+
+/**
+ * Herstelcode gebruiken met persistente begrenzing (database, overleeft herstarts van de container). Elke poging wordt VÓÓR de controle
+ * atomair geteld ("reserveren"), zodat ook parallelle gokpogingen meetellen; na 5 pogingen zonder succes volgt een tijdelijke lockout van
+ * 15 minuten (nooit permanent; een verlopen lockout begint opnieuw). Een geslaagde herstelcode zet de teller terug. De lockout geldt
+ * alleen voor herstelcodes en blokkeert TOTP niet. Zonder TOTP-instelling (dus zonder herstelcodes) is het antwoord altijd INVALID.
+ */
+export async function consumeRecoveryCodeLimited(userId: string, rawCode: string): Promise<RecoveryOutcome> {
+  // Reserveren, tellen én (bij de 5e poging) vergrendelen in één statement: geen venster waarin parallelle pogingen extra gokken kunnen doen,
+  // en geen toestand die na een crash "half vergrendeld" blijft. De 5e poging zelf wordt nog wel gecontroleerd en ontgrendelt bij succes.
+  const reserved = await prisma.$queryRaw<{ attempts: number }[]>`
+    UPDATE "TotpCredential" SET
+      "recoveryFailedAttempts" = CASE WHEN "recoveryLockedUntil" IS NOT NULL THEN 1 ELSE "recoveryFailedAttempts" + 1 END,
+      "recoveryLockedUntil" = CASE
+        WHEN (CASE WHEN "recoveryLockedUntil" IS NOT NULL THEN 1 ELSE "recoveryFailedAttempts" + 1 END) >= ${RECOVERY_MAX_ATTEMPTS}::int
+        THEN timezone('UTC', now()) + make_interval(mins => ${LOCKOUT_MINUTES}::int) ELSE NULL END
+    WHERE "userId" = ${userId}
+      AND ("recoveryLockedUntil" IS NULL OR "recoveryLockedUntil" <= timezone('UTC', now()))
+    RETURNING "recoveryFailedAttempts" AS attempts`;
+  if (reserved.length === 0) {
+    const exists = await prisma.totpCredential.findUnique({ where: { userId }, select: { id: true } });
+    return exists ? "LOCKED" : "INVALID";
+  }
+
+  const ok = await consumeRecoveryCode(userId, rawCode);
+  if (ok) {
+    await prisma.$executeRaw`UPDATE "TotpCredential" SET "recoveryFailedAttempts" = 0, "recoveryLockedUntil" = NULL WHERE "userId" = ${userId}`;
+    return "OK";
+  }
+  if (reserved[0].attempts >= RECOVERY_MAX_ATTEMPTS) {
+    await logSecurityEvent({ userId, type: "TOTP_LOCKED", detail: "Herstelcodes tijdelijk vergrendeld" });
+    return "LOCKED";
+  }
+  return "INVALID";
 }
