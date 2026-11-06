@@ -1,10 +1,11 @@
-# Ontwerp: MFA-keuze voor webgebruikers (fase E2 – E2.1 op main, achter vlag UIT; E2.2 op ontwikkelbranch; rest nog NIET gebouwd)
+# MFA-keuze voor webgebruikers (fase E2) – ontwerp en werkelijke status
 
-> **Status:**
-> - **E2.1 (authenticator-app voor gewone webgebruikers) staat op main** (`7ebbfbd`), achter de functievlag `WEB_TOTP_ENABLED` (standaard UIT, niet geactiveerd op de NAS). Zie §9.
-> - **E2.2 (methodekeuze bij het inloggen, passkey als voorkeur) is gebouwd op de ontwikkelbranch `claude/e2-2-methodekeuze`, nog niet op main.** Zie §10.
-> - **E2.3 (vertrouwd toestel), E2.4 (number matching) en E2.5 (beleid, o.a. verplichte MFA per rol; `Session.mfaMethod`)** zijn alleen ontwerp en uitgesteld. Number matching is niet gebouwd en wordt niet als WebAuthn-equivalent gepresenteerd.
-> - Zonder de vlag is het gedrag ongewijzigd: gewone gebruikers kennen alleen optionele passkey-verificatie; webmin = wachtwoord + verplichte TOTP; e-mailcode blijft eerste factor.
+> **Status (actueel):**
+> - **E2.1 – authenticator-app (TOTP) voor gewone webgebruikers: gebouwd en op `main`**, achter de functievlag `WEB_TOTP_ENABLED` (standaard **UIT**, niet geactiveerd). Zie §9.
+> - **E2.2 – methodekeuze bij het inloggen (passkey aanbevolen, wisselen zonder nieuwe e-mailcode): gebouwd en op `main`**, werkt alleen met `WEB_TOTP_ENABLED=true`; met de vlag uit is het gedrag ongewijzigd. Zie §10.
+> - **Functievlaggen, allemaal standaard UIT:** `WEB_TOTP_ENABLED` (web, E2.1/E2.2) en `NATIVE_PASSKEYS_ENABLED` (native passkeys, apart). Er is geen verplichte MFA ingevoerd en er zijn geen gebruikersinstellingen gewijzigd.
+> - **Nog ontbreekt (alleen ontwerp, uitgesteld):** E2.3 vertrouwd toestel + apparaatsleutel; E2.4 number matching (`WEB_MFA_APP_ENABLED`, niet phishingbestendig en nooit als WebAuthn-equivalent gepresenteerd); E2.5 beleid (verplichte MFA per rol, herstelbeleid voor passkey-only accounts) en `Session.mfaMethod`.
+> - Zonder de vlag: gewone gebruikers kennen alleen optionele passkey-verificatie; webmin = wachtwoord + verplichte TOTP (eigen, ongewijzigd pad); e-mailcode blijft eerste factor.
 
 ## 1. Doel
 Gebruikers van de beveiligde webomgeving (bijv. een secretaris met een laptop) kiezen bij het inloggen uit de tweede-factormethoden die **voor hun account zijn geregistreerd**:
@@ -126,13 +127,13 @@ Per stap: backendtests (race/replay/expiry/ringisolatie), clienttests, Playwrigh
 
 **Tests:** `tests/webTotp.test.ts` (22), `e2e/webTotp.spec.ts` (aan: 8, uit: 4; draai de spec met `E2E_WEB_TOTP=on|off` en een server met dezelfde `WEB_TOTP_ENABLED`; volgorde aan → uit → aan test het terugzetten van de vlag). **Activeren:** `WEB_TOTP_ENABLED=true` in de omgeving van de container, pas na akkoord van de eigenaar.
 
-## 10. E2.2 – methodekeuze bij het inloggen (ontwikkelbranch; geen schemawijziging, geen nieuwe crypto)
+## 10. E2.2 – methodekeuze bij het inloggen (op main, achter `WEB_TOTP_ENABLED`; geen schemawijziging, geen nieuwe crypto)
 
 **Al aanwezig na E2.1 (niet opnieuw gebouwd):** pending-login en sessiepromotie; WebAuthn-registratie en -verificatie met herverificatie; TOTP met replay-/lockoutbescherming; een eerste keuzescherm; doorsturen bij één methode; profielbeheer van passkeys en authenticator-app met recente MFA; de invariant dat de laatste bruikbare methode niet verwijderd kan worden; geen passkey-lockout (annuleren kan dus nooit blokkeren).
 
 **Ontbrak en is nu gebouwd:**
 - `loginPlan()` (`src/lib/mfaMethods.ts`): één bron die bepaalt of er direct passkey, direct TOTP, een keuze, een eerste inschrijving of "niet beschikbaar" (vlag uit + alleen TOTP) volgt. Beide pagina's (`/mfa/passkey`, `/mfa/totp`) gebruiken hem.
-- Keuzescherm met de passkey als **aanbevolen** methode (phishingbestendig) en een korte uitleg per methode.
+- Keuzescherm met de passkey als **aanbevolen** methode ("beschermt tegen phishing") en de authenticator-app met de uitleg "niet bestand tegen phishing".
 - **Wisselen zonder nieuwe e-mailcode:** vanaf de passkeyverificatie naar de authenticator-app en omgekeerd (en terug naar het keuzescherm). De links verschijnen alleen als de gebruiker beide methoden werkelijk heeft.
 - Passkeyverificatie: geannuleerd, verlopen of mislukt geeft een begrijpelijke melding (geen interne foutteksten), "Opnieuw proberen" en — indien beschikbaar — "Een andere methode gebruiken". Een verlopen inlogsessie (401) toont een duidelijke melding met "Opnieuw inloggen".
 - Profiel: overzicht van de ingestelde methoden (aantal passkeys, authenticator-app) met aanbeveling voor een passkey.

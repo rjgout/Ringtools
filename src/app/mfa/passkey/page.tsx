@@ -53,7 +53,7 @@ export default async function PasskeyMfaPage({ searchParams }: { searchParams: P
         </Link>
         <Link href={`/mfa/totp?${q}`} className="btn-ghost block w-full text-center">
           <span className="block font-semibold">Met een authenticator-app</span>
-          <span className="block text-xs font-normal text-[var(--text-muted)]">Zescijferige code uit je app</span>
+          <span className="block text-xs font-normal text-[var(--text-muted)]">Zescijferige code uit je app · niet bestand tegen phishing</span>
         </Link>
       </div>
     );
