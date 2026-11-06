@@ -10,6 +10,9 @@ import { codeFor, seedTotpUser, releaseReplayCounter, startLogin } from "./helpe
  */
 const MODE = process.env.E2E_TRUSTED_DEVICES === "on" ? "on" : process.env.E2E_TRUSTED_DEVICES === "off" ? "off" : null;
 test.skip(MODE === null, "Zet E2E_TRUSTED_DEVICES=on of off (en start de server met dezelfde TRUSTED_DEVICES_ENABLED-waarde).");
+// Ongeldige combinatie, geen productfout: de testgebruiker meldt zich aan met een authenticator-app. Deze spec draait daarom alleen met E2E_WEB_TOTP=on;
+// de dekking van "vertrouwde toestellen uit" komt uit de configuratie WEB_TOTP aan + TRUSTED uit (zie docs/E2-6-KWALITEITSRONDE.md).
+test.skip(process.env.E2E_WEB_TOTP !== "on", "Vereist E2E_WEB_TOTP=on (ongeldige vlagcombinatie voor deze spec).");
 
 async function loginWithTotp(page: import("@playwright/test").Page, name: string) {
   const { user, secret } = await seedTotpUser(name);
