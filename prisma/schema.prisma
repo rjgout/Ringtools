@@ -127,6 +127,8 @@ model User {
   invitationsAccepted RingInvitation[]     @relation("InvitationAcceptedBy")
   openLinkTokens      OpenLinkToken[]
   devicePushTokens    DevicePushToken[]
+  trustedDevices      TrustedDevice[]
+  mfaPairings         MfaPairing[]
 
   createdCallings          Calling[]            @relation("CallingCreatedBy")
   eligibleVotes            EligibleVoter[]
@@ -312,6 +314,9 @@ enum SecurityEventType {
   MFA_RESET_BY_ADMIN
   SESSION_REVOKED
   MFA_VERIFIED
+  TRUSTED_DEVICE_PAIRING_CREATED
+  TRUSTED_DEVICE_REGISTERED
+  TRUSTED_DEVICE_REVOKED
 }
 
 // Beveiligingslogboek: nooit geheimen (codes, secrets, herstelcodes) in
@@ -355,8 +360,8 @@ model Calling {
   creationNotifiedAt      DateTime?
 
   // Melding aan de ringstaf dat het voorstel op vrijgave wacht (zelfde claim/lease-principe als de aanmaakmeldingen).
-  releaseNotifyClaimedAt  DateTime?
-  releaseNotifiedAt       DateTime?
+  releaseNotifyClaimedAt DateTime?
+  releaseNotifiedAt      DateTime?
 
   // Presidiumakkoord en vrijgave aan de hoge raad (geen automatische doorstart).
   presidiumApprovedAt     DateTime?
@@ -936,4 +941,47 @@ model RingInvitationAudit {
   createdAt    DateTime              @default(now())
 
   @@index([invitationId, createdAt])
+}
+
+// ---- E2.3: vertrouwde toestellen (hardwaregebonden sleutel; vlag TRUSTED_DEVICES_ENABLED) ----
+
+enum TrustedDevicePlatform {
+  IOS
+  ANDROID
+}
+
+// Een geregistreerd toestel is GEEN zelfstandige MFA-methode (E2.4 beoordeelt dat opnieuw). Zonder attestatie kan de server
+// niet bewijzen dat de sleutel in hardware zit; dat staat in docs/E2-3-TOESTELSLEUTELS-ONDERZOEK.md.
+model TrustedDevice {
+  id             String                @id @default(cuid())
+  userId         String
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label          String
+  platform       TrustedDevicePlatform
+  installationId String                @unique
+  publicKey      String                @unique // base64 SPKI (ECDSA P-256); nooit hergebruikt, ook niet na intrekking
+  createdAt      DateTime              @default(now())
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  revokedById    String?
+
+  @@index([userId])
+}
+
+// Eenmalige koppelcode (alleen hashes). Autoriseert uitsluitend een toestelregistratie: geen sessie, geen MFA-goedkeuring.
+model MfaPairing {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash       String    @unique
+  expiresAt      DateTime
+  claimedAt      DateTime?
+  claimTokenHash String?   @unique
+  challenge      String?
+  claimExpiresAt DateTime?
+  failedAttempts Int       @default(0)
+  consumedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([userId])
 }

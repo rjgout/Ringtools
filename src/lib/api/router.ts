@@ -11,6 +11,7 @@ import * as mgmt from "./management";
 import * as setup from "./setup";
 import * as drafts from "./drafts";
 import * as ontheffingen from "./ontheffingen";
+import * as trustedDevicesApi from "./trustedDevices";
 import * as invitations from "./invitations";
 import * as nativeMfa from "./nativeMfa";
 import { env } from "../env";
@@ -88,6 +89,8 @@ publicRoute("POST", "/admin/auth/totp", async ({ request, body }) => {
 const clientKeyOf = (request: Request) => request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "onbekend";
 publicRoute("POST", "/invitations/preview", async ({ request, body }) => invitations.previewInvitationApi(body, clientKeyOf(request)));
 publicRoute("POST", "/invitations/activate", async ({ request, body }) => invitations.activateInvitationApi(body, clientKeyOf(request)));
+publicRoute("POST", "/trusted-devices/pair/claim", async ({ request, body }) => trustedDevicesApi.claimPairingApi(body, clientKeyOf(request)));
+publicRoute("POST", "/trusted-devices/pair/complete", async ({ request, body }) => trustedDevicesApi.completePairingApi(body, clientKeyOf(request)));
 
 // Versie en capaciteiten van de API; de app controleert hiermee of ze nog compatibel is.
 publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION, nativePasskeys: env.nativePasskeysEnabled, nativeTotpLogin: env.nativeTotpLoginEnabled, trustedDevices: env.trustedDevicesEnabled }));
