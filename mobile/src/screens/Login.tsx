@@ -1,3 +1,4 @@
+import { digitsOnly } from "../lib/codeInput";
 import { useEffect, useState } from "react";
 import { AdminLogin } from "./AdminLogin";
 import { useAuth } from "../lib/auth";
@@ -162,7 +163,7 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
             <strong>Bevestig dat jij het bent</strong>
             <p className="muted">{useRecovery ? "Vul een van je eenmalige herstelcodes in." : "Vul de 6-cijferige code uit je authenticator-app in."}</p>
             <label htmlFor="totp">{useRecovery ? "Herstelcode" : "Code uit je authenticator-app"}</label>
-            <input id="totp" className="code" inputMode={useRecovery ? "text" : "numeric"} autoComplete="one-time-code" maxLength={useRecovery ? 11 : 6} required value={totpCode} onChange={(e) => setTotpCode(e.target.value)} autoFocus />
+            <input id="totp" className="code" inputMode={useRecovery ? "text" : "numeric"} autoComplete="one-time-code" maxLength={useRecovery ? 11 : undefined} required value={totpCode} onChange={(e) => setTotpCode(useRecovery ? e.target.value : digitsOnly(e.target.value, 6))} autoFocus />
           </div>
         ) : step === "passkey" ? (
           <div>
@@ -177,7 +178,7 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
         ) : (
           <div>
             <label htmlFor="code">Inlogcode uit de e-mail</label>
-            <input id="code" className="code" inputMode="numeric" autoComplete="one-time-code" maxLength={8} required value={code} onChange={(e) => setCode(e.target.value)} autoFocus />
+            <input id="code" className="code" inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={(e) => setCode(digitsOnly(e.target.value, 8))} autoFocus />
             {info && <p className="muted">{info}</p>}
           </div>
         )}

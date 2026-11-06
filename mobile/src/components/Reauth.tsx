@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { useAuth } from "../lib/auth";
+import { digitsOnly } from "../lib/codeInput";
 import { ApiRequestError } from "../lib/api";
 
 /**
@@ -98,7 +99,7 @@ export function useReauth() {
   }
 
   const dialog = open ? (
-    <div className="glass card stack" role="dialog" aria-label="Bevestig je identiteit" style={{ position: "fixed", inset: "auto 12px 90px 12px", zIndex: 20 }}>
+    <div className="sheet-backdrop"><div className="glass card stack sheet" role="dialog" aria-modal="true" aria-label="Bevestig je identiteit">
       <strong>Bevestig je identiteit</strong>
       {usesPasskey ? (
         <span className="muted">Voor jouw account is extra verificatie met een passkey nodig. Volg de aanwijzingen van je toestel.</span>
@@ -115,13 +116,13 @@ export function useReauth() {
         <button className="btn btn-primary" disabled={busy} onClick={sendCode}>Stuur code</button>
       ) : (
         <form className="stack" onSubmit={submit}>
-          <input aria-label="Code" className="code" inputMode="numeric" autoComplete="one-time-code" maxLength={isAdmin || usesTotp ? 6 : 8} value={code} onChange={(e) => setCode(e.target.value)} autoFocus required />
+          <input aria-label="Code" className="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(digitsOnly(e.target.value, isAdmin || usesTotp ? 6 : 8))} autoFocus required />
           <button className="btn btn-primary" disabled={busy || code.replace(/\s+/g, "").length !== (isAdmin || usesTotp ? 6 : 8)}>Bevestigen</button>
         </form>
       )}
       {error && <div className="error" role="alert">{error}</div>}
       <button className="btn btn-ghost" onClick={cancel}>Annuleren</button>
-    </div>
+    </div></div>
   ) : null;
 
   return { run, dialog };

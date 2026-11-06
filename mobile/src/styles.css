@@ -24,6 +24,8 @@
   --danger-bg: #fde8ea;
   --warning-bg: #fff1d6;
   --warning-ink: #8a4b00;           /* systemOrange, tekstvariant */
+  --scrim: 0 0 0;
+  --scrim-alpha: 0.4;
   --segment-on: #ffffff;            /* geselecteerd segment */
   --shadow: 0 0 0 / 0.08;           /* schaduwkleur: RGB-kanalen / alpha */
   /* Materialen (glas): tint + vervaging; zonder transparantie vallen ze terug op --bg-elevated */
@@ -202,6 +204,12 @@ input:focus-visible, select:focus-visible, .btn:focus-visible, a:focus-visible, 
 .tab-icon-wrap { position: relative; display: inline-flex; }
 .tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab .dot { position: absolute; top: -4px; left: 100%; margin-left: -8px; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 var(--space-1); background: var(--danger-fill); color: var(--on-danger-fill); font-size: 0.75rem; line-height: 20px; text-align: center; }
+/* Sheet (modaal blok bovenaan het scherm): staat bewust bovenin, zodat het toetsenbord het invoerveld nooit afdekt. */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 20; background: rgb(var(--scrim) / var(--scrim-alpha)); }
+.sheet {
+  position: fixed; z-index: 21; top: calc(var(--sat) + var(--space-5)); left: calc(var(--sal) + var(--space-3)); right: calc(var(--sar) + var(--space-3));
+  max-width: 480px; margin: 0 auto; max-height: calc(100% - var(--sat) - var(--space-6)); overflow-y: auto;
+}
 /* Navigatiebalk (diepere schermen) */
 .navbar {
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: var(--space-2);
