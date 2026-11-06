@@ -29,3 +29,9 @@ Aanvullend gecontroleerd en in orde bevonden (met nieuwe regressietests in `test
 ## Nog fysiek op een iPhone te testen
 
 De volledige E2.5-acceptatietest (`docs/E2-3-IPHONE-ACCEPTATIETEST.md`, E2.5-deel) blijft open voor de eigenaar: opstartgedrag zonder sessie, instellen van Face ID, dubbele prompts, accountwissel op één toestel, schermafscherming bij statusovergangen. Ook de workflowschermen (stemmen, taken, verwerken) zijn alleen in jsdom getest.
+
+## Correctie na de iPhone-acceptatietest (tests 16 en 18): wijken en gemeenten voor een ringsecretaris
+
+- **Bewezen oorzaak:** `GET /api/mobile/v1/rings/:id/units` was voorbehouden aan ringbeheerders (`assertCanSeeRingUsers`) en gaf voor iedereen anders het neutrale antwoord 404 "Niet gevonden." Het scherm "Nieuw voorstel" haalt de eenheden daar altijd op. Een ringsecretaris zonder ringbeheerrechten kreeg dus 404; "Opnieuw proberen" gaf steeds dezelfde uitkomst. Concepten bewaren werkte wel, omdat die route alleen op ringstaf controleert en de eenheden niet via deze route ophaalt. Het was geen ontbrekende route, geen foutieve ring-ID en geen versieverschil tussen app en server: client en server gebruiken dezelfde route en hetzelfde antwoordtype.
+- **Correctie (alleen `src/lib/api/setup.ts`):** ringstaf zonder beheerrechten (ringpresidium, secretaris, administrateur) mag de actieve wijken en gemeenten van de eigen ring lezen, met alleen id, soort en naam (geen verantwoordelijken of standaarduitvoerders, geen inactieve eenheden). Ringbeheerder en webmin houden het volledige overzicht. Niet-staf (hoge raad), andere ringen, inactieve lidmaatschappen/accounts en gedeactiveerde ringen krijgen ongewijzigd 404. Aanmaken en wijzigen van eenheden blijven aan de ringbeheerder; er zijn geen rechten toegekend.
+- **Tests:** `tests/unitsRead.test.ts` (9 tests; 6 faalden vóór de correctie met 404) en een aanpassing van `tests/ringsetup.test.ts`, dat het oude gedrag (staf kreeg 404) vastlegde.
