@@ -154,8 +154,8 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
         </div>
         {step === "email" && deviceLoginAvailable && (
           <div className="stack">
-            <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={() => void loginWithDevice()}>{busy ? "Even geduld…" : "Inloggen met Face ID"}</button>
-            <span className="muted">Of log in met je e-mailadres hieronder.</span>
+            <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={() => void loginWithDevice()}>{busy ? "Even geduld…" : "Inloggen met Face ID of toestelcode"}</button>
+            <span className="muted">Je bevestigt met Face ID of, als je toestel dat toestaat, met je toestelcode. Of log in met je e-mailadres hieronder.</span>
           </div>
         )}
         {step === "totp" ? (

@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { prisma } from "./prisma";
 import { generateRawToken, hashToken } from "./crypto";
 import type { Prisma, User } from "@prisma/client";
+import { lockUserThenDevice, runHook } from "./deviceLocks";
 
 export const SESSION_COOKIE_NAME = "ringtools_session";
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -231,12 +232,25 @@ export async function promoteSessionToMfaVerified(sessionId: string, userId: str
   const rawToken = generateRawToken();
   const expiresAt = new Date(Date.now() + SESSION_IDLE_TTL_MS);
   await prisma.$transaction(async (tx) => {
+    // Een sessie die via een vertrouwd toestel is aangemaakt (E2.4a) blijft ook na herverificatie aan dat toestel gebonden, zodat intrekken of
+    // uitzetten van het toestel haar altijd beëindigt. Dan eerst gebruiker en toestel vergrendelen (vaste volgorde) en controleren dat het toestel nog geldt.
+    const current = await tx.session.findFirst({ where: { id: sessionId, userId }, select: { deviceId: true } });
+    let deviceId: string | null = null;
+    if (current?.deviceId) {
+      const lock = await lockUserThenDevice(tx, userId, current.deviceId);
+      await runHook("promoteAfterLock");
+      if (!lock.device || lock.device.revokedAt || !lock.device.loginEnabledAt) {
+        await tx.session.deleteMany({ where: { id: sessionId, userId } });
+        throw new SessionNoLongerValidError();
+      }
+      deviceId = current.deviceId;
+    }
     // Eenmalig: precies één aanroep verwijdert de huidige (wachtende of te herverifiëren) sessie. Bij gelijktijdige aanroepen wacht de
     // tweede op de rijvergrendeling, vindt de rij weg (count 0) en geeft géén tweede sessie uit.
     const removed = await tx.session.deleteMany({ where: { id: sessionId, userId } });
     if (removed.count !== 1) throw new SessionNoLongerValidError();
     await tx.session.create({
-      data: { userId, tokenHash: hashToken(rawToken), expiresAt, mfaAt: new Date(), userAgent: userAgent || null },
+      data: { userId, tokenHash: hashToken(rawToken), expiresAt, mfaAt: new Date(), userAgent: userAgent || null, deviceId },
     });
   });
   await markActivated(userId);

@@ -97,11 +97,11 @@ export function Profile() {
         <section className="glass card stack" aria-label="Wachtwoordloos inloggen">
           <h2>Wachtwoordloos inloggen</h2>
           {deviceState === "enabled" ? (
-            <span>Dit toestel kan inloggen met Face ID. Uitzetten kan op de website onder Beveiliging.</span>
+            <span>Dit toestel kan inloggen met Face ID of toestelcode. Uitzetten kan op de website onder Beveiliging.</span>
           ) : deviceState === "registered" ? (
             <>
-              <span className="muted">Gebruik dit toestel om zonder e-mailcode in te loggen. Je bevestigt elke keer met Face ID of je toestelcode. Je moet hiervoor eerst opnieuw je tweede factor bevestigen.</span>
-              <button className="btn btn-primary" disabled={deviceBusy} onClick={() => void activateDevice()}>{deviceBusy ? "Even geduld…" : "Inloggen met Face ID inschakelen"}</button>
+              <span className="muted">Gebruik dit toestel om zonder e-mailcode in te loggen. Je bevestigt elke keer met Face ID of, als je toestel dat toestaat, met je toestelcode: wie je toestelcode kent, kan dus ook inloggen. Je moet hiervoor eerst opnieuw je tweede factor bevestigen.</span>
+              <button className="btn btn-primary" disabled={deviceBusy} onClick={() => void activateDevice()}>{deviceBusy ? "Even geduld…" : "Wachtwoordloos inloggen inschakelen (Face ID of toestelcode)"}</button>
             </>
           ) : deviceState === "none" ? (
             <span className="muted">Dit toestel is nog niet gekoppeld. Koppel het eerst op het inlogscherm met een code van de website (Beveiliging → Vertrouwde toestellen).</span>

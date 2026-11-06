@@ -4,6 +4,7 @@ import { prisma } from "./prisma";
 import { env } from "./env";
 import { hashToken, generateRawToken } from "./crypto";
 import { logSecurityEvent } from "./securityEvents";
+import { lockUserThenDevice, runHook } from "./deviceLocks";
 
 /**
  * Vertrouwde toestellen (E2.3, vlag `TRUSTED_DEVICES_ENABLED`, standaard uit).
@@ -183,11 +184,15 @@ export async function listTrustedDevices(userId: string) {
 
 /** Trekt een toestel in (idempotent, atomisch). Een ingetrokken sleutel is nooit meer bruikbaar of opnieuw te registreren (publicKey blijft uniek). */
 export async function revokeTrustedDevice(userId: string, deviceId: string, actorId: string): Promise<boolean> {
-  // E2.4a: ook alle sessies die via dit toestel zijn aangemaakt gaan direct weg (zelfde transactie).
+  // E2.4a: ook alle sessies die via dit toestel zijn aangemaakt gaan direct weg — in dezelfde transactie, na het vergrendelen van gebruiker en toestel
+  // (vaste volgorde, zie deviceLocks.ts). Een gelijktijdige toestelinlog kan zo nooit na afloop een geldige sessie overhouden.
   const revoked = await prisma.$transaction(async (tx) => {
-    const result = await tx.trustedDevice.updateMany({ where: { id: deviceId, userId, revokedAt: null }, data: { revokedAt: new Date(), revokedById: actorId, loginEnabledAt: null } });
-    if (result.count === 1) await tx.session.deleteMany({ where: { deviceId, userId } });
-    return result.count === 1;
+    const lock = await lockUserThenDevice(tx, userId, deviceId);
+    await runHook("revokeAfterLock");
+    if (!lock.device || lock.device.userId !== userId || lock.device.revokedAt) return false;
+    await tx.trustedDevice.update({ where: { id: deviceId }, data: { revokedAt: new Date(), revokedById: actorId, loginEnabledAt: null } });
+    await tx.session.deleteMany({ where: { deviceId } });
+    return true;
   });
   if (revoked) await logSecurityEvent({ userId, actorUserId: actorId, type: "TRUSTED_DEVICE_REVOKED" });
   return revoked;

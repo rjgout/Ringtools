@@ -4,6 +4,7 @@ import { env } from "./env";
 import { generateRawToken, hashToken } from "./crypto";
 import { SESSION_TTL_MS } from "./auth";
 import { parseP256PublicKey, verifyP256Signature, TrustedDeviceError } from "./trustedDevices";
+import { lockUserThenDevice, runHook } from "./deviceLocks";
 
 /**
  * Wachtwoordloos inloggen met een vertrouwd toestel (E2.4a, vlag `NATIVE_DEVICE_LOGIN_ENABLED`, standaard UIT).
@@ -113,10 +114,13 @@ export async function confirmActivation(userId: string, installationId: string, 
 /** Zet wachtwoordloos inloggen voor een toestel uit en beëindigt de via dat toestel aangemaakte sessies (recente MFA door de aanroeper). */
 export async function disableDeviceLogin(userId: string, deviceId: string, actorId: string): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
-    const res = await tx.trustedDevice.updateMany({ where: { id: deviceId, userId, loginEnabledAt: { not: null } }, data: { loginEnabledAt: null } });
-    await tx.session.deleteMany({ where: { deviceId, userId } });
-    if (res.count === 1) await tx.securityEvent.create({ data: { userId, actorUserId: actorId, type: "TRUSTED_DEVICE_LOGIN_DISABLED" } });
-    return res.count === 1;
+    const lock = await lockUserThenDevice(tx, userId, deviceId);
+    await runHook("disableAfterLock");
+    if (!lock.device || lock.device.userId !== userId || !lock.device.loginEnabledAt) return false;
+    await tx.trustedDevice.update({ where: { id: deviceId }, data: { loginEnabledAt: null } });
+    await tx.session.deleteMany({ where: { deviceId } });
+    await tx.securityEvent.create({ data: { userId, actorUserId: actorId, type: "TRUSTED_DEVICE_LOGIN_DISABLED" } });
+    return true;
   });
 }
 
@@ -139,11 +143,11 @@ export async function loginWithDevice(input: { installationId: string; challenge
   const rawToken = generateRawToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   await prisma.$transaction(async (tx) => {
-    // Gebruiker én toestel vergrendelen en opnieuw controleren: een gelijktijdige intrekking/uitzetten/deactivering wint altijd.
-    const rows = await tx.$queryRaw<{ active: boolean; role: string }[]>`SELECT "active", "role"::text AS "role" FROM "User" WHERE "id" = ${d.userId} FOR UPDATE`;
-    const user = rows[0];
-    const fresh = await tx.trustedDevice.findUnique({ where: { id: d.id } });
-    if (!user || !user.active || user.role === "ADMIN" || !fresh || fresh.revokedAt || !fresh.loginEnabledAt) throw unavailable();
+    // Vaste volgorde: gebruiker, dan toestel (beide FOR UPDATE), en pas daarna de toestand beoordelen. Een gelijktijdige intrekking/uitzetten/reset
+    // wint altijd: wacht deze transactie, dan ziet ze daarna het ingetrokken toestel; was zij eerst, dan verwijdert de intrekking haar sessie.
+    const lock = await lockUserThenDevice(tx, d.userId, d.id);
+    await runHook("loginAfterLock");
+    if (!lock.user || !lock.user.active || lock.user.role === "ADMIN" || !lock.device || lock.device.revokedAt || !lock.device.loginEnabledAt) throw unavailable();
     const consumed = await tx.deviceLoginChallenge.updateMany({ where: { id: ch.id, consumedAt: null, expiresAt: { gt: new Date() }, failedAttempts: { lt: MAX_CHALLENGE_FAILURES } }, data: { consumedAt: new Date() } });
     if (consumed.count !== 1) throw new TrustedDeviceError(400, "De aanmelding is verlopen of ongeldig. Probeer het opnieuw.", "invalid-challenge");
     await tx.session.create({ data: { userId: d.userId, tokenHash: hashToken(rawToken), expiresAt, mfaAt: DEVICE_SESSION_MFA_AT, deviceId: d.id, userAgent: input.userAgent || null } });

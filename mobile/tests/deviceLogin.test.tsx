@@ -105,7 +105,7 @@ describe("Inlogscherm: Inloggen met Face ID", () => {
     const s = setup();
     await s.ready;
     render(<Login />);
-    const btn = await screen.findByRole("button", { name: "Inloggen met Face ID" });
+    const btn = await screen.findByRole("button", { name: "Inloggen met Face ID of toestelcode" });
     fireEvent.click(btn);
     await waitFor(() => expect(s.signInWithDevice).toHaveBeenCalledTimes(1));
     expect((s.api.requestCode as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
@@ -116,21 +116,21 @@ describe("Inlogscherm: Inloggen met Face ID", () => {
     await a.ready;
     render(<Login />);
     await screen.findByText(/authenticator-app/);
-    expect(screen.queryByRole("button", { name: "Inloggen met Face ID" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Inloggen met Face ID of toestelcode" })).toBeNull();
     expect(screen.getByLabelText("E-mailadres")).toBeTruthy();
     cleanup();
     const b = setup({ deviceLogin: false });
     await b.ready;
     render(<Login />);
     await screen.findByText(/authenticator-app/);
-    expect(screen.queryByRole("button", { name: "Inloggen met Face ID" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Inloggen met Face ID of toestelcode" })).toBeNull();
   });
 
   it("mislukte aanmelding toont een melding en laat de gebruiker op het inlogscherm (geen zwakkere terugval)", async () => {
     const s = setup({ signInWithDevice: async () => { throw new lib.DeviceLoginError("De verificatie met dit toestel is geannuleerd of mislukt. Er is niet ingelogd. Lukt het niet?", "cancelled"); } });
     await s.ready;
     render(<Login />);
-    fireEvent.click(await screen.findByRole("button", { name: "Inloggen met Face ID" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Inloggen met Face ID of toestelcode" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/Er is niet ingelogd/);
     expect(screen.getByLabelText("E-mailadres")).toBeTruthy();
     expect(s.api.requestCode).not.toHaveBeenCalled();
