@@ -68,6 +68,7 @@ export const storage = {
   /** Verwijzing naar de toestelsleutel (installatie-ID, tag); de privésleutel zelf verlaat nooit de beveiligde hardware. Blijft bestaan bij uitloggen. */
   getDeviceKey: () => get(DEVICE_KEY),
   setDeviceKey: (v: string) => set(DEVICE_KEY, v),
+  clearDeviceKey: () => remove(DEVICE_KEY),
   /** Wist de sessiegegevens; de installatie-ID en een nog niet afgemeld pushtoken blijven bewust bestaan. */
   async clearSession() {
     await Promise.all([TOKEN, RING, PUSH, MODE].map(remove));

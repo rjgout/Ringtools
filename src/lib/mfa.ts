@@ -3,7 +3,8 @@ import crypto from "crypto";
 import { prisma } from "./prisma";
 import { encryptSecret, decryptSecret, hashToken } from "./crypto";
 import { logSecurityEvent } from "./securityEvents";
-import { autoEnableMfaAfterFirstMethod, usableMethodCount } from "./autoMfa";
+import type { Prisma } from "@prisma/client";
+import { enableMfaIfFirstMethod, lockUserForEnrollment } from "./autoMfa";
 
 const ISSUER = "Ringtools";
 const PERIOD_SECONDS = 30;
@@ -152,10 +153,8 @@ export async function confirmTotpEnrollment(
   label: string,
   code: string,
   opts: { issueRecoveryCodes?: boolean } = {}
-): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; outcome: TotpOutcome }> {
+): Promise<{ ok: true; recoveryCodes: string[]; mfaAutoEnabled: boolean } | { ok: false; outcome: TotpOutcome }> {
   const credential = await prisma.totpCredential.findUnique({ where: { userId } });
-  const userRow = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-  const hadUsableMethodBefore = !userRow || (await usableMethodCount(userId, userRow.role)) > 0;
   const pendingValid =
     !!credential?.pendingSecretEncrypted && !!credential.pendingCreatedAt && Date.now() - credential.pendingCreatedAt.getTime() <= PENDING_SECRET_TTL_MS;
 
@@ -169,24 +168,30 @@ export async function confirmTotpEnrollment(
       await logSecurityEvent({ userId, type: locked ? "TOTP_LOCKED" : "TOTP_FAILED_ATTEMPT", detail: "Ongeldige code (opnieuw instellen)" });
       return { ok: false, outcome: locked ? "LOCKED" : "INVALID" };
     }
+    // Wisselen van secret, nieuwe herstelcodes en (bij een eerste methode) MFA inschakelen: één transactie met rijvergrendeling.
     // Alleen als de instelling nu niet vergrendeld is (zelfde voorwaarde als bij het claimen van een code).
-    const swapped = await prisma.totpCredential.updateMany({
-      where: { userId, OR: [{ lockedUntil: null }, { lockedUntil: { lte: new Date() } }] },
-      data: {
-        secretEncrypted: credential.pendingSecretEncrypted as string,
-        pendingSecretEncrypted: null,
-        pendingCreatedAt: null,
-        confirmedAt: new Date(),
-        lastUsedCounter: currentCounter() + delta,
-        failedAttempts: 0,
-        lockedUntil: null,
-      },
+    const done = await prisma.$transaction(async (tx) => {
+      const lock = await lockUserForEnrollment(tx, userId);
+      if (!lock) return null;
+      const swapped = await tx.totpCredential.updateMany({
+        where: { userId, OR: [{ lockedUntil: null }, { lockedUntil: { lte: new Date() } }] },
+        data: {
+          secretEncrypted: credential.pendingSecretEncrypted as string,
+          pendingSecretEncrypted: null,
+          pendingCreatedAt: null,
+          confirmedAt: new Date(),
+          lastUsedCounter: currentCounter() + delta,
+          failedAttempts: 0,
+          lockedUntil: null,
+        },
+      });
+      if (swapped.count !== 1) return null;
+      const recoveryCodes = opts.issueRecoveryCodes === false ? [] : await regenerateRecoveryCodes(userId, tx);
+      await tx.securityEvent.create({ data: { userId, type: "TOTP_ENROLLED" } });
+      return { recoveryCodes, mfaAutoEnabled: await enableMfaIfFirstMethod(tx, userId, lock, "totp") };
     });
-    if (swapped.count !== 1) return { ok: false, outcome: "LOCKED" };
-    const recoveryCodes = opts.issueRecoveryCodes === false ? [] : await regenerateRecoveryCodes(userId);
-    await logSecurityEvent({ userId, type: "TOTP_ENROLLED" });
-    await autoEnableMfaAfterFirstMethod(userId, hadUsableMethodBefore);
-    return { ok: true, recoveryCodes };
+    if (!done) return { ok: false, outcome: "LOCKED" };
+    return { ok: true, ...done };
   }
 
   // Eerste inschrijving: bevestig het (onbevestigde) secret van de rij zelf. Een al
@@ -195,11 +200,18 @@ export async function confirmTotpEnrollment(
   const outcome = await verifyTotpCode(userId, label, code);
   if (outcome !== "OK") return { ok: false, outcome };
 
-  await prisma.totpCredential.update({ where: { userId }, data: { confirmedAt: new Date() } });
-  const recoveryCodes = opts.issueRecoveryCodes === false ? [] : await regenerateRecoveryCodes(userId);
-  await logSecurityEvent({ userId, type: "TOTP_ENROLLED" });
-  await autoEnableMfaAfterFirstMethod(userId, hadUsableMethodBefore);
-  return { ok: true, recoveryCodes };
+  const done = await prisma.$transaction(async (tx) => {
+    const lock = await lockUserForEnrollment(tx, userId);
+    if (!lock) return null;
+    // Alleen bevestigen als hij nog niet bevestigd is (gelijktijdige bevestigingen: precies één wint).
+    const confirmed = await tx.totpCredential.updateMany({ where: { userId, confirmedAt: null }, data: { confirmedAt: new Date() } });
+    if (confirmed.count !== 1) return null;
+    const recoveryCodes = opts.issueRecoveryCodes === false ? [] : await regenerateRecoveryCodes(userId, tx);
+    await tx.securityEvent.create({ data: { userId, type: "TOTP_ENROLLED" } });
+    return { recoveryCodes, mfaAutoEnabled: await enableMfaIfFirstMethod(tx, userId, lock, "totp") };
+  });
+  if (!done) return { ok: false, outcome: "INVALID" };
+  return { ok: true, ...done };
 }
 
 /** Verwijdert de TOTP-instelling en alle herstelcodes van een gebruiker (beheer door de gebruiker zelf of reset door webmin). */
@@ -232,12 +244,14 @@ function randomRecoveryCode(): string {
  * codes worden teruggegeven zodat de aanroeper ze één keer kan tonen; alleen
  * de hash wordt opgeslagen.
  */
-export async function regenerateRecoveryCodes(userId: string): Promise<string[]> {
+export async function regenerateRecoveryCodes(userId: string, tx?: Prisma.TransactionClient): Promise<string[]> {
   const codes = Array.from({ length: RECOVERY_CODE_COUNT }, randomRecoveryCode);
-  await prisma.$transaction([
-    prisma.recoveryCode.deleteMany({ where: { userId } }),
-    prisma.recoveryCode.createMany({ data: codes.map((code) => ({ userId, codeHash: hashToken(code) })) }),
-  ]);
+  const write = async (c: Prisma.TransactionClient) => {
+    await c.recoveryCode.deleteMany({ where: { userId } });
+    await c.recoveryCode.createMany({ data: codes.map((code) => ({ userId, codeHash: hashToken(code) })) });
+  };
+  if (tx) await write(tx);
+  else await prisma.$transaction(write);
   return codes;
 }
 

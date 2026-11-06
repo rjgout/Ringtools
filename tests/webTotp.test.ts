@@ -461,4 +461,23 @@ describe("E2.1 – TOTP: claim versus lockout, herstelcodes begrenzen", () => {
     expect(res.message).toContain("15 minuten");
     expect(await prisma.session.count({ where: { userId: user.id, mfaAt: { not: null } } })).toBe(0);
   });
+
+  it("E2.3: webmin-reset trekt actieve vertrouwde toestellen in en verwijdert openstaande koppelingen", async () => {
+    const admin = await createTestUser("ADMIN", "Webmin Toestel");
+    const target = await createTestUser("HOGERAAD", "Doel Toestel");
+    const other = await createTestUser("HOGERAAD", "Ander Toestel");
+    await addPasskey(target.id);
+    for (const u of [target, other]) {
+      await prisma.trustedDevice.create({ data: { userId: u.id, label: "x", platform: "IOS", installationId: `inst-${u.id}-aaaaaaaaaaaa`, publicKey: `pk-${u.id}` } });
+      await prisma.mfaPairing.create({ data: { userId: u.id, codeHash: `h-${u.id}`, expiresAt: new Date(Date.now() + 60000) } });
+    }
+    await fullFor(admin.id);
+    const res = await actions.resetUserMfaAction(null, form({ userId: target.id, identityChecked: "yes", confirmEmail: target.email }));
+    expect(res.ok).toBe(true);
+    expect((await prisma.trustedDevice.findFirstOrThrow({ where: { userId: target.id } })).revokedAt).not.toBeNull();
+    expect(await prisma.mfaPairing.count({ where: { userId: target.id } })).toBe(0);
+    // andere gebruiker onaangetast
+    expect((await prisma.trustedDevice.findFirstOrThrow({ where: { userId: other.id } })).revokedAt).toBeNull();
+    expect(await prisma.mfaPairing.count({ where: { userId: other.id } })).toBe(1);
+  });
 });

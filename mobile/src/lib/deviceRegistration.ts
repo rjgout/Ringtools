@@ -32,13 +32,17 @@ export async function registerThisDevice(api: ApiClient, rawCode: string, keys: 
   const installationId = randomHex(16);
   const tag = `nl.ringapeldoorn.ringtools.devicekey.${installationId}`;
   let created = false;
+  let stored = false;
   try {
     const claim = await api.claimDevicePairing(code);
     const publicKey = await keys.create(tag);
     created = true;
+    // Eerst lokaal vastleggen, DAARNA pas de serverregistratie afronden: lukt opslaan niet, dan ontstaat er op de server geen toestel.
+    await storage.setDeviceKey(JSON.stringify({ installationId, tag }));
+    stored = true;
     const signature = await keys.sign(tag, registrationMessage(claim.challenge, installationId));
     const platform = Capacitor.getPlatform() === "ios" ? "IOS" : "ANDROID";
-    const done = await api.completeDevicePairing({
+    await api.completeDevicePairing({
       registrationToken: claim.registrationToken,
       publicKey,
       signature,
@@ -46,10 +50,10 @@ export async function registerThisDevice(api: ApiClient, rawCode: string, keys: 
       platform,
       label: platform === "IOS" ? "iPhone" : "Android-toestel",
     });
-    await storage.setDeviceKey(JSON.stringify({ installationId, tag, deviceId: done.deviceId }));
     return { ok: true };
   } catch (err) {
     if (created) await keys.remove(tag).catch(() => undefined);
+    if (stored) await storage.clearDeviceKey().catch(() => undefined);
     if (err instanceof ApiRequestError) return { ok: false, message: err.message };
     if (err instanceof DeviceKeyError) return { ok: false, message: err.message };
     // Annuleren van de biometrie/toestelcode of een platformfout: generieke melding, nooit details van de plug-in tonen.

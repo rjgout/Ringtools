@@ -86,4 +86,17 @@ describe("Inloggen met e-mailcode + authenticator-app in de app", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/nog niet beschikbaar/);
     expect(finishMfaTotp).not.toHaveBeenCalled();
   });
+
+  it("Personal Team-build: passkey + TOTP → TOTP-stap (passkey is daar nooit beschikbaar, ook niet met een geregistreerde provider)", async () => {
+    (window as unknown as { __RINGTOOLS_BUILD__?: unknown }).__RINGTOOLS_BUILD__ = { profile: "personal-team" };
+    registerPasskeyProvider({ available: async () => true, authenticate: async () => { throw new Error("mag niet worden aangeroepen"); } } as never);
+    try {
+      const { api } = setup(["passkey", "totp"]);
+      await toTotpStep();
+      expect(await screen.findByLabelText("Code uit je authenticator-app")).toBeTruthy();
+      expect(api.passkeyOptions).not.toHaveBeenCalled();
+    } finally {
+      delete (window as unknown as { __RINGTOOLS_BUILD__?: unknown }).__RINGTOOLS_BUILD__;
+    }
+  });
 });

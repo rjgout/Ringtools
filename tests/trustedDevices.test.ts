@@ -176,6 +176,61 @@ describe("Vertrouwde toestellen – koppelen", () => {
   });
 });
 
+describe("Vertrouwde toestellen – grenzen onder gelijktijdigheid", () => {
+  it("gelijktijdige ongeldige bewijzen: de foutteller stopt exact op de limiet en daarna werkt ook een goed bewijs niet meer", async () => {
+    const u = await mfaUser();
+    const { code } = await createPairing(u.id);
+    const claim = await claimPairing(code);
+    const mine = keyPair();
+    const other = keyPair();
+    const installationId = crypto.randomBytes(16).toString("hex");
+    const bad = () =>
+      completePairing({ registrationToken: claim.registrationToken, publicKey: mine.spki, signature: sign(other.privateKey, registrationMessage(claim.challenge, installationId)), installationId, platform: "IOS", label: "x" }).catch(() => "fout");
+    await Promise.all(Array.from({ length: 8 }, bad));
+    expect((await prisma.mfaPairing.findFirstOrThrow({ where: { userId: u.id } })).failedAttempts).toBe(3);
+    await expect(
+      completePairing({ registrationToken: claim.registrationToken, publicKey: mine.spki, signature: sign(mine.privateKey, registrationMessage(claim.challenge, installationId)), installationId, platform: "IOS", label: "x" })
+    ).rejects.toBeTruthy();
+    expect(await prisma.trustedDevice.count()).toBe(0);
+  });
+
+  it("verlopen claim (registratietoken) wordt geweigerd", async () => {
+    const u = await mfaUser();
+    const { code } = await createPairing(u.id);
+    const claim = await claimPairing(code);
+    await prisma.mfaPairing.updateMany({ where: { userId: u.id }, data: { claimExpiresAt: new Date(Date.now() - 1000) } });
+    const kp = keyPair();
+    const installationId = crypto.randomBytes(16).toString("hex");
+    await expect(
+      completePairing({ registrationToken: claim.registrationToken, publicKey: kp.spki, signature: sign(kp.privateKey, registrationMessage(claim.challenge, installationId)), installationId, platform: "IOS", label: "x" })
+    ).rejects.toMatchObject({ code: "invalid-registration" });
+  });
+
+  it("dezelfde sleutel in twee gelijktijdige registraties (zelfde of ander account): precies één slaagt", async () => {
+    const a = await mfaUser();
+    const b = await mfaUser();
+    const kp = keyPair();
+    const prep = async (userId: string) => {
+      const { code } = await createPairing(userId);
+      const claim = await claimPairing(code);
+      const installationId = crypto.randomBytes(16).toString("hex");
+      return () => completePairing({ registrationToken: claim.registrationToken, publicKey: kp.spki, signature: sign(kp.privateKey, registrationMessage(claim.challenge, installationId)), installationId, platform: "IOS", label: "x" });
+    };
+    const [fa, fb] = [await prep(a.id), await prep(b.id)];
+    const results = await Promise.allSettled([fa(), fb()]);
+    expect(results.filter((r) => r.status === "fulfilled").length).toBe(1);
+    expect(await prisma.trustedDevice.count()).toBe(1);
+  });
+
+  it("ingetrokken toestel: ook gelijktijdige handtekeningcontroles slagen niet meer na het intrekken", async () => {
+    const u = await mfaUser();
+    const r = await register(u.id);
+    await revokeTrustedDevice(u.id, r.deviceId, u.id);
+    const results = await Promise.all([1, 2, 3].map(() => verifyDeviceSignature(r.deviceId, "m", sign(r.kp.privateKey, "m"))));
+    expect(results.some(Boolean)).toBe(false);
+  });
+});
+
 describe("Vertrouwde toestellen – intrekken en handtekeningen", () => {
   it("ingetrokken toestel kan niet meer verifiëren en de sleutel kan niet opnieuw worden geregistreerd", async () => {
     const u = await mfaUser();

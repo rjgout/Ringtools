@@ -24,12 +24,13 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
   const providerReady = useSyncExternalStore(subscribePasskeyProvider, () => getPasskeyProvider() !== null);
   const [serverPasskeys, setServerPasskeys] = useState<boolean | undefined>(undefined);
   const [trustedDevices, setTrustedDevices] = useState(false);
+  const [serverTotp, setServerTotp] = useState(false);
 
   useEffect(() => {
     let active = true;
     Promise.resolve()
       .then(() => api.meta())
-      .then((meta) => { if (active) { setServerPasskeys(meta?.nativePasskeys === true); setTrustedDevices(meta?.trustedDevices === true); } })
+      .then((meta) => { if (active) { setServerPasskeys(meta?.nativePasskeys === true); setTrustedDevices(meta?.trustedDevices === true); setServerTotp(meta?.nativeTotpLogin === true); } })
       .catch(() => {});
     return () => { active = false; };
   }, [api]);
@@ -181,7 +182,7 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
         {providerReady && passkeysUsable(serverPasskeys, nativeCapabilities().limited) ? (
           <p className="muted">Heeft jouw account extra verificatie met een passkey? Na de inlogcode verifieer je dan met je passkey op dit toestel.</p>
         ) : (
-          <p className="muted">Accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd.</p>
+          <p className="muted">{serverTotp ? "Heeft jouw account een authenticator-app? Na de inlogcode vul je de code uit die app in. Accounts met alleen een passkey kunnen in de app nog niet inloggen; gebruik daarvoor voorlopig de webapp." : "Accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd."}</p>
         )}
       </form>
     </main>

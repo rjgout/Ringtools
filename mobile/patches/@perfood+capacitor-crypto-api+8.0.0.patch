@@ -1,0 +1,543 @@
+diff --git a/node_modules/@perfood/capacitor-crypto-api/Package.swift b/node_modules/@perfood/capacitor-crypto-api/Package.swift
+index 00d5b0c..09b415e 100644
+--- a/node_modules/@perfood/capacitor-crypto-api/Package.swift
++++ b/node_modules/@perfood/capacitor-crypto-api/Package.swift
+@@ -3,7 +3,7 @@ import PackageDescription
+ 
+ let package = Package(
+     name: "PerfoodCapacitorCryptoApi",
+-    platforms: [.iOS(.v16)],
++    platforms: [.iOS(.v15)],
+     products: [
+         .library(
+             name: "PerfoodCapacitorCryptoApi",
+diff --git a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/BiometryApi.java b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/BiometryApi.java
+index 73390b3..3d693d6 100644
+--- a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/BiometryApi.java
++++ b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/BiometryApi.java
+@@ -45,12 +45,12 @@ public class BiometryApi {
+     }
+ 
+     public boolean isBiometricsEnabled(int authenticationType) {
+-        Log.i("BiometryApi.isBiometricsEnabled", "authenticationType: " + authenticationType);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+         return this.getBiometricsStatus(authenticationType) == this.STATUS_SUCCESS;
+     }
+ 
+     public String getBiometricsStatus(int authenticationType) {
+-        Log.i("BiometryApi.getBiometricsStatus", "authenticationType: " + authenticationType);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+         BiometricManager biometricManager = BiometricManager.from(this.activity.getApplicationContext());
+         int canAuthenticate = biometricManager.canAuthenticate(authenticationType);
+         switch (canAuthenticate) {
+@@ -72,7 +72,7 @@ public class BiometryApi {
+             return manager.isDeviceSecure();
+         }
+ 
+-        Log.i("BiometryApi.isDevicePasscodeSet", "Android Version less than M: Biometrics Not Enabled");
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+         return false;
+     }
+ 
+@@ -110,13 +110,13 @@ public class BiometryApi {
+                 // do nada
+             }
+         }
+-        Log.i("BiometryApi.getAvailableHardware", "hardwareArray" + hardwareArray);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+         return hardwareArray;
+     }
+ 
+     // only works if BiometricManager.BIOMETRIC_SUCCESS
+     public void authenticate(int authenticationType, AuthenticationCallback authCallback) {
+-        Log.i("BiometryApi.authenticate", "authenticationType: " + authenticationType);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         FragmentActivity fragmentActivity = (FragmentActivity) this.activity;
+         Executor executor = ContextCompat.getMainExecutor(this.context);
+diff --git a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApi.java b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApi.java
+index fc26229..e17d363 100644
+--- a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApi.java
++++ b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApi.java
+@@ -61,7 +61,7 @@ public class CryptoApi {
+     }
+ 
+     public List<String> getTags(String algorithm) {
+-        Log.i("CryptoApi.getTags", algorithm);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         try {
+             KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+@@ -85,7 +85,7 @@ public class CryptoApi {
+     }
+ 
+     public String generateKey(String tag, String algorithm, String... type) {
+-        Log.i("CryptoApi.generateKey", tag + " " + algorithm + " " + type);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         // we do not support ecdh below android 12
+         if (algorithm.equalsIgnoreCase("ecdh") && Build.VERSION.SDK_INT < 31) {
+@@ -173,13 +173,13 @@ public class CryptoApi {
+     }
+ 
+     public String loadKey(String tag, String algorithm) {
+-        Log.i("CryptoApi.loadKey", tag + " " + algorithm);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         return this.getPublicKeyBase64(tag, algorithm);
+     }
+ 
+     public void deleteKey(String tag, String algorithm) {
+-        Log.i("CryptoApi.deleteKey", tag + " " + algorithm);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         try {
+             String label = this.getLabel(algorithm);
+@@ -194,7 +194,7 @@ public class CryptoApi {
+     }
+ 
+     public String sign(String tag, String data) throws InvalidKeyException {
+-        Log.i("CryptoApi.sign", tag + " " + data);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         try {
+             KeyStore.PrivateKeyEntry privateKeyEntry = this.getPrivateKeyEntry(tag, CryptoApi.LabelECDSA);
+@@ -216,7 +216,7 @@ public class CryptoApi {
+     }
+ 
+     public boolean verify(String foreignPublicKeyBase64, String data, String signatureBase64) {
+-        Log.i("CryptoApi.verify", foreignPublicKeyBase64 + " " + data + " " + signatureBase64);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         try {
+             PublicKey foreignPublicKey = loadPublicKeyFromBase64(foreignPublicKeyBase64);
+@@ -238,7 +238,7 @@ public class CryptoApi {
+     }
+ 
+     public JSObject encrypt(SecretKey secretKey, String plaintext) {
+-        Log.i("CryptoApi.encrypt", secretKey + " " + plaintext);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         try {
+             byte[] iv = new byte[IV_LENGTH];
+@@ -272,7 +272,7 @@ public class CryptoApi {
+     }
+ 
+     public String decrypt(SecretKey secretKey, String iv, String ciphertext) {
+-        Log.i("CryptoApi.decrypt", iv + " " + ciphertext);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         try {
+             byte[] ivBytes = Base64.decode(iv, Base64.DEFAULT);
+@@ -301,13 +301,13 @@ public class CryptoApi {
+     }
+ 
+     public SecretKey deriveSecret(String tag, String foreignPublicKeyBase64) throws InvalidKeyException {
+-        Log.i("CryptoApi.deriveSecret", tag + " " + foreignPublicKeyBase64);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         try {
+             KeyStore.PrivateKeyEntry privateKeyEntry = this.getPrivateKeyEntry(tag, CryptoApi.LabelECDH);
+ 
+             if (privateKeyEntry == null) {
+-                Log.i("CryptoApi.deriveSecret", "No private key entry found for tag. Generating new one...");
++                // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+                 this.generateKey(tag, "ecdh");
+                 privateKeyEntry = this.getPrivateKeyEntry(tag, CryptoApi.LabelECDH);
+                 if (privateKeyEntry == null) {
+diff --git a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/PasskeyApi.java b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/PasskeyApi.java
+index 3b954ba..58dcc40 100644
+--- a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/PasskeyApi.java
++++ b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/PasskeyApi.java
+@@ -35,7 +35,7 @@ public class PasskeyApi {
+     }
+ 
+     public void createPasskey(String requestJson, PluginCall call) {
+-        Log.i("PasskeyApi.createPasskey", requestJson);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         CreatePublicKeyCredentialRequest createRequest = new CreatePublicKeyCredentialRequest(
+             requestJson, // JSON WebAuthn CreateOptions
+@@ -61,7 +61,7 @@ public class PasskeyApi {
+                         try {
+                             CreatePublicKeyCredentialResponse pubKeyResponse = (CreatePublicKeyCredentialResponse) response;
+                             String registrationJson = pubKeyResponse.getRegistrationResponseJson();
+-                            Log.i("PasskeyApi.createPasskey - responseJson:", registrationJson);
++                            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+                             JSONObject json = new JSONObject(registrationJson);
+                             JSObject result = JSObject.fromJSONObject(json);
+ 
+@@ -83,7 +83,7 @@ public class PasskeyApi {
+     }
+ 
+     public JSObject authenticateWithPasskey(String requestJson, PluginCall call) {
+-        Log.i("PasskeyApi.authenticateWithPasskey", requestJson);
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         GetPublicKeyCredentialOption publicKeyCredentialOption = new GetPublicKeyCredentialOption(
+             requestJson, // WebAuthnRequestOptions JSON
+@@ -109,7 +109,7 @@ public class PasskeyApi {
+                             androidx.credentials.PublicKeyCredential credential =
+                                 (androidx.credentials.PublicKeyCredential) response.getCredential();
+                             String credentialJson = credential.getAuthenticationResponseJson();
+-                            Log.i("PasskeyApi.authenticateWithPasskey - Received credential: ", credentialJson);
++                            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+                             JSONObject json = new JSONObject(credentialJson);
+                             JSObject result = JSObject.fromJSONObject(json);
+ 
+diff --git a/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/BiometryApi.swift b/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/BiometryApi.swift
+index 4b5b634..91af9b4 100644
+--- a/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/BiometryApi.swift
++++ b/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/BiometryApi.swift
+@@ -13,12 +13,12 @@ import LocalAuthentication
+     }
+ 
+     @objc public func isBiometricsEnabled(_ policy: LAPolicy) -> Bool {
+-        print("BiometryApi.isBiometricsEnabled", policy)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+         return getBiometricsStatus(policy) == Constants.STATUS_SUCCESS
+     }
+ 
+     @objc public func getBiometricsStatus(_ policy: LAPolicy) -> String {
+-        print("BiometryApi.getBiometricsStatus", policy)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         let context = LAContext()
+         var error: NSError?
+@@ -43,7 +43,7 @@ import LocalAuthentication
+     }
+ 
+     @objc public func getAvailableHardware() -> [String] {
+-        print("BiometryApi.getAvailableHardware")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         let context = LAContext()
+         var error: NSError?
+@@ -59,7 +59,7 @@ import LocalAuthentication
+     }
+ 
+     @objc public func isDevicePasscodeSet() -> Bool {
+-        print("BiometryApi.isDevicePasscodeSet")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         let context = LAContext()
+         var error: NSError?
+diff --git a/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/CryptoApi.swift b/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/CryptoApi.swift
+index 3b242e5..879785d 100644
+--- a/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/CryptoApi.swift
++++ b/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/CryptoApi.swift
+@@ -16,7 +16,7 @@ import LocalAuthentication
+     }
+ 
+     @objc public func getTags(_ algorithm: String) -> [String] {
+-        print("CryptoApi.getTags", algorithm)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         var list = [String]()
+ 
+@@ -45,7 +45,7 @@ import LocalAuthentication
+     }
+ 
+     @objc public func generateKey(_ tag: String, _ algorithm: String, _ type: String) -> String? {
+-        print("CryptoApi.generateKey", tag, algorithm, type)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         let publicKeyFound = loadKey(tag, algorithm)
+         if publicKeyFound != nil {
+@@ -59,7 +59,7 @@ import LocalAuthentication
+             accessControlFlags,
+             nil
+         ) else {
+-            print("CryptoApi.generateKey: Failed to create access control")
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+             return nil
+         }
+ 
+@@ -84,13 +84,13 @@ import LocalAuthentication
+     }
+ 
+     @objc public func loadKey(_ tag: String, _ algorithm: String) -> String? {
+-        print("CryptoApi.loadKey", tag, algorithm)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         return getPublicKeyBase64(tag, algorithm)
+     }
+ 
+     @objc public func deleteKey(_ tag: String, _ algorithm: String) {
+-        print("CryptoApi.deleteKey", tag, algorithm)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         let query: [String: Any] = [
+             kSecClass as String: kSecClassKey,
+@@ -102,7 +102,7 @@ import LocalAuthentication
+     }
+ 
+     @objc public func sign(_ tag: String, _ data: String) throws -> String {
+-        print("CryptoApi.sign", tag, data)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         let context = LAContext()
+         guard let privateKey = getPrivateKey(tag, "ecdsa", context) else {
+@@ -126,7 +126,7 @@ import LocalAuthentication
+     }
+ 
+     @objc public func verify(_ foreignPublicKeyBase64: String, _ data: String, _ signatureBase64: String) -> Bool {
+-        print("CryptoApi.verify", foreignPublicKeyBase64, data, signatureBase64)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         guard let foreignPublicKey = loadPublicKeyFromBase64(foreignPublicKeyBase64),
+               let signature = Data(base64Encoded: signatureBase64) else {
+@@ -142,7 +142,7 @@ import LocalAuthentication
+     }
+ 
+     @objc public func encrypt(_ tag: String, _ foreignPublicKey: String, _ plaintext: String) -> [String: String]? {
+-        print("CryptoApi.encrypt", tag, foreignPublicKey, plaintext)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         guard let symmetricKey = deriveSecret(tag, foreignPublicKey),
+               let plaintextData = plaintext.data(using: .utf8) else {
+@@ -160,13 +160,13 @@ import LocalAuthentication
+ 
+             return resultDict
+         } catch {
+-            print("CryptoApi.encrypt failed:", error)
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+             return nil
+         }
+     }
+ 
+     @objc public func decrypt(_ tag: String, _ foreignPublicKey: String, _ iv: String, _ ciphertext: String) -> String? {
+-        print("CryptoApi.decrypt", tag, foreignPublicKey, iv, ciphertext)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         guard let ivData = Data(base64Encoded: iv),
+               let combinedData = Data(base64Encoded: ciphertext),
+@@ -188,7 +188,7 @@ import LocalAuthentication
+             let decryptedData = try AES.GCM.open(sealedBox, using: symmetricKey)
+             return String(data: decryptedData, encoding: .utf8)
+         } catch {
+-            print("CryptoApi.decrypt failed:", error)
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+             return nil
+         }
+     }
+@@ -209,7 +209,7 @@ import LocalAuthentication
+             [:] as CFDictionary,
+             &keyExchangeError
+         ) as Data? else {
+-            print("❌ Fehler beim Ableiten des Shared Secrets")
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+             return nil
+         }
+ 
+diff --git a/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/CryptoApiPlugin.swift b/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/CryptoApiPlugin.swift
+index eec3ff3..99cdd17 100644
+--- a/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/CryptoApiPlugin.swift
++++ b/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/CryptoApiPlugin.swift
+@@ -162,7 +162,7 @@ public class CryptoApiPlugin: CAPPlugin, CAPBridgedPlugin {
+     }
+ 
+     @objc func isBiometricsEnabled(_ call: CAPPluginCall) {
+-        print("CryptoApiPlugin.isBiometricsEnabled")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         let type = call.getString("type") ?? ""
+ 
+@@ -174,7 +174,7 @@ public class CryptoApiPlugin: CAPPlugin, CAPBridgedPlugin {
+     }
+ 
+     @objc func getBiometricsStatus(_ call: CAPPluginCall) {
+-        print("CryptoApiPlugin.getBiometricsStatus")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         let type = call.getString("type") ?? ""
+ 
+@@ -186,7 +186,7 @@ public class CryptoApiPlugin: CAPPlugin, CAPBridgedPlugin {
+     }
+ 
+     @objc func getAvailableHardware(_ call: CAPPluginCall) {
+-        print("CryptoApiPlugin.getAvailableHardware")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         let hardware = biometry.getAvailableHardware()
+ 
+@@ -196,7 +196,7 @@ public class CryptoApiPlugin: CAPPlugin, CAPBridgedPlugin {
+     }
+ 
+     @objc func isDevicePasscodeSet(_ call: CAPPluginCall) {
+-        print("CryptoApiPlugin.isDevicePasscodeSet")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         let isDevicePasscodeSet = biometry.isDevicePasscodeSet()
+ 
+@@ -206,7 +206,7 @@ public class CryptoApiPlugin: CAPPlugin, CAPBridgedPlugin {
+     }
+ 
+     @objc func hasSecureHardware(_ call: CAPPluginCall) {
+-        print("CryptoApiPlugin.hasSecureHardware")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         call.resolve([
+             "hasSecureHardware": true // hardware is always secure on iOS devices
+diff --git a/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/PasskeyApi.swift b/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/PasskeyApi.swift
+index df7556d..04758ca 100644
+--- a/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/PasskeyApi.swift
++++ b/node_modules/@perfood/capacitor-crypto-api/ios/Sources/CryptoApiPlugin/PasskeyApi.swift
+@@ -76,12 +76,12 @@ public class PasskeyApi: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
+         let challenge = Data(base64url: options.challenge) ?? Data(options.challenge.utf8)
+         let userId = Data(base64url: options.userId) ?? Data(options.userId.utf8)
+ 
+-        print("🔐 Passkey Registration Starting")
+-        print("  rpId: \(options.rpId)")
+-        print("  userName: \(options.userName)")
+-        print("  userDisplayName: \(options.userDisplayName)")
+-        print("  challenge length: \(challenge.count) bytes")
+-        print("  userId length: \(userId.count) bytes")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         // All iOS 16+ symbol usages are inside this block
+         if #available(iOS 16.0, *) {
+@@ -113,7 +113,7 @@ public class PasskeyApi: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
+             controller.presentationContextProvider = self
+             self.controller = controller
+ 
+-            print("  Performing authorization request...")
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+             controller.performRequests()
+         } else {
+             // unreachable because of earlier guard, but keep for clarity
+@@ -131,9 +131,9 @@ public class PasskeyApi: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
+ 
+         let challenge = Data(base64url: options.challenge) ?? Data(options.challenge.utf8)
+ 
+-        print("🔓 Passkey Authentication Starting")
+-        print("  rpId: \(options.rpId)")
+-        print("  challenge length: \(challenge.count) bytes")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         if #available(iOS 16.0, *) {
+             let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: options.rpId)
+@@ -143,14 +143,14 @@ public class PasskeyApi: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
+ 
+             // If allowCredentials provided, attempt to decode and log them (iOS handles allowed credentials differently)
+             if let allowCredentials = options.allowCredentials, !allowCredentials.isEmpty {
+-                print("  Using specific credentials (count: \(allowCredentials.count))")
++                // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+                 // Convert credential IDs from base64url strings to Data (we don't attach them directly to request since platform API manages this)
+                 _ = allowCredentials.compactMap { dict -> Data? in
+                     guard let idString = dict["id"] else { return nil }
+                     return Data(base64url: idString)
+                 }
+             } else {
+-                print("  Using discoverable credentials (resident keys)")
++                // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+             }
+ 
+             // Set user verification preference, default to .preferred
+@@ -171,7 +171,7 @@ public class PasskeyApi: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
+             controller.presentationContextProvider = self
+             self.controller = controller
+ 
+-            print("  Performing authentication request...")
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+             controller.performRequests()
+         } else {
+             completion(.failure(PasskeyError.unsupported))
+@@ -180,7 +180,7 @@ public class PasskeyApi: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
+ 
+     // MARK: - ASAuthorizationControllerPresentationContextProviding
+     public func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+-        print("📱 Getting presentation anchor")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+            let window = windowScene.windows.first(where: { $0.isKeyWindow }) {
+             return window
+@@ -190,7 +190,7 @@ public class PasskeyApi: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
+ 
+     // MARK: - ASAuthorizationControllerDelegate
+     public func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
+-        print("✅ Authorization completed successfully")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         defer {
+             pendingCompletion = nil
+@@ -205,10 +205,10 @@ public class PasskeyApi: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
+             let attestationObject = registration.rawAttestationObject ?? Data()
+             let clientDataJSON = registration.rawClientDataJSON
+ 
+-            print("  Registration Success:")
+-            print("    credentialID length: \(credentialID.count) bytes")
+-            print("    attestationObject length: \(attestationObject.count) bytes")
+-            print("    clientDataJSON length: \(clientDataJSON.count) bytes")
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+             pendingCompletion?(.success([
+                 "id": credentialID.base64urlEncodedString(),
+@@ -233,12 +233,12 @@ public class PasskeyApi: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
+             let clientDataJSON = assertion.rawClientDataJSON
+             let userID = assertion.userID ?? Data()
+ 
+-            print("  Authentication Success:")
+-            print("    credentialID length: \(credentialID.count) bytes")
+-            print("    authenticatorData length: \(rawAuthenticatorData.count) bytes")
+-            print("    signature length: \(signature.count) bytes")
+-            print("    clientDataJSON length: \(clientDataJSON.count) bytes")
+-            print("    userID length: \(userID.count) bytes")
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
++            // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+             pendingCompletion?(.success([
+                 "id": credentialID.base64urlEncodedString(),
+@@ -255,12 +255,12 @@ public class PasskeyApi: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
+             return
+         }
+ 
+-        print("❌ Unexpected credential type")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+         pendingCompletion?(.failure(PasskeyError.unexpectedCredential))
+     }
+ 
+     public func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+-        print("❌ Authorization failed with error: \(error.localizedDescription)")
++        // Ringtools-patch: logging verwijderd (geen gevoelige gegevens in logs)
+ 
+         defer {
+             pendingCompletion = nil
+@@ -270,17 +270,17 @@ public class PasskeyApi: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
+         if let authError = error as? ASAuthorizationError {
+             switch authError.code {
+             case .canceled:
+-                print("  User canceled the request")
++                break // Ringtools-patch: logging verwijderd
+             case .failed:
+-                print("  Authorization failed")
++                break // Ringtools-patch: logging verwijderd
+             case .invalidResponse:
+-                print("  Invalid response from authenticator")
++                break // Ringtools-patch: logging verwijderd
+             case .notHandled:
+-                print("  Request not handled")
++                break // Ringtools-patch: logging verwijderd
+             case .unknown:
+-                print("  Unknown error")
++                break // Ringtools-patch: logging verwijderd
+             @unknown default:
+-                print("  Unhandled error case")
++                break // Ringtools-patch: logging verwijderd
+             }
+         }
+ 

@@ -282,6 +282,9 @@ export async function resetUserMfaAction(_prev: ActionResult | null, formData: F
     await tx.recoveryCode.deleteMany({ where: { userId: target.id } });
     await tx.totpCredential.deleteMany({ where: { userId: target.id } });
     await tx.session.deleteMany({ where: { userId: target.id } });
+    // E2.3: vertrouwde toestellen en openstaande koppelingen vervallen met de reset (in dezelfde transactie).
+    await tx.trustedDevice.updateMany({ where: { userId: target.id, revokedAt: null }, data: { revokedAt: new Date(), revokedById: admin.id } });
+    await tx.mfaPairing.deleteMany({ where: { userId: target.id } });
     await tx.securityEvent.create({
       data: {
         userId: target.id,

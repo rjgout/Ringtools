@@ -141,7 +141,8 @@ export async function completePairing(input: CompleteInput): Promise<{ deviceId:
   const key = parseP256PublicKey(input.publicKey);
   const proofOk = key !== null && verifyP256Signature(key, registrationMessage(pairing.challenge, input.installationId), input.signature);
   if (!proofOk) {
-    await prisma.mfaPairing.update({ where: { id: pairing.id }, data: { failedAttempts: { increment: 1 } } });
+    // Atomair tellen, begrensd op het maximum: gelijktijdige foute pogingen kunnen de teller nooit voorbij de limiet laten lopen.
+    await prisma.mfaPairing.updateMany({ where: { id: pairing.id, consumedAt: null, failedAttempts: { lt: MAX_CLAIM_FAILURES } }, data: { failedAttempts: { increment: 1 } } });
     throw new TrustedDeviceError(400, "Het bewijs van bezit van de sleutel is ongeldig.", "invalid-proof");
   }
   const publicKey = input.publicKey.replace(/\s+/g, "");
@@ -149,7 +150,7 @@ export async function completePairing(input: CompleteInput): Promise<{ deviceId:
   try {
     return await prisma.$transaction(async (tx) => {
       // Eenmalig verbruiken (bescherming tegen gelijktijdige verzoeken): precies één transactie wint.
-      const consumed = await tx.mfaPairing.updateMany({ where: { id: pairing.id, consumedAt: null, claimExpiresAt: { gt: new Date() } }, data: { consumedAt: new Date() } });
+      const consumed = await tx.mfaPairing.updateMany({ where: { id: pairing.id, consumedAt: null, claimExpiresAt: { gt: new Date() }, failedAttempts: { lt: MAX_CLAIM_FAILURES } }, data: { consumedAt: new Date() } });
       if (consumed.count !== 1) throw invalid;
       const rows = await tx.$queryRaw<{ role: string; mfaEnabled: boolean; active: boolean }[]>`SELECT "role"::text AS "role", "mfaEnabled", "active" FROM "User" WHERE "id" = ${pairing.userId} FOR UPDATE`;
       const user = rows[0];

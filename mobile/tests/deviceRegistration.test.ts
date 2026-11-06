@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../src/lib/api";
 import { nativeDeviceKeys, DeviceKeyError, type DeviceKeyProvider } from "../src/lib/deviceKey";
+import { storage } from "../src/lib/storage";
 import { registerThisDevice, registrationMessage, normalizeCode } from "../src/lib/deviceRegistration";
 
 function fakeKeys(over: Partial<DeviceKeyProvider> = {}): DeviceKeyProvider & { remove: ReturnType<typeof vi.fn> } {
@@ -81,5 +82,24 @@ describe("Toestel koppelen (adapter en orchestratie)", () => {
     expect(res.ok).toBe(false);
     expect(log).not.toHaveBeenCalled();
     log.mockRestore();
+  });
+
+  it("lokaal opslaan mislukt: er wordt GEEN serverregistratie afgerond en de sleutel wordt verwijderd", async () => {
+    const spy = vi.spyOn(storage, "setDeviceKey").mockRejectedValueOnce(new Error("keychain"));
+    const keys = fakeKeys();
+    const api = fakeApi();
+    const res = await registerThisDevice(api, "AAAA-BBBB-CCCC", keys);
+    expect(res.ok).toBe(false);
+    expect((api as never as { completeDevicePairing: ReturnType<typeof vi.fn> }).completeDevicePairing).not.toHaveBeenCalled();
+    expect(keys.remove).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it("afronden mislukt: de lokaal opgeslagen verwijzing wordt weer gewist", async () => {
+    const clear = vi.spyOn(storage, "clearDeviceKey");
+    const api = fakeApi({ completeDevicePairing: vi.fn(async () => { throw new ApiRequestError(400, "x", "invalid-proof"); }) });
+    await registerThisDevice(api, "AAAA-BBBB-CCCC", fakeKeys());
+    expect(clear).toHaveBeenCalledTimes(1);
+    clear.mockRestore();
   });
 });

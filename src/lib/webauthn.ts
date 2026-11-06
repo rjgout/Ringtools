@@ -10,7 +10,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { env } from "./env";
 import { logSecurityEvent } from "./securityEvents";
-import { autoEnableMfaAfterFirstMethod, usableMethodCount } from "./autoMfa";
+import { enableMfaIfFirstMethod, lockUserForEnrollment } from "./autoMfa";
 
 const RP_NAME = "Ringtools";
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -107,7 +107,7 @@ export async function verifyPasskeyRegistration(
   userId: string,
   response: RegistrationResponseJSON,
   deviceLabel?: string
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true; mfaAutoEnabled: boolean } | { ok: false; reason: string }> {
   const challenge = await takeChallenge(userId);
   if (!challenge) return { ok: false, reason: "Verificatie verlopen, probeer het opnieuw." };
 
@@ -129,21 +129,25 @@ export async function verifyPasskeyRegistration(
   }
 
   const { credential } = result.registrationInfo;
-  const userRow = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-  const hadUsableMethodBefore = !userRow || (await usableMethodCount(userId, userRow.role)) > 0;
-  await prisma.webAuthnCredential.create({
-    data: {
-      userId,
-      credentialId: credential.id,
-      publicKey: Buffer.from(credential.publicKey),
-      counter: BigInt(credential.counter),
-      transports: credential.transports?.join(","),
-      deviceLabel: deviceLabel?.trim() || null,
-    },
+  const label = deviceLabel?.trim() || null;
+  // Passkey aanmaken en (bij de eerste methode, vlag AUTO_ENABLE_MFA) MFA inschakelen: één transactie met rijvergrendeling.
+  const mfaAutoEnabled = await prisma.$transaction(async (tx) => {
+    const lock = await lockUserForEnrollment(tx, userId);
+    if (!lock) throw new Error("Account niet gevonden.");
+    await tx.webAuthnCredential.create({
+      data: {
+        userId,
+        credentialId: credential.id,
+        publicKey: Buffer.from(credential.publicKey),
+        counter: BigInt(credential.counter),
+        transports: credential.transports?.join(","),
+        deviceLabel: label,
+      },
+    });
+    await tx.securityEvent.create({ data: { userId, type: "PASSKEY_REGISTERED", detail: label ?? undefined } });
+    return enableMfaIfFirstMethod(tx, userId, lock, "passkey");
   });
-  await logSecurityEvent({ userId, type: "PASSKEY_REGISTERED", detail: deviceLabel?.trim() || undefined });
-  await autoEnableMfaAfterFirstMethod(userId, hadUsableMethodBefore);
-  return { ok: true };
+  return { ok: true, mfaAutoEnabled };
 }
 
 export async function startPasskeyAuthentication(userId: string) {

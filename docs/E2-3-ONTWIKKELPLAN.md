@@ -45,6 +45,8 @@ Ontwerp:
 - Alleen in dezelfde databasetransactie als de bevestiging (`confirmTotpEnrollment`, `verifyPasskeyRegistration`); rij-vergrendeling van de gebruiker.
 - Alleen voor niet-admin gebruikers die vóór deze bevestiging **geen** bruikbare methode hadden en `mfaEnabled=false`; een onvolledige inschrijving activeert niets.
 - Bestaande beveiligde accounts worden niet gewijzigd; bestaande gebruikers worden niet omgezet (alleen een nieuwe eerste bevestiging triggert).
+- Atomair: inschrijving, herstelcodes en inschakelen in één transactie met rijvergrendeling; fouten worden niet onderdrukt.
+- Uitsluitingsbeveiliging in code: TOTP-first schakelt alleen in met `NATIVE_TOTP_LOGIN_ENABLED`, passkey-first alleen met `NATIVE_PASSKEYS_ENABLED`; passkey-only gebruikers in de Personal Team-app blijven dus zonder automatische MFA.
 - Veiligheidsvoorwaarde: de vlag blijft uit totdat inloggen in de app met MFA (fase 1) op een echt toestel is bevestigd, anders sluit een bevestigde methode de gebruiker uit de app.
 - Auditgebeurtenis `MFA_VERIFIED`-achtig detail "automatisch ingeschakeld"; gebruikersmelding in de interface.
 
