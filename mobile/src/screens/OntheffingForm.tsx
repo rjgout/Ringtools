@@ -123,7 +123,6 @@ export function OntheffingForm() {
 
   return (
     <div className="stack">
-      <button type="button" className="btn btn-ghost" style={{ alignSelf: "flex-start" }} onClick={() => navigate("/ontheffingen")}>‹ Terug</button>
       <h1>{id ? "Concept ontheffing" : "Nieuwe ontheffing"}</h1>
       <span className="muted">Een concept is alleen voor jou zichtbaar en verstuurt niets. Naam handmatig invoeren; er wordt niets uit een ledenregister overgenomen.</span>
       {(loaded.loading && !loaded.data && !!id) && <Spinner />}

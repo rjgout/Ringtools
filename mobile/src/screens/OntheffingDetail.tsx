@@ -38,7 +38,6 @@ export function OntheffingDetail() {
 
   return (
     <div className="stack">
-      <button type="button" className="btn btn-ghost" style={{ alignSelf: "flex-start" }} onClick={() => navigate("/ontheffingen")}>‹ Terug</button>
       <div>
         <h1>{named[0]?.name ?? "Ontheffing"}</h1>
         <span className="muted">{v.function?.name}{v.unit ? ` · ${v.unit.kind === "GEMEENTE" ? "Gemeente" : "Wijk"} ${v.unit.name}` : ""}</span>

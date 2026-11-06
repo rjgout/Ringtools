@@ -2,7 +2,7 @@ import { Ontheffingen } from "./screens/Ontheffingen";
 import { OntheffingForm } from "./screens/OntheffingForm";
 import { OntheffingDetail } from "./screens/OntheffingDetail";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { HashRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { HashRouter, Route, Routes, useLocation, useNavigate, Navigate } from "react-router-dom";
 import { App as CapApp } from "@capacitor/app";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { AuthProvider, useAuth } from "./lib/auth";
@@ -14,7 +14,9 @@ import { useRouteInbox } from "./lib/useRouteInbox";
 import { AppLockGate, useAppLock } from "./components/AppLock";
 import { appLock, nativeLockSources } from "./lib/appLockSources";
 import { nativeCapabilities } from "./lib/buildProfile";
-import { ErrorState, Spinner, TabBar } from "./components/ui";
+import { ErrorState, NavBar, Spinner, TabBar } from "./components/ui";
+import { backAction, isTabRoot, navTitle, parentPath, titleOf } from "./lib/navigation";
+import { Beheer } from "./screens/Beheer";
 import { Login } from "./screens/Login";
 import { DeviceLink } from "./screens/DeviceLink";
 import { Home } from "./screens/Home";
@@ -74,7 +76,16 @@ function Shell() {
   const lockedRef = useRef(false);
   lockedRef.current = lock.phase !== "unlocked";
   // Vergrendeld: de terugknop doet niets in de (verborgen) app; de vergrendeling zelf stuurt de app naar de achtergrond.
-  useEffect(() => onBackButton(() => (lockedRef.current ? true : location.pathname !== "/" ? (navigate(-1), true) : false)), [location.pathname, navigate]);
+  /** Eén terugactie voor de navigatiebalk én de Android-terugknop: een stap terug in de app, of naar het bovenliggende scherm als er geen eerdere stap is. */
+  const hasHistory = location.key !== "default";
+  const goBack = useCallback((): boolean => {
+    const action = backAction(location.pathname, hasHistory);
+    if (!action) return false;
+    if (action.kind === "history") navigate(-1);
+    else navigate(action.to, { replace: true });
+    return true;
+  }, [location.pathname, hasHistory, navigate]);
+  useEffect(() => onBackButton(() => (lockedRef.current ? true : goBack())), [goBack]);
 
   const goTo = useCallback(
     (route: string) => {
@@ -148,6 +159,9 @@ function Shell() {
     <div className="shell">
       
       {!online && <div className="banner" role="status">Geen internetverbinding. Gegevens kunnen verouderd zijn.</div>}
+      {ring && !isTabRoot(location.pathname) && (
+        <NavBar title={navTitle(location.pathname)} backLabel={titleOf(parentPath(location.pathname))} onBack={() => void goBack()} />
+      )}
       <main className="page">
         {!ring ? (
           <div className="glass card"><strong>Geen ring</strong><p className="muted">Je account is nog niet aan een ring gekoppeld.</p></div>
@@ -163,8 +177,10 @@ function Shell() {
             <Route path="/ontheffingen/concept/:id" element={<OntheffingForm />} />
             <Route path="/ontheffingen/:id" element={<OntheffingDetail />} />
             <Route path="/open/:token" element={<OpenLink />} />
-            {ring.isRingManager && <Route path="/inrichting" element={<div className="stack"><h1>{ring.name}</h1><RingSetup ringId={ring.id} /></div>} />}
-            {ring.isRingManager && <Route path="/gebruikers" element={<div className="stack"><h1>{ring.name}</h1><UserManager ringId={ring.id} /></div>} />}
+            {ring.isRingManager && <Route path="/beheer" element={<Navigate to="/beheer/gebruikers" replace />} />}
+            {ring.isRingManager && <Route path="/beheer/:section" element={<Beheer />} />}
+            {ring.isRingManager && <Route path="/inrichting" element={<Navigate to="/beheer/inrichting" replace />} />}
+            {ring.isRingManager && <Route path="/gebruikers" element={<Navigate to="/beheer/gebruikers" replace />} />}
             <Route path="/meldingen" element={<Notifications onChanged={refreshUnread} />} />
             <Route path="/profiel" element={<Profile />} />
             <Route path="*" element={<Home />} />

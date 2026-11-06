@@ -62,9 +62,6 @@ export function CallingDetail() {
 
   return (
     <div className="stack">
-      <button className="btn btn-ghost" style={{ alignSelf: "flex-start" }} onClick={() => navigate(-1)}>
-        ‹ Terug
-      </button>
       {loading && !data && <Spinner />}
       {error && <ErrorState error={error} onRetry={reload} />}
       {data && (
@@ -103,9 +100,9 @@ export function CallingDetail() {
                   </div>
                   {p.stillInvolved && r.state !== "done" && r.state !== "upcoming" && (
                     <div className="row">
-                      {p.support === null && <button className="btn btn-ghost" disabled={busy} aria-label={`Herinner ${p.name}`} onClick={() => act(() => api.remind(id, p.userId), `${p.name} is herinnerd.`)}>Herinner</button>}
-                      {p.support === false && <button className="btn btn-ghost" disabled={busy} aria-label={`Vraag ${p.name} opnieuw`} onClick={() => act(() => api.reinvite(id, p.userId), `${p.name} is opnieuw om ondersteuning gevraagd.`)}>Opnieuw vragen</button>}
-                      <button className="btn btn-ghost" disabled={busy} aria-label={`Verwijder ${p.name} uit de ronde`} onClick={() => act(() => api.removeParticipant(id, p.userId), `${p.name} is uit de ronde gehaald.`)}>Uit ronde</button>
+                      {p.support === null && <button className="btn btn-ghost btn-small" disabled={busy} aria-label={`Herinner ${p.name}`} onClick={() => act(() => api.remind(id, p.userId), `${p.name} is herinnerd.`)}>Herinner</button>}
+                      {p.support === false && <button className="btn btn-ghost btn-small" disabled={busy} aria-label={`Vraag ${p.name} opnieuw`} onClick={() => act(() => api.reinvite(id, p.userId), `${p.name} is opnieuw om ondersteuning gevraagd.`)}>Opnieuw vragen</button>}
+                      <button className="btn btn-ghost btn-small" disabled={busy} aria-label={`Verwijder ${p.name} uit de ronde`} onClick={() => act(() => api.removeParticipant(id, p.userId), `${p.name} is uit de ronde gehaald.`)}>Uit ronde</button>
                     </div>
                   )}
                 </div>

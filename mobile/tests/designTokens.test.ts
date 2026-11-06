@@ -68,7 +68,7 @@ const pairs: [string, string, number][] = [
   ["tint", "bg-elevated", 4.5], ["tint", "bg", 4.5], ["on-tint", "tint", 4.5],
   ["on-success-fill", "success-fill", 4.5], ["on-danger-fill", "danger-fill", 4.5],
   ["success", "success-bg", 4.5], ["danger", "danger-bg", 4.5], ["warning-ink", "warning-bg", 4.5],
-  ["danger", "bg-elevated", 4.5], ["success", "bg-elevated", 4.5],
+  ["text", "segment-on", 4.5], ["danger", "bg-elevated", 4.5], ["success", "bg-elevated", 4.5],
 ];
 describe("Contrast per weergavemodus (WCAG)", () => {
   for (const [name, tokens] of Object.entries(modes)) {

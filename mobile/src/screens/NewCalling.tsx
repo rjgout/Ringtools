@@ -150,7 +150,6 @@ export function NewCalling() {
 
   return (
     <form className="stack" onSubmit={submit}>
-      <button type="button" className="btn btn-ghost" style={{ alignSelf: "flex-start" }} onClick={() => navigate(-1)}>‹ Terug</button>
       <h1>{draftId ? "Concept voorstel" : "Nieuw voorstel"}</h1>
       <span className="muted">Ring: {ring?.name}. Een concept is alleen zichtbaar voor ringstaf en verstuurt niets.</span>
       {(units.loading || members.loading) && !units.data && <Spinner />}

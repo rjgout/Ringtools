@@ -76,3 +76,16 @@ Wat afwijkt van de HIG (gemeten, niet geschat):
 - Kaarten zijn nu effen *inset grouped*-oppervlakken (`--bg-elevated`); glas (`.material`, tabbalk) is gereserveerd voor balken en overlays (V3 breidt dat uit). Merkkleur is systeemblauw (donkerder tintvariant voor 4,5:1).
 - `mobile/tests/designTokens.test.ts` bewaakt: geen kleurliteralen buiten `:root`, geen `transition: all`/`100vw`, geen zoomblokkade, spacing op het 4pt-grid, geen vaste px-lettergroottes, aanwezigheid van Reduce Motion/Transparency/Contrast en veilige schermranden, en WCAG-contrast (4,5:1; tekst 7:1) per modus (licht, donker, beide met verhoogd contrast). Deze test vond meteen een contrastfout in de eerste groene knop (4,40:1), die is hersteld.
 - Gesimuleerd gecontroleerd (Chromium, iPhone 14-viewport, Light en Dark). **Niet** getest: echte Dynamic Type, SF Pro, Increased Contrast, Reduce Transparency, safe areas rond het Dynamic Island, Android-systeemtekstgrootte. Die blijven open voor een toesteltest.
+
+## 8. Stand V2 (gebouwd): navigatie, tabbalk, knoppen en logica
+
+Gevonden logicafouten (met de correctie):
+1. **Android-terugknop kon "vast" zitten:** `navigate(-1)` na het openen van een melding of link (geen eerdere stap in de app) deed niets. Nu: `backAction()` (`mobile/src/lib/navigation.ts`) gaat een stap terug als die er is, anders naar het bovenliggende scherm; op een ander hoofdscherm naar het overzicht; op het overzicht naar de achtergrond.
+2. **Geen tab actief op detailschermen:** `/roepingen/:id` markeerde geen enkele tab. Nu hoort elk pad bij een hoofdgebied (`tabForPath`); detailschermen houden hun gebied actief.
+3. **Zes tabs voor ringbeheerders** (balk schoof horizontaal). HIG: maximaal vijf. Gebruikers en Inrichting zijn nu twee segmenten onder één tab "Beheer" (`/beheer/gebruikers`, `/beheer/inrichting`; de oude paden verwijzen door).
+4. **Vier verschillende, handmatige "‹ Terug"-knoppen** (drie met `navigate(-1)`, twee naar vaste paden). Nu één `NavBar` (terugknop met de naam van het vorige scherm, titel in het midden) voor alle diepere schermen, met dezelfde terugactie als de Android-terugknop.
+5. **Tabbalk zonder iconen, labels van 12 pt;** nu icoon + label (11 pt Caption 2), badges met toegankelijk label en "99+", opnieuw tikken op de actieve tab scrolt naar boven.
+
+Knoppen: `.btn` is nu een capsule (min. 48 px); hiërarchie primair (gevuld, tint) / secundair (`btn-ghost`: grijs gevuld, tekst in tint) / tertiair (`btn-plain`, alleen tekst); `btn-small` (44 px) voor knoppen binnen lijstrijen; ondersteunen/niet ondersteunen blijven groen/rood gevuld met contrast ≥ 4,5:1 in alle modi.
+
+Tests: `mobile/tests/navigation.test.tsx` (pure navigatielogica, tabbalk, navigatiebalk, segmenten) en uitgebreide `designTokens.test.ts`. Nog niet gebouwd: grote titel die inklapt bij scrollen, sheets met detents, swipe-acties, pull-to-refresh, haptiek (V2b/V3).
