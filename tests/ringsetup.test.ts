@@ -119,7 +119,14 @@ describe("Wijken en gemeenten", () => {
     expect((await call("GET", `/rings/${s.ring.id}/units`, { token: otherToken })).status).toBe(404);
     expect((await call("POST", `/rings/${s.ring.id}/units`, { token: otherToken, body: { kind: "WIJK", name: "Binnendringer" } })).status).toBe(404);
     expect((await call("POST", `/units/${unit.id}`, { token: otherToken, body: { name: "Gekaapt" } })).status).toBe(404);
-    expect((await call("GET", `/rings/${s.ring.id}/units`, { token: plainToken })).status).toBe(404);
+    // Ringstaf zonder beheerrechten mag de actieve eenheden lezen (nodig voor een nieuw voorstel; iPhone-acceptatietest 16/18), zonder
+    // verantwoordelijken; niet-staf (hoge raad) niet. Beheren blijft voorbehouden aan de ringbeheerder (hierboven en in tests/unitsRead.test.ts).
+    const staffRead = await call("GET", `/rings/${s.ring.id}/units`, { token: plainToken });
+    expect(staffRead.status).toBe(200);
+    expect(staffRead.body.units.map((u: { name: string }) => u.name)).toEqual(["Wijk Privé"]);
+    expect(staffRead.body.units[0].responsible).toBeNull();
+    const hogeraad = await createTestUser("HOGERAAD", "Hogeraad Zonder Staf", { ringId: s.ring.id });
+    expect((await call("GET", `/rings/${s.ring.id}/units`, { token: await login(hogeraad.id) })).status).toBe(404);
     expect((await call("GET", `/rings/${s.ring.id}/setup`, { token: plainToken })).status).toBe(404);
     expect((await call("GET", `/rings/${s.ring.id}/units`)).status).toBe(401);
     expect((await prisma.ringUnit.findUniqueOrThrow({ where: { id: unit.id } })).name).toBe("Wijk Privé");

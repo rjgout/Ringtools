@@ -10,9 +10,28 @@ import { assertCanSeeRingUsers, ringErrors, requireMembershipFor } from "./manag
 
 const opt = (v: unknown) => (v === null ? null : typeof v === "string" ? v : undefined);
 
+/**
+ * Wijken en gemeenten van een ring. Ringbeheerders (en de webmin) zien het volledige overzicht voor het beheer. Ringstaf zonder
+ * beheerrechten (ringpresidium, secretaris, administrateur) moet de actieve eenheden kunnen kiezen bij een nieuw voorstel: zij krijgen
+ * alleen de actieve eenheden met naam en soort, zonder verantwoordelijken of standaarduitvoerders. Lezen is geen beheerrecht; aanmaken
+ * en wijzigen blijven voorbehouden aan de ringbeheerder. Alle anderen krijgen hetzelfde "Niet gevonden" als voorheen.
+ */
 export async function unitsFor(auth: ApiAuth, ringId: string) {
-  await assertCanSeeRingUsers(auth.user, ringId);
-  return { units: await listUnits(ringId) };
+  try {
+    await assertCanSeeRingUsers(auth.user, ringId);
+    return { units: await listUnits(ringId) };
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 404) throw err;
+  }
+  const membership = await requireMembershipFor(auth.user.id, ringId); // actief lid van een actieve ring, anders 404
+  if (!isStaff(membership.role)) throw new ApiError(404, "Niet gevonden.", "not-found");
+  const units = (await listUnits(ringId)).filter((u) => u.active);
+  return {
+    units: units.map((u) => ({
+      id: u.id, kind: u.kind, name: u.name, active: true, responsibleStatus: "OK" as const, responsible: null,
+      defaults: { roepen: null, ondersteunen: null, aanstellen: null },
+    })),
+  };
 }
 
 export async function createUnitFor(auth: ApiAuth, ringId: string, body: Record<string, unknown>) {
