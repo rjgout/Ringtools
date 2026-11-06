@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     labels:
-      com.centurylinklabs.watchtower.enable: "false" # gecontroleerde releases: ook de database wordt niet automatisch bijgewerkt
+      com.centurylinklabs.watchtower.enable: "false" # PostgreSQL wordt nooit automatisch bijgewerkt (major-upgrades vragen een dump/restore)
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ringtools}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD}
@@ -25,10 +25,11 @@ services:
     # door: build: .
     image: ghcr.io/rjgout/ringtools:latest
     restart: unless-stopped
-    # Gecontroleerde releases (besluit eigenaar): Watchtower slaat deze service over. Bijwerken gebeurt bewust, na een back-up
-    # (docs/BACKUP-HERSTEL.md). Verwijder dit label pas als automatische back-up vóór de update en herstel aantoonbaar werken.
+    # Automatische updates (besluit eigenaar): Watchtower mag deze service bijwerken zodra er een nieuwe :latest op main is gepubliceerd.
+    # Het label "enable=true" is nodig als Watchtower met WATCHTOWER_LABEL_ENABLE=true draait (alleen gelabelde containers) en is
+    # onschadelijk in de standaardmodus (alles behalve "enable=false"). Zie docs/BACKUP-HERSTEL.md.
     labels:
-      com.centurylinklabs.watchtower.enable: "false"
+      com.centurylinklabs.watchtower.enable: "true"
     depends_on:
       db:
         condition: service_healthy

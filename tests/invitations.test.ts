@@ -444,6 +444,20 @@ describe("Robuustheid", () => {
 });
 
 
+/**
+ * Wacht deterministisch op een toestand in plaats van een vaste tijd (die onder CI-belasting te kort kan zijn). Begrensde polling met een
+ * duidelijke foutmelding bij een time-out.
+ */
+async function waitUntil<T>(description: string, probe: () => Promise<T | null | undefined | false>, timeoutMs = 10_000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await probe();
+    if (value) return value;
+    if (Date.now() >= deadline) throw new Error(`Time-out na ${timeoutMs} ms: ${description}`);
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
 describe("Betrouwbaar en idempotent (opnieuw) versturen", () => {
   const slowMail = (ms: number) => sendMailMock.mockImplementation(() => new Promise((r) => setTimeout(r, ms)));
   const expireCooldown = (id: string) => prisma.ringInvitation.update({ where: { id }, data: { sentAt: new Date(Date.now() - INVITATION_RESEND_COOLDOWN_MS - 1000) } });
@@ -470,8 +484,13 @@ describe("Betrouwbaar en idempotent (opnieuw) versturen", () => {
     const s = await setup();
     slowMail(150);
     const created = call("POST", `/rings/${s.ringA.id}/invitations`, { token: s.token, body: body() });
-    await new Promise((r) => setTimeout(r, 60));
-    const id = (await prisma.ringInvitation.findFirstOrThrow()).id;
+    // Wacht tot de eerste verzending aantoonbaar loopt: uitnodiging bestaat, claim is vastgelegd en sendMail is aangeroepen.
+    const id = (
+      await waitUntil("eerste verzending na aanmaken is gestart (claim vastgelegd en sendMail aangeroepen)", async () => {
+        const row = await prisma.ringInvitation.findFirst();
+        return row?.sendClaimedAt && sendMailMock.mock.calls.length === 1 ? row : null;
+      })
+    ).id;
     const during = await call("POST", `/invitations/${id}/resend`, { token: s.token });
     expect(during.body).toMatchObject({ sent: false, inProgress: true });
     expect((await created).body.sent).toBe(true);
@@ -569,8 +588,12 @@ describe("Betrouwbaar en idempotent (opnieuw) versturen", () => {
     sendMailMock.mockClear();
     sendMailMock.mockImplementationOnce(() => new Promise<void>((resolve) => { releaseFirst = resolve; })); // eerste verzending hangt
     const first = call("POST", `/invitations/${row.id}/resend`, { token: s.token });
-    await new Promise((r) => setTimeout(r, 100));
-    const firstMail = (await prisma.ringInvitation.findUniqueOrThrow({ where: { id: row.id } }));
+    // Deterministische synchronisatie op de werkelijke toestand (geen vaste wachttijd): de claim is vastgelegd én de (hangende) eerste
+    // sendMail is aangeroepen, dus `releaseFirst` is gezet.
+    const firstMail = await waitUntil("eerste verzending is gestart (claim vastgelegd en sendMail aangeroepen)", async () => {
+      const r = await prisma.ringInvitation.findUniqueOrThrow({ where: { id: row.id } });
+      return r.sendClaimedAt && sendMailMock.mock.calls.length === 1 ? r : null;
+    });
     expect(firstMail.sendClaimedAt).not.toBeNull();
 
     // Binnen de lease: een tweede verzoek verstuurt niets.

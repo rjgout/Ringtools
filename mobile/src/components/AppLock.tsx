@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { Capacitor } from "@capacitor/core";
 import type { LockController, LockFailure, LockPhase } from "../lib/appLock";
+import { getPrivacyDiagnostics } from "../lib/privacyScreen";
 import type { LockSources } from "../lib/appLockSources";
 
 export type LockApi = {
@@ -23,9 +25,39 @@ const MESSAGES: Record<LockFailure, string> = {
   lockout: "Te veel mislukte pogingen. Ontgrendel eerst je toestel met de toestelcode en probeer het daarna opnieuw.",
   unavailable: "Ontgrendelen is op dit toestel nu niet beschikbaar. Controleer de beveiligingsinstellingen van je toestel en probeer het opnieuw.",
   "no-device-security": "",
-  "screen-protection": "De schermbeveiliging (tegen schermafbeeldingen en inzage via de app-switcher) kon niet worden ingeschakeld. Ringtools blijft daarom vergrendeld. Probeer het opnieuw of start de app opnieuw.",
+  "screen-protection": "",
   error: "Ontgrendelen is niet gelukt. Probeer het opnieuw.",
 };
+
+/**
+ * Melding bij een mislukte schermbescherming, per platform correct: op iOS gaat het om de afscherming in de app-switcher (schermafbeeldingen
+ * zijn daar bewust niet geblokkeerd), op Android om schermafbeeldingen én de recente-apps-weergave.
+ */
+function protectionMessage(): string {
+  const base =
+    Capacitor.getPlatform() === "ios"
+      ? "De schermbeveiliging (afscherming van Ringtools in de app-switcher) kon niet worden ingeschakeld."
+      : "De schermbeveiliging (tegen schermafbeeldingen en inzage via recente apps) kon niet worden ingeschakeld.";
+  return `${base} Ringtools blijft daarom vergrendeld. Probeer het opnieuw of start de app opnieuw.`;
+}
+
+const DIAGNOSIS: Record<string, string> = {
+  "plugin-missing": "de beveiligingsmodule is niet in de app aanwezig",
+  "load-failed": "de beveiligingsmodule kon niet worden geladen",
+  "enable-failed": "de beveiligingsmodule gaf een fout",
+  timeout: "de beveiligingsmodule reageerde niet op tijd",
+};
+
+/** Veilige diagnostiek voor support: alleen een code, de duur en een korte foutnaam; geen gebruikersgegevens. */
+function ProtectionDiagnostics() {
+  const d = getPrivacyDiagnostics();
+  if (!d || d.ok) return null;
+  return (
+    <p className="muted" data-testid="lock-diagnostics">
+      Technische code: {d.code}{d.detail ? ` (${d.detail})` : ""}, {d.ms} ms — {DIAGNOSIS[d.code] ?? "onbekende oorzaak"}.
+    </p>
+  );
+}
 
 /** Neutraal vergrendelscherm: toont nooit namen, voorstellen, ontheffingen of andere vertrouwelijke informatie. */
 export function LockScreen({ phase, failure, onUnlock }: { phase: LockPhase; failure: LockFailure | null; onUnlock: () => void }) {
@@ -47,7 +79,8 @@ export function LockScreen({ phase, failure, onUnlock }: { phase: LockPhase; fai
         ) : (
           <p className="muted">Ringtools is vergrendeld. Ontgrendel met Face ID, je vingerafdruk of de toestelcode.</p>
         )}
-        {failure && !noSecurity && <p role="alert" className="error">{MESSAGES[failure]}</p>}
+        {failure && !noSecurity && <p role="alert" className="error">{failure === "screen-protection" ? protectionMessage() : MESSAGES[failure]}</p>}
+        {failure === "screen-protection" && <ProtectionDiagnostics />}
         <button className="btn btn-primary" onClick={onUnlock} disabled={busy}>
           {busy ? "Even geduld…" : noSecurity ? "Opnieuw controleren" : retry ? "Opnieuw proberen" : "Ontgrendelen"}
         </button>
