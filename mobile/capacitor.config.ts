@@ -17,6 +17,8 @@ const config: CapacitorConfig = {
     allowNavigation: [],
   },
   ios: { contentInset: "never", limitsNavigationsToAppBoundDomains: false },
+  // iOS-minimum is 18: voor `.iOS(.v18)` in het door Capacitor gegenereerde CapApp-SPM/Package.swift is swift-tools-version 6.0 nodig (standaard 5.9).
+  experimental: { ios: { spm: { swiftToolsVersion: "6.0" } } },
   android: { allowMixedContent: false, webContentsDebuggingEnabled: false },
   plugins: {
     // Native HTTP voor API-aanroepen (geen CORS-afhankelijkheid, geen cookies van de WebView).
