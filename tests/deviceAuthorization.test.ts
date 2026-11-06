@@ -136,3 +136,37 @@ describe("Toestelroutes: autorisatie op de server", () => {
     expect(await prisma.trustedDevice.count({ where: { userId: a.id, revokedAt: null } })).toBe(0);
   });
 });
+
+describe("Besluit eigenaar: weesapparaat na een verloren serverantwoord", () => {
+  it("blijft zichtbaar en intrekbaar, biedt zonder sleutel geen toegang en laat de gebruiker de inrichting opnieuw proberen", async () => {
+    const { listTrustedDevices, revokeTrustedDevice } = await import("@/lib/trustedDevices");
+    const { loginChallenge, loginWithDevice } = await import("@/lib/deviceLogin");
+    const a = await user();
+    const ta = (await createVerifiedSession(a.id)).rawToken;
+
+    // De server voltooide de inrichting, het antwoord ging verloren: de app kent dit toestel niet meer (sleutel is daar verwijderd).
+    const first = await enrolViaApi(ta, a.id);
+    expect((await call("/auth/device/enroll/complete", ta, first.body)).status).toBe(200);
+
+    // Zichtbaar (voor de gebruiker op het web) ...
+    const listed = await listTrustedDevices(a.id);
+    expect(listed).toHaveLength(1);
+
+    // ... zonder bezit van de privésleutel geen toegang (een handtekening van een andere sleutel faalt, ook met de juiste installatie-id)
+    const c = await loginChallenge(first.installationId!);
+    const forged = crypto.sign("sha256", Buffer.from("x"), { key: crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey, dsaEncoding: "der" }).toString("base64");
+    await expect(loginWithDevice({ installationId: first.installationId!, challengeId: c.challengeId, signature: forged })).rejects.toBeTruthy();
+    expect(await prisma.session.count({ where: { userId: a.id, deviceId: { not: null } } })).toBe(0);
+
+    // De gebruiker kan opnieuw proberen (nieuwe sleutel en installatie) ...
+    const second = await enrolViaApi(ta, a.id);
+    expect((await call("/auth/device/enroll/complete", ta, second.body)).status).toBe(200);
+    expect(await prisma.trustedDevice.count({ where: { userId: a.id, revokedAt: null } })).toBe(2);
+
+    // ... en het wees-toestel is intrekbaar, waarna het nooit meer bruikbaar is.
+    const orphan = await prisma.trustedDevice.findFirstOrThrow({ where: { userId: a.id, installationId: first.installationId } });
+    expect(await revokeTrustedDevice(a.id, orphan.id, a.id)).toBe(true);
+    await expect(loginChallenge(first.installationId!)).rejects.toBeTruthy();
+    expect(await prisma.trustedDevice.count({ where: { userId: a.id, revokedAt: null } })).toBe(1);
+  });
+});

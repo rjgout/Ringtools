@@ -120,3 +120,23 @@ describe("Uitvoering: gelijktijdig afronden en verwerken", () => {
     expect(rows.map((r) => r.userId).sort()).toEqual([p1.id, p2.id].sort());
   });
 });
+
+describe("Besluit eigenaar: een gesloten ronde blijft gesloten", () => {
+  it("na presidiumakkoord kan een (negatieve) reactie de beslissing niet meer wijzigen; stemmen, status en historie blijven ongewijzigd", async () => {
+    const p1 = await createTestUser("RINGPRESIDIUM", "President Een");
+    const p2 = await createTestUser("RINGPRESIDIUM", "President Twee");
+    const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: p1.id });
+    await castVote({ callingId: calling.id, userId: p1.id, support: true });
+    await castVote({ callingId: calling.id, userId: p2.id, support: true });
+    const before = await prisma.calling.findUniqueOrThrow({ where: { id: calling.id } });
+    expect(before.status).toBe("PRESIDIUM_APPROVED");
+    const votesBefore = await prisma.vote.findMany({ where: { callingId: calling.id }, orderBy: { userId: "asc" } });
+
+    await expect(castVote({ callingId: calling.id, userId: p1.id, support: false })).rejects.toThrow(/geen ondersteuningsronde open/);
+
+    const after = await prisma.calling.findUniqueOrThrow({ where: { id: calling.id } });
+    expect(after.status).toBe("PRESIDIUM_APPROVED");
+    expect(after.presidiumApprovedAt?.getTime()).toBe(before.presidiumApprovedAt?.getTime());
+    expect(await prisma.vote.findMany({ where: { callingId: calling.id }, orderBy: { userId: "asc" } })).toEqual(votesBefore);
+  });
+});
