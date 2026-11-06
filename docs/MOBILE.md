@@ -32,7 +32,7 @@ Android-terugknop, veilige schermranden, dark mode, native statusbar/splash/toet
 - **Gepland (ontwerp):** hardwaregebonden sessietoken (stap 2) en vertrouwd-toestel-goedkeuring (number matching) voor web-MFA: [`WEB-MFA-ONTWERP.md`](WEB-MFA-ONTWERP.md).
 
 ### Nog niet geïmplementeerd (bewust)
-- Native passkeys, uitnodigingsprocedure en ontheffingen in de app: zie `docs/MIGRATIE-APP-ONLY.md` (Fasen C–D). _Fase B is gerealiseerd_ (gebruikers- en ringbeheer, webmin-login met TOTP, herverificatie): nog op een fysiek toestel te testen.
+- Native passkeys, uitnodigingsprocedure en ontheffingen in de app: zie `docs/MIGRATIE-APP-ONLY.md` (Fasen C–D). _Fase B is gerealiseerd_ (gebruikers- en ringbeheer, [webmin-login met TOTP: later verwijderd, systeembeheer is uitsluitend via de website], herverificatie): nog op een fysiek toestel te testen.
 - _Fase A is gerealiseerd_ (nieuw voorstel, verantwoordelijken, herinneren, opnieuw vragen, ronde-deelnemers, taken, verwerken, verwijderen): nog op een fysiek toestel te testen.
 - Passkeys/WebAuthn in de app en inloggen voor gebruikers met passkey-verificatie of het beheerdersaccount: gebruik voorlopig de webapp. Er is **geen** advies om MFA uit te schakelen. Plan en tests: [`docs/PASSKEYS-NATIVE.md`](PASSKEYS-NATIVE.md).
 - Biometrische ontgrendeling, offline cache van voorstellen, native delen in de UI (plugin is aanwezig, nog niet gebruikt).
@@ -182,7 +182,7 @@ Eigenaar doet handmatig, **vóór** de eerste upload:
 Zie de lijst onderaan `docs/STORE-PRIVACY.md` ("Handmatige acceptatietests").
 
 ## Ontheffingen (API, Fase C4)
-Alle routes onder `/api/mobile/v1`, bearer-sessie met MFA-gate; webmin krijgt overal 403.
+Alle routes onder `/api/mobile/v1`, bearer-sessie met MFA-gate; webmin krijgt overal 403. **Elke `/admin/…`-route is gesloten (410 `admin-web-only`): systeembeheer gebeurt uitsluitend via de website.**
 - `GET/POST /ontheffingen?ring=` (lijst / nieuw concept), `GET/POST /ontheffingen/:id` (weergave / concept wijzigen), `POST /ontheffingen/:id/submit` (idempotent), `/delete` (bevestiging verplicht), `/vote`, `/release` (idempotent),
   `/group-decision` (presidium: `presentUserIds` verplicht), `/review` (openstaand dossier aanhouden), `POST /ontheffingen/persons/:pid/{inform|announce|process|rename}` (`announce` vereist `thanksOffered: boolean`).
 - Een betrokkene, een niet-deelnemer, een lid van een andere ring en een concept van iemand anders krijgen exact hetzelfde antwoord (403) als bij een onbestaand dossier.
@@ -192,7 +192,7 @@ Alle routes onder `/api/mobile/v1`, bearer-sessie met MFA-gate; webmin krijgt ov
 `POST /callings/:id/group-decision` (fase `PRESIDIUM`): `presentUserIds` (leden van het ringpresidium die het besluit namen) is verplicht; secretaris/administrateur registreren alleen.
 
 ## Uitnodigingen en native MFA (C5)
-- Beheer (bearer, ringbeheerder eigen ring; webmin via `/admin/...`; verse herverificatie vereist): `GET/POST /rings/:id/invitations`, `POST /invitations/:id` (wijzigen), `/invitations/:id/resend`, `/invitations/:id/revoke`. De lijst bevat nooit token of code.
+- Beheer (bearer, ringbeheerder eigen ring; verse herverificatie vereist): `GET/POST /rings/:id/invitations`, `POST /invitations/:id` (wijzigen), `/invitations/:id/resend`, `/invitations/:id/revoke`. De lijst bevat nooit token of code.
 - Ontvanger (geen sessie): `POST /invitations/preview {token}` en `POST /invitations/activate {token}` of `{email, code}`. Het token staat in de body, nooit in de URL. Antwoord: `{ ok, email, ringName, mfaRequired, signedIn }`. Zonder verplichte MFA bevat het antwoord direct een gewone volledige sessie (`token`, `expiresAt`, plus `user/rings/pendingCount` zoals bij een login; alleen in de JSON-respons, `no-store`); met verplichte MFA of zonder expliciet `issueSession:true` (onder andere bij oudere apps en als er al iemand is ingelogd) is `signedIn:false` en geen token. De app bewaart het token in Keychain/Keystore en gaat na een korte bevestiging naar het overzicht.
 - Link in de uitnodigingsmail: `https://<host>/uitnodiging/<token>` (Universal Link/App Link; AASA en `AndroidManifest.xml` bevatten het pad `/uitnodiging/`; `check:native-config` bewaakt dat). Zonder werkende link: handmatige invoer van e-mailadres + activeringscode in de app.
 - Native passkeys: plug-in `@capawesome/capacitor-passkeys` 0.1.2 (exact gepind) achter `PasskeyProvider`; `cap sync` voegt alleen de plug-in toe aan de Gradle-/SPM-bestanden. In `App.entitlements` (Debug/Release, niet Personal Team) staat naast `applinks:` nu `webcredentials:<host>`. Functievlag `NATIVE_PASSKEYS_ENABLED`, standaard uit: `POST /auth/login` geeft voor MFA-accounts `{ mfaRequired, pendingToken }`, daarna `/auth/mfa/passkey/options|verify` en `/auth/mfa/cancel`; zie `docs/PASSKEYS-NATIVE.md`.
@@ -200,7 +200,7 @@ Alle routes onder `/api/mobile/v1`, bearer-sessie met MFA-gate; webmin krijgt ov
 ## Kerkelijke functies en catalogus (C4.5)
 - Gebruikersbeheer (`/rings/:id/users`, `/memberships/:id`) kent `churchFunctionCode` (functie, los van de Ringtools-rol) en `appointAuthority` (machtiging: alleen `AANGEWEZEN_RAADGEVER` bij eerste/tweede raadgever en `AANGEWEZEN_HOGERAADSLID` bij hogeraadslid; `RINGPRESIDENT` wordt geweigerd: de functie volstaat).
   Zonder `churchFunctionCode` blijft de bestaande functie behouden.
-- `GET /catalog/callings` (ringstaf en ringbeheerders van de eigen ring) en `GET /admin/catalog/callings?ring=` (webmin): alleen-lezen catalogus met procedure, bevoegdheden, steunverlening, aanstellingsplicht, handboek en controlepunten.
+- `GET /catalog/callings` (ringstaf en ringbeheerders van de eigen ring) (alleen-lezen catalogus met procedure, bevoegdheden, steunverlening, aanstellingsplicht, handboek en controlepunten.
 - Concept-voorstellen: `suggestions.roepen/aanstellen` bevat `source` (`UNIT_STANDAARD`, `UNIT_VERANTWOORDELIJKE`, `FUNCTIE_RINGPRESIDENT`, `FUNCTIE_ENIGE_BEVOEGDE`) en `basis`; `eligible.*` bevat uitsluitend bevoegde leden.
 
 

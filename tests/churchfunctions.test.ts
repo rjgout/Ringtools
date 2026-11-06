@@ -343,13 +343,10 @@ describe("Catalogus-API voor het overzicht onder Inrichting", () => {
     const other = await setup();
     expect((await call("GET", `/catalog/callings?ring=${other.ring.id}`, { token: s.token })).status).toBe(404);
 
+    // Systeembeheer (webmin) gebruikt de catalogus niet via de app: de gewone route weigert de beheerderssessie en /admin is gesloten.
     const admin = await createTestUser("ADMIN", "Webmin Catalogus");
     const adminToken = await login(admin.id);
-    const viaAdmin = await call("GET", `/admin/catalog/callings?ring=${s.ring.id}`, { token: adminToken });
-    expect(viaAdmin.status).toBe(200);
-    expect(viaAdmin.body.callings.length).toBeGreaterThan(80);
-    expect((await call("GET", `/admin/catalog/callings?ring=onbestaand`, { token: adminToken })).status).toBe(404);
-    expect((await call("GET", `/admin/catalog/callings?ring=${s.ring.id}`, { token: s.token })).status).toBe(403); // webmin- en gebruikers-API blijven gescheiden
+    expect((await call("GET", `/admin/catalog/callings?ring=${s.ring.id}`, { token: adminToken })).status).toBe(410);
     expect((await call("GET", `/catalog/callings?ring=${s.ring.id}`, { token: adminToken })).status).toBe(403);
   });
 

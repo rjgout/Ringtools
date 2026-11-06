@@ -306,30 +306,56 @@ export type InvitationView = {
   expiresAt: string;
   canResend: boolean;
   canRevoke: boolean;
+  /** Vroegste moment waarop opnieuw versturen weer mag (wachttijd na een verzending); null als dat nu kan of niet van toepassing is. */
+  resendAvailableAt: string | null;
+  /** Waarom opnieuw versturen niet (meer) kan terwijl de uitnodiging nog openstaat. */
+  resendBlockedReason: "LIMIET" | null;
 };
+
+type InvitationRow = Awaited<ReturnType<typeof prisma.ringInvitation.findMany>>[number];
+
+/** Gedeelde statusberekening voor de uitnodigingenlijst en de gebruikerslijst. Bevat nooit token of code. */
+export function summarizeInvitation(r: InvitationRow, now = new Date()) {
+  const status = invitationStatus(r, now);
+  const open = status !== "GEACTIVEERD" && status !== "INGETROKKEN";
+  const limitReached = r.sendCount >= INVITATION_MAX_SENDS;
+  const cooldownEnds = r.sentAt ? new Date(r.sentAt.getTime() + INVITATION_RESEND_COOLDOWN_MS) : null;
+  return {
+    status,
+    sentAt: r.sentAt?.toISOString() ?? null,
+    expiresAt: r.expiresAt.toISOString(),
+    canResend: open && !limitReached,
+    canRevoke: open,
+    resendAvailableAt: open && !limitReached && cooldownEnds && cooldownEnds.getTime() > now.getTime() ? cooldownEnds.toISOString() : null,
+    resendBlockedReason: open && limitReached ? ("LIMIET" as const) : null,
+  };
+}
 
 /** Lijst voor de beheerder. Bevat nooit token of code. Alleen aanroepen na `assertCanManageRing`. */
 export async function listInvitations(ringId: string): Promise<InvitationView[]> {
   const rows = await prisma.ringInvitation.findMany({ where: { ringId }, orderBy: { createdAt: "desc" }, take: 200 });
   const now = new Date();
-  return rows.map((r) => {
-    const status = invitationStatus(r, now);
-    return {
-      id: r.id,
-      name: r.name,
-      email: r.email,
-      role: r.role,
-      roleLabel: ROLE_LABELS[r.role] ?? r.role,
-      churchFunction: r.churchFunction,
-      churchFunctionCode: r.churchFunctionCode,
-      isRingManager: r.isRingManager,
-      status,
-      sentAt: r.sentAt?.toISOString() ?? null,
-      expiresAt: r.expiresAt.toISOString(),
-      canResend: status !== "GEACTIVEERD" && status !== "INGETROKKEN" && r.sendCount < INVITATION_MAX_SENDS,
-      canRevoke: status !== "GEACTIVEERD" && status !== "INGETROKKEN",
-    };
-  });
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    role: r.role,
+    roleLabel: ROLE_LABELS[r.role] ?? r.role,
+    churchFunction: r.churchFunction,
+    churchFunctionCode: r.churchFunctionCode,
+    isRingManager: r.isRingManager,
+    ...summarizeInvitation(r, now),
+  }));
+}
+
+/** Per e-mailadres (kleine letters) de meest recente uitnodiging binnen één ring. Alleen aanroepen na `assertCanManageRing`. */
+export async function latestInvitationsByEmail(ringId: string, emails: string[]): Promise<Map<string, ReturnType<typeof summarizeInvitation> & { id: string }>> {
+  const wanted = emails.map((e) => normalizeEmail(e));
+  const rows = await prisma.ringInvitation.findMany({ where: { ringId, email: { in: wanted } }, orderBy: { createdAt: "desc" } });
+  const now = new Date();
+  const out = new Map<string, ReturnType<typeof summarizeInvitation> & { id: string }>();
+  for (const r of rows) if (!out.has(r.email)) out.set(r.email, { id: r.id, ...summarizeInvitation(r, now) });
+  return out;
 }
 
 // ---- Ontvanger: voorvertoning en activatie (geen sessie nodig, wel token of e-mail + code) ----

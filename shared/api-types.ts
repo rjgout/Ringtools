@@ -140,8 +140,22 @@ export type ManagedUser = {
   isRingManager: boolean;
   appointAuthority: AppointAuthority;
   activated: boolean;
+  /** Moment van activatie (eerste volledige inlog of geactiveerde uitnodiging); null = nog niet geactiveerd. Additief veld. */
+  activatedAt?: string | null;
+  /** Meest recente uitnodiging voor dit e-mailadres binnen deze ring (status, verzenddatum, mogelijkheid tot opnieuw versturen). Additief veld. */
+  invitation?: UserInvitation | null;
   active: boolean;
   otherRingCount: number;
+};
+export type UserInvitation = {
+  id: string;
+  status: InvitationStatus;
+  sentAt: string | null;
+  expiresAt: string;
+  canResend: boolean;
+  canRevoke: boolean;
+  resendAvailableAt: string | null;
+  resendBlockedReason: "LIMIET" | null;
 };
 
 /** Uitnodiging in het gebruikersbeheer. Bevat nooit een token of code. */
@@ -162,6 +176,9 @@ export type InvitationItem = {
   expiresAt: string;
   canResend: boolean;
   canRevoke: boolean;
+  /** Additief: vroegste moment waarop opnieuw versturen weer mag, en waarom het eventueel niet meer kan. */
+  resendAvailableAt?: string | null;
+  resendBlockedReason?: "LIMIET" | null;
 };
 export type InvitationPreview =
   | { valid: true; name: string; ringName: string; roleLabel: string; expiresAt: string }
@@ -174,9 +191,7 @@ export type InvitationActivation =
 
 export type AppointAuthority = "NONE" | "RINGPRESIDENT" | "AANGEWEZEN_RAADGEVER" | "AANGEWEZEN_HOGERAADSLID";
 
-export type AdminRing = { id: string; name: string; active: boolean; callingCount: number; memberCount: number; managers: string[] };
 
-export type UserSearchHit = { id: string; name: string; email: string };
 
 /** Nieuw sessietoken na herverificatie of voltooide webmin-login. */
 export type TokenResult = { token: string; expiresAt: string };

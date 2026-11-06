@@ -144,12 +144,12 @@ describe("Toestelstatus voor dit account (accountbinding)", () => {
 });
 
 describe("Aanbod na de eerste aanmelding (DeviceOffer)", () => {
-  function setup(over: { mfa?: boolean; flag?: boolean; admin?: boolean; status?: { registered: boolean; loginEnabled: boolean }; ref?: object | null } = {}) {
+  function setup(over: { mfa?: boolean; flag?: boolean; status?: { registered: boolean; loginEnabled: boolean }; ref?: object | null } = {}) {
     const a = api({
       meta: vi.fn(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", deviceLogin: true, deviceAutoEnroll: over.flag !== false })),
       ...(over.status ? { deviceStatus: vi.fn(async () => over.status) } : {}),
     });
-    auth.value = { api: a, isAdmin: over.admin ?? false, me: { user: { id: "u1", name: "Eva Jansen", mfaEnabled: over.mfa !== false } } };
+    auth.value = { api: a, me: { user: { id: "u1", name: "Eva Jansen", mfaEnabled: over.mfa !== false } } };
     return a;
   }
 
@@ -171,7 +171,6 @@ describe("Aanbod na de eerste aanmelding (DeviceOffer)", () => {
   it.each([
     ["account zonder verplichte MFA", { mfa: false }],
     ["serverfunctie uit", { flag: false }],
-    ["beheerder", { admin: true }],
   ])("geen aanbod: %s", async (_n, over) => {
     const a = setup(over);
     render(<DeviceOffer />);

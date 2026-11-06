@@ -28,7 +28,7 @@ describe("Herverificatie voor gevoelige beheeracties", () => {
   it("account met verplichte MFA: vraagt een passkey (geen e-mailcode), probeert de actie daarna opnieuw", async () => {
     const reauthWithPasskey = vi.fn(async () => {});
     const requestReauthCode = vi.fn();
-    auth.value = { reauth: vi.fn(), reauthWithPasskey, requestReauthCode, isAdmin: false, me: { user: { mfaEnabled: true } } };
+    auth.value = { reauth: vi.fn(), reauthWithPasskey, requestReauthCode, me: { user: { mfaEnabled: true } } };
     const action = flaky();
     render(<Harness action={action} />);
     fireEvent.click(screen.getByRole("button", { name: "Actie" }));
@@ -43,7 +43,7 @@ describe("Herverificatie voor gevoelige beheeracties", () => {
 
   it("zonder passkey-provider: veilige melding, de actie wordt niet uitgevoerd en er is geen advies om MFA uit te zetten", async () => {
     const reauthWithPasskey = vi.fn().mockRejectedValue(new ApiRequestError(0, "Inloggen met een passkey is in deze versie van de app nog niet beschikbaar. Log voorlopig in via de webapp; je beveiliging blijft ongewijzigd.", "passkey-unavailable"));
-    auth.value = { reauth: vi.fn(), reauthWithPasskey, requestReauthCode: vi.fn(), isAdmin: false, me: { user: { mfaEnabled: true } } };
+    auth.value = { reauth: vi.fn(), reauthWithPasskey, requestReauthCode: vi.fn(), me: { user: { mfaEnabled: true } } };
     const action = flaky();
     render(<Harness action={action} />);
     fireEvent.click(screen.getByRole("button", { name: "Actie" }));
@@ -56,17 +56,11 @@ describe("Herverificatie voor gevoelige beheeracties", () => {
     await waitFor(() => expect(screen.getByTestId("result").textContent).toBe("fout:cancelled"));
   });
 
-  it("gewone gebruiker zonder MFA houdt de e-mailcode-route; webmin houdt TOTP", async () => {
-    auth.value = { reauth: vi.fn(), reauthWithPasskey: vi.fn(), requestReauthCode: vi.fn(async () => {}), isAdmin: false, me: { user: { mfaEnabled: false } } };
+  it("gewone gebruiker zonder MFA houdt de e-mailcode-route", async () => {
+    auth.value = { reauth: vi.fn(), reauthWithPasskey: vi.fn(), requestReauthCode: vi.fn(async () => {}), me: { user: { mfaEnabled: false } } };
     render(<Harness action={flaky()} />);
     fireEvent.click(screen.getByRole("button", { name: "Actie" }));
     expect(await screen.findByRole("button", { name: "Stuur code" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Verifiëren met passkey" })).toBeNull();
-    cleanup();
-    auth.value = { reauth: vi.fn(), reauthWithPasskey: vi.fn(), requestReauthCode: vi.fn(), isAdmin: true, me: { user: { mfaEnabled: true } } };
-    render(<Harness action={flaky()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Actie" }));
-    expect(await screen.findByText(/6-cijferige code uit je authenticator-app/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Verifiëren met passkey" })).toBeNull(); // webmin blijft TOTP
   });
 });

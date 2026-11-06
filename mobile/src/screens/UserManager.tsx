@@ -5,6 +5,7 @@ import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
 import { useReauth } from "../components/Reauth";
 import { ErrorState, Spinner } from "../components/ui";
+import { accessInfo, formatWhen } from "../lib/accessStatus";
 
 const ROLES: { value: Role; label: string }[] = [
   { value: "RINGPRESIDIUM", label: "Ringpresidium" },
@@ -84,6 +85,24 @@ export function UserManager({ ringId }: { ringId: string }) {
     }
   }
 
+  /** Uitnodiging opnieuw versturen voor een niet-geactiveerde gebruiker (zelfde serverfunctie als in "Uitnodigingen": recente verificatie, wachttijd, limiet en audit). */
+  async function resend(invitationId: string) {
+    if (busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await run(() => api.resendInvitation(invitationId));
+      setNotice(res.inProgress ? "De uitnodiging wordt al verstuurd. Even geduld." : res.sent ? "De uitnodiging is opnieuw verstuurd." : "Versturen is niet gelukt. Probeer het later opnieuw.");
+      setEditing(null);
+      await invites.reload();
+      await reload();
+    } catch (err) {
+      setMessage(err instanceof ApiRequestError && err.code !== "cancelled" ? err.message : err instanceof ApiRequestError ? null : "Er ging iets mis.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="stack">
       {dialog}
@@ -99,11 +118,12 @@ export function UserManager({ ringId }: { ringId: string }) {
               <strong>{u.name}</strong>
               <div className="muted">{functionLabel(u.churchFunctionCode)}{u.churchFunction && u.churchFunctionCode === "ANDERS" ? ` – ${u.churchFunction}` : ""} · Rol: {ROLES.find((r) => r.value === u.role)?.label}</div>
               {u.churchFunctionCode === "ONBEKEND" && (u.role === "RINGPRESIDIUM" || u.role === "HOGERAAD") && <div className="muted">Kerkelijke functie nog vast te leggen</div>}
+              {accessInfo(u).lines.map((l) => <div key={l} className="muted">{l}</div>)}
             </div>
             <div className="stack" style={{ alignItems: "flex-end" }}>
               {u.isRingManager && <span className="badge ok">Ringbeheerder</span>}
               {u.appointAuthority && AUTHORITY_LABELS[u.appointAuthority] && <span className="badge">{AUTHORITY_LABELS[u.appointAuthority]}</span>}
-              {!u.activated && <span className="badge">Nog niet geactiveerd</span>}
+              <span className={`badge${u.activated ? " ok" : ""}`}>{accessInfo(u).badge}</span>
               {!u.active && <span className="badge bad">Inactief</span>}
             </div>
           </div>
@@ -148,6 +168,7 @@ export function UserManager({ ringId }: { ringId: string }) {
           {editing === "new" && <span className="muted">Een machtiging (aangewezen raadgever of hogeraadslid) kun je vastleggen nadat de persoon zijn account heeft geactiveerd.</span>}
           <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={draft.isRingManager} onChange={(e) => setDraft({ ...draft, isRingManager: e.target.checked })} /> Ringbeheerder (beheert de gebruikers van deze ring)</label>
           {editing !== "new" && <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={draft.active} onChange={(e) => setDraft({ ...draft, active: e.target.checked })} /> Actief in deze ring</label>}
+          {editing !== "new" && <AccessSection user={editing} busy={busy} onResend={resend} />}
           {message && <div className="error" role="alert">{message}</div>}
           <div className="row">
             <button type="button" className="btn btn-ghost" onClick={() => setEditing(null)}>Annuleren</button>
@@ -156,6 +177,30 @@ export function UserManager({ ringId }: { ringId: string }) {
         </form>
       )}
     </div>
+  );
+}
+
+/** Toegang en inlogcode van één gebruiker: status, verzenddatum en de juiste vervolgstap (opnieuw uitnodigen of uitleg). */
+function AccessSection({ user, busy, onResend }: { user: ManagedUser; busy: boolean; onResend: (invitationId: string) => void }) {
+  const info = accessInfo(user);
+  return (
+    <section className="stack" aria-label="Toegang en inlogcode">
+      <strong>Toegang en inlogcode</strong>
+      <span className={`badge${info.activated ? " ok" : ""}`} style={{ alignSelf: "flex-start" }}>{info.badge}</span>
+      {info.lines.map((l) => <span key={l} className="muted">{l}</span>)}
+      {info.resendInvitationId && (
+        <>
+          <button type="button" className="btn btn-ghost" disabled={busy || !!info.resendNote} onClick={() => onResend(info.resendInvitationId!)}>Uitnodiging opnieuw versturen</button>
+          {info.resendNote && <span className="muted">{info.resendNote}</span>}
+        </>
+      )}
+      {!info.resendInvitationId && info.resendNote && <span className="muted">{info.resendNote}</span>}
+      {info.guidance && (
+        <div className="badge" role="note" style={{ whiteSpace: "normal", borderRadius: 12 }}>
+          {info.guidance.map((g) => <div key={g}>{g}</div>)}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -210,13 +255,16 @@ function Invitations({ items, error, onChanged }: { items: InvitationItem[]; err
             <div className="grow">
               <strong>{i.name}</strong>
               <div className="muted">{i.email} · {i.roleLabel}</div>
+              <div className="muted">{i.sentAt ? `Verstuurd op ${formatWhen(i.sentAt)}` : "Nog niet verstuurd"}{i.status === "VERSTUURD" ? ` · geldig tot ${new Date(i.expiresAt).toLocaleDateString("nl-NL", { day: "numeric", month: "short" })}` : ""}</div>
               {i.status === "VERLOPEN" && <div className="muted">De uitnodiging is verlopen. Verstuur hem opnieuw.</div>}
+              {i.resendAvailableAt && new Date(i.resendAvailableAt).getTime() > Date.now() && <div className="muted">Opnieuw versturen kan vanaf {formatWhen(i.resendAvailableAt)}.</div>}
+              {i.resendBlockedReason === "LIMIET" && <div className="muted">Maximaal aantal verzendingen bereikt. Trek in en nodig opnieuw uit.</div>}
             </div>
             <span className={`badge ${STATUS_LABEL[i.status].cls}`}>{STATUS_LABEL[i.status].text}</span>
           </div>
           {(i.canResend || i.canRevoke) && (
             <div className="row" style={{ marginTop: 8 }}>
-              {i.canResend && <button className="btn" disabled={busyId === i.id} onClick={() => void act(i.id, "resend")}>{i.status === "VERSTUURD" ? "Herinneren" : "Opnieuw versturen"}</button>}
+              {i.canResend && <button className="btn" disabled={busyId === i.id || (!!i.resendAvailableAt && new Date(i.resendAvailableAt).getTime() > Date.now())} onClick={() => void act(i.id, "resend")}>{i.status === "VERSTUURD" ? "Herinneren" : "Opnieuw versturen"}</button>}
               {i.canRevoke && <button className="btn btn-ghost" disabled={busyId === i.id} onClick={() => void act(i.id, "revoke")}>Intrekken</button>}
             </div>
           )}

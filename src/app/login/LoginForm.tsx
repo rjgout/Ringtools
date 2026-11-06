@@ -113,7 +113,7 @@ export function LoginForm({ next, linkError }: { next?: string; linkError?: bool
             <label className="label" htmlFor="username">
               Gebruikersnaam
             </label>
-            <input id="username" name="username" type="text" required autoFocus className="input" placeholder="webmin" />
+            <input id="username" name="username" type="text" required autoFocus className="input" autoComplete="username" />
           </div>
           <div>
             <label className="label" htmlFor="password">

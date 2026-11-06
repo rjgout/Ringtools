@@ -25,7 +25,7 @@ type Ctx = { request: Request; params: Record<string, string>; query: URLSearchP
 type Handler = (ctx: Ctx & { auth: ApiAuth }) => Promise<unknown>;
 type PublicHandler = (ctx: Ctx) => Promise<unknown>;
 
-type Route = { method: string; segments: string[]; auth: false | "user" | "admin"; handler: PublicHandler };
+type Route = { method: string; segments: string[]; auth: false | "user"; handler: PublicHandler };
 
 const routes: Route[] = [];
 
@@ -35,11 +35,6 @@ function publicRoute(method: string, pattern: string, handler: PublicHandler) {
 
 function authedRoute(method: string, pattern: string, handler: Handler) {
   routes.push({ method, segments: pattern.split("/").filter(Boolean), auth: "user", handler: handler as PublicHandler });
-}
-
-/** Alleen het beheerdersaccount (webmin) met voltooide TOTP; gewone gebruikers krijgen 403. */
-function adminRoute(method: string, pattern: string, handler: Handler) {
-  routes.push({ method, segments: pattern.split("/").filter(Boolean), auth: "admin", handler: handler as PublicHandler });
 }
 
 const ringOf = (ctx: Ctx) => ctx.query.get("ring") || str(ctx.body.ringId);
@@ -74,16 +69,6 @@ publicRoute("POST", "/auth/login", async ({ body }) => {
   const device = str(body.deviceName).slice(0, 60).replace(/[^\p{L}\p{N} ._-]/gu, "");
   const session = await createVerifiedSession(user.id, `Ringtools-app${device ? ` (${device})` : ""}`);
   return { token: session.rawToken, expiresAt: session.expiresAt.toISOString(), ...(await svc.getMe(user.id)) };
-});
-
-// Webmin: wachtwoord (stap 1) en TOTP/herstelcode (stap 2); pas daarna ontstaat een volledige sessie.
-publicRoute("POST", "/admin/auth/login", async ({ request, body }) =>
-  mgmt.adminLogin(body, request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "onbekend")
-);
-publicRoute("POST", "/admin/auth/totp", async ({ request, body }) => {
-  const token = /^Bearer\s+([A-Za-z0-9_-]{20,200})$/.exec(request.headers.get("authorization") || "")?.[1];
-  if (!token) throw new ApiError(401, "Je inlogsessie is verlopen. Log opnieuw in.", "unauthenticated");
-  return mgmt.adminVerifyTotp(token, body);
 });
 
 // Uitnodigingen (ontvanger): voorvertoning en activatie. Token of code staan in de body, nooit in de URL. Alleen issueSession:true vraagt een sessie aan.
@@ -247,43 +232,6 @@ authedRoute("POST", "/custom-callings/:id", async ({ auth, params, body }) => se
 authedRoute("GET", "/catalog/callings", async (ctx) => setup.catalogFor(ctx.auth.user.id, ringOf(ctx), ctx.query.get("q") || "", ctx.query.get("category") || ""));
 authedRoute("GET", "/catalog/callings/:code/appointers", async (ctx) => setup.appointersFor(ctx.auth.user.id, ringOf(ctx), ctx.params.code));
 
-// ---- Systeembeheer (webmin) ----
-
-adminRoute("GET", "/admin/me", async ({ auth }) => ({ user: { id: auth.user.id, name: auth.user.name, email: auth.user.email }, isAdmin: true }));
-adminRoute("POST", "/admin/auth/reauth", async ({ auth, body }) => mgmt.adminReauth(auth, body));
-adminRoute("POST", "/admin/auth/refresh", async ({ auth }) => {
-  const result = await rotateSessionIfDue(auth.token);
-  if (result.status === "none") throw new ApiError(401, "Je sessie is verlopen.", "unauthenticated");
-  return result.rotated ? { rotated: true, token: result.rawToken, expiresAt: result.expiresAt.toISOString() } : { rotated: false };
-});
-adminRoute("POST", "/admin/auth/logout", async ({ auth }) => {
-  await destroySession(auth.token);
-  return { ok: true };
-});
-adminRoute("GET", "/admin/sessions", async ({ auth }) => svc.listMySessions(auth.user.id, auth.token));
-adminRoute("POST", "/admin/sessions/:id/revoke", async ({ auth, params }) => svc.revokeMySession(auth.user.id, params.id));
-adminRoute("GET", "/admin/rings", async () => mgmt.listRingsFor());
-adminRoute("POST", "/admin/rings", async ({ auth, body }) => mgmt.createRingFor(auth, body));
-adminRoute("POST", "/admin/rings/:id/rename", async ({ auth, params, body }) => mgmt.renameRingFor(auth, params.id, body));
-adminRoute("POST", "/admin/rings/:id/active", async ({ auth, params, body }) => mgmt.setRingActiveFor(auth, params.id, body));
-adminRoute("GET", "/admin/rings/:id/users", async ({ auth, params }) => mgmt.listUsersFor(auth, params.id));
-adminRoute("POST", "/admin/rings/:id/users", async ({ auth, params, body }) => mgmt.addUserFor(auth, params.id, body));
-adminRoute("POST", "/admin/memberships/:id", async ({ auth, params, body }) => mgmt.updateUserFor(auth, params.id, body));
-adminRoute("GET", "/admin/rings/:id/invitations", async ({ auth, params }) => invitations.listInvitationsFor(auth, params.id));
-adminRoute("POST", "/admin/rings/:id/invitations", async ({ auth, params, body }) => invitations.createInvitationFor(auth, params.id, body));
-adminRoute("POST", "/admin/invitations/:id/resend", async ({ auth, params }) => invitations.resendInvitationFor(auth, params.id));
-adminRoute("POST", "/admin/invitations/:id/revoke", async ({ auth, params }) => invitations.revokeInvitationFor(auth, params.id));
-adminRoute("POST", "/admin/invitations/:id", async ({ auth, params, body }) => invitations.updateInvitationFor(auth, params.id, body));
-adminRoute("GET", "/admin/rings/:id/setup", async ({ auth, params }) => setup.setupFor(auth, params.id));
-adminRoute("GET", "/admin/rings/:id/units", async ({ auth, params }) => setup.unitsFor(auth, params.id));
-adminRoute("POST", "/admin/rings/:id/units", async ({ auth, params, body }) => setup.createUnitFor(auth, params.id, body));
-adminRoute("POST", "/admin/units/:id", async ({ auth, params, body }) => setup.updateUnitFor(auth, params.id, body));
-adminRoute("GET", "/admin/catalog/callings", async (ctx) => setup.catalogForAdmin(ringOf(ctx), ctx.query.get("q") || "", ctx.query.get("category") || ""));
-adminRoute("GET", "/admin/rings/:id/custom-callings", async ({ auth, params }) => setup.customCallingsFor(auth, params.id));
-adminRoute("POST", "/admin/rings/:id/custom-callings", async ({ auth, params, body }) => setup.createCustomCallingFor(auth, params.id, body));
-adminRoute("POST", "/admin/custom-callings/:id", async ({ auth, params, body }) => setup.updateCustomCallingFor(auth, params.id, body));
-adminRoute("GET", "/admin/catalog/review", async () => reviewOverview());
-adminRoute("GET", "/admin/users", async ({ query }) => mgmt.searchUsersFor(query.get("q") || ""));
 
 function match(route: Route, method: string, segments: string[]): Record<string, string> | null {
   if (route.method !== method || route.segments.length !== segments.length) return null;
@@ -300,6 +248,9 @@ function match(route: Route, method: string, segments: string[]): Record<string,
 export async function handleApi(request: Request, segments: string[]): Promise<Response> {
   try {
     const url = new URL(request.url);
+    // Systeembeheer (webmin) gebeurt uitsluitend via de beveiligde website. Elke /admin/…-aanroep wordt direct en zonder verdere verwerking
+    // afgewezen, ook als de aanvrager een (oude) beheerderssessie heeft of de route ooit bestond.
+    if (segments[0] === "admin") throw new ApiError(410, "Systeembeheer is niet beschikbaar in de app. Meld je aan op de beveiligde website.", "admin-web-only");
     let pathMatch = false;
     for (const r of routes) {
       const params = match(r, request.method, segments);

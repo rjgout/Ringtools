@@ -15,16 +15,14 @@ export function bearerToken(request: Request): string | null {
  * Authenticeert een API-verzoek met dezelfde server-side sessies als de webapp (zelfde verlenging,
  * intrekking en deactivering). Sessies zonder voltooide MFA tellen nooit mee.
  * - "user": gewone gebruikers; het beheerdersaccount (webmin) wordt hier geweigerd.
- * - "admin": uitsluitend het beheerdersaccount (webmin); gewone gebruikers worden geweigerd.
  */
-export async function authenticate(request: Request, kind: "user" | "admin" = "user"): Promise<ApiAuth> {
+export async function authenticate(request: Request, kind: "user" = "user"): Promise<ApiAuth> {
   const token = bearerToken(request);
   const session = token ? await getActiveSession(token) : null;
   if (!token || !session) throw new ApiError(401, "Je bent niet ingelogd of je sessie is verlopen.", "unauthenticated");
   const isAdmin = session.user.role === "ADMIN";
   if (kind === "user" && isAdmin) {
-    throw new ApiError(403, "Het beheerdersaccount gebruikt het beheergedeelte van de app.", "admin-web-only");
+    throw new ApiError(403, "Systeembeheer gebeurt uitsluitend via de beveiligde website.", "admin-web-only");
   }
-  if (kind === "admin" && !isAdmin) throw new ApiError(403, "Je hebt hiervoor geen bevoegdheid.", "forbidden");
   return { user: session.user, token, sessionId: session.sessionId, mfaAt: session.mfaAt };
 }

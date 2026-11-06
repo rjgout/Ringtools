@@ -9,9 +9,9 @@ import { ApiRequestError } from "../lib/api";
  * actie daarna opnieuw. Er wordt niets lokaal "onthouden": de server beslist.
  */
 export function useReauth() {
-  const { reauth, reauthWithPasskey, requestReauthCode, isAdmin, me, api } = useAuth();
+  const { reauth, reauthWithPasskey, requestReauthCode, me, api } = useAuth();
   // Accounts met verplichte MFA (passkey) bevestigen met een passkey; een e-mailcode alleen is voor hen nooit genoeg (de server weigert dat).
-  const mfaUser = !isAdmin && !!me?.user.mfaEnabled;
+  const mfaUser = !!me?.user.mfaEnabled;
   // Functievlag op de server: accounts met een authenticator-app bevestigen in de app met een 6-cijferige code (nooit met een e-mailcode alleen).
   const [totpServer, setTotpServer] = useState(false);
   const usesTotp = mfaUser && totpServer;
@@ -103,7 +103,7 @@ export function useReauth() {
       <strong>Bevestig je identiteit</strong>
       {usesPasskey ? (
         <span className="muted">Voor jouw account is extra verificatie met een passkey nodig. Volg de aanwijzingen van je toestel.</span>
-      ) : isAdmin || usesTotp ? (
+      ) : usesTotp ? (
         <span className="muted">Vul de huidige 6-cijferige code uit je authenticator-app in.</span>
       ) : codeSent ? (
         <span className="muted">Vul de 8-cijferige code uit de e-mail in.</span>
@@ -112,12 +112,12 @@ export function useReauth() {
       )}
       {usesPasskey ? (
         <button className="btn btn-primary" disabled={busy} onClick={() => void submitPasskey()}>{busy ? "Even geduld…" : "Verifiëren met passkey"}</button>
-      ) : !isAdmin && !usesTotp && !codeSent ? (
+      ) : !usesTotp && !codeSent ? (
         <button className="btn btn-primary" disabled={busy} onClick={sendCode}>Stuur code</button>
       ) : (
         <form className="stack" onSubmit={submit}>
-          <input aria-label="Code" className="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(digitsOnly(e.target.value, isAdmin || usesTotp ? 6 : 8))} autoFocus required />
-          <button className="btn btn-primary" disabled={busy || code.replace(/\s+/g, "").length !== (isAdmin || usesTotp ? 6 : 8)}>Bevestigen</button>
+          <input aria-label="Code" className="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(digitsOnly(e.target.value, usesTotp ? 6 : 8))} autoFocus required />
+          <button className="btn btn-primary" disabled={busy || code.replace(/\s+/g, "").length !== (usesTotp ? 6 : 8)}>Bevestigen</button>
         </form>
       )}
       {error && <div className="error" role="alert">{error}</div>}

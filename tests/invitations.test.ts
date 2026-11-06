@@ -674,7 +674,7 @@ describe("Direct ingelogd na activatie", () => {
     // Alleen eigen (nieuwe) lidmaatschap: niet in een andere ring, niet voor beheer.
     expect((await call("GET", "/dashboard?ring=" + s.ringB.id, { token: t })).status).toBe(404);
     expect((await call("GET", `/rings/${s.ringA.id}/users`, { token: t })).status).toBe(404); // geen ringbeheerder
-    expect((await call("GET", "/admin/me", { token: t })).status).toBe(403);
+    expect((await call("GET", "/admin/me", { token: t })).status).toBe(410); // /admin is gesloten voor de app
     // Normale sessie-functies.
     expect((await call("GET", "/sessions", { token: t })).body.sessions).toHaveLength(1);
     await prisma.session.update({ where: { id: session.id }, data: { rotatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) } });

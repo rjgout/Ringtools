@@ -125,12 +125,13 @@ describe("Wijken en gemeenten", () => {
     expect((await prisma.ringUnit.findUniqueOrThrow({ where: { id: unit.id } })).name).toBe("Wijk Privé");
   });
 
-  it("webmin kan units van elke ring beheren via /admin; een gedeactiveerde ring blijft voor leden gesloten", async () => {
+  it("systeembeheer gebruikt de eenheden niet via de app (/admin gesloten); een gedeactiveerde ring blijft voor leden gesloten", async () => {
     const s = await ringSetup();
     const admin = await createTestUser("ADMIN", "Webmin");
     const token = await login(admin.id);
-    expect((await call("POST", `/admin/rings/${s.ring.id}/units`, { token, body: { kind: "GEMEENTE", name: "Gemeente Beheer" } })).status).toBe(200);
-    expect((await call("GET", `/admin/rings/${s.ring.id}/units`, { token })).body.units).toHaveLength(1);
+    expect((await call("POST", `/admin/rings/${s.ring.id}/units`, { token, body: { kind: "GEMEENTE", name: "Gemeente Beheer" } })).status).toBe(410);
+    expect((await call("GET", `/admin/rings/${s.ring.id}/units`, { token })).status).toBe(410);
+    expect(await prisma.ringUnit.count({ where: { ringId: s.ring.id } })).toBe(0);
     await prisma.ring.update({ where: { id: s.ring.id }, data: { active: false } });
     expect((await call("GET", `/rings/${s.ring.id}/units`, { token: await login(s.manager.id) })).status).toBe(404);
   });

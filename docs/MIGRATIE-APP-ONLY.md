@@ -307,3 +307,18 @@ Besluiten eigenaar: verplicht voor alle gebruikers/rollen · koude start altijd 
      - Een intern ringlid mag niet ten onrechte als externe persoon worden ingevoerd.
      - De bestaande server-side beveiliging (ringisolatie, vastgelegde procedure) en de audittrail blijven behouden.
    - *Status:* niet ontworpen of geïmplementeerd; er worden geen bevoegdheden verzonnen. Pas oppakken na de iPhone-acceptatietest van C4 en C4.5 en op expliciete opdracht van de eigenaar.
+
+
+## Systeembeheer uitsluitend via de website (besluit eigenaar, na E2.6)
+
+**Besluit:** de systeembeheerder (`webmin`) meldt zich alleen nog aan op de beveiligde website. Er is geen beheerderslogin of beheerdersscherm meer in de iOS- en Android-app.
+
+**Uitgevoerd:**
+- App: `AdminLogin`, het beheerdersscherm (`screens/admin/AdminHome`), de knop "Inloggen als beheerder (webmin)", de beheermodus in `ApiClient`/`AuthProvider` en alle `admin…`-methoden zijn verwijderd. Een uit een oudere appversie bewaarde beheerderssessie (opslagmodus `admin`) wordt bij het opstarten gewist en leidt naar het inlogscherm, zonder API-aanroep.
+- Server: de mobiele routes `/admin/auth/login`, `/admin/auth/totp`, `/admin/auth/reauth`, `/admin/me`, `/admin/rings…`, `/admin/users`, `/admin/units…`, `/admin/catalog…` en de andere `/admin/…`-registraties zijn verwijderd. `handleApi` wijst **elke** aanroep met pad `admin/…` direct af met `410 admin-web-only`, vóór routering en authenticatie (dus ook zonder sessie en met een oude beheerderssessie). Alleen het verbergen van de knop was dus niet voldoende en is ook niet de enige maatregel. Gewone routes weigeren het beheerdersaccount ongewijzigd (403).
+- Website: de placeholder `webmin` in `src/app/login/LoginForm.tsx` is vervangen door het neutrale veld "Gebruikersnaam" (`autoComplete="username"`). Het technische account en de authenticatie zijn niet gewijzigd.
+- Gewone ringbeheerders beheren hun eigen ring in de app (gebruikers, uitnodigingen, inrichting, catalogus) via de gewone routes.
+
+**Gevolg en open punt voor de eigenaar (niet zelf ingevuld):** de volgende functies waren alleen in het app-beheergedeelte van de webmin beschikbaar en hebben nu geen ingang meer: een ring **(de)activeren**; wijken/gemeenten, eigen roepingen en catalogus van een willekeurige ring beheren; namens een ring **uitnodigen**; bestaande accounts zoeken om aan een ring te koppelen. De website biedt ring aanmaken, hernoemen, gebruikers rechtstreeks toevoegen/wijzigen en voorstellen verwijderen. Voorkeur: een kleine webmin-actie "ring (de)activeren" in `/ringen/[id]` (zelfde `setRingActive`-functie, zelfde audit) toevoegen zodra de eigenaar dat wil; de rest kan de eerste ringbeheerder van de ring zelf doen.
+
+**Per-gebruiker toegangsstatus (gebruikersbeheer):** `GET /rings/:id/users` geeft per gebruiker additief `activatedAt` en `invitation` (meest recente uitnodiging voor dat adres in deze ring: status, verzenddatum, verloopdatum, `canResend`, `resendAvailableAt`, `resendBlockedReason`); de uitnodigingenlijst kreeg dezelfde velden. Opnieuw versturen gebruikt dezelfde serveractie (recente verificatie, wachttijd van 5 minuten, maximaal 10 verzendingen, audit). Voor een reeds geactiveerd account toont de app uitleg in plaats van een knop: opnieuw uitnodigen lost een ontbrekende inlogcode niet op; de persoon vraagt zelf een code aan op het inlogscherm met het getoonde adres (spammap, limiet van 5 aanvragen per 15 minuten, account actief?).

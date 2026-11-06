@@ -16,18 +16,15 @@ const entry = (over: Record<string, unknown>) => ({
 });
 
 describe("ApiClient: ringinrichting", () => {
-  it("gebruikt /admin-routes in beheermodus en gewone ringroutes voor de ringbeheerder", async () => {
+  it("gebruikt de gewone ringroutes voor de ringbeheerder", async () => {
     const urls: string[] = [];
     const fetchImpl = vi.fn(async (url: string) => { urls.push(url); return new Response("{}", { status: 200 }); }) as unknown as typeof fetch;
     const api = new ApiClient({ baseUrl: "https://x/api", getToken: () => "t".repeat(30), fetchImpl });
     await api.units("r1"); await api.ringSetup("r1"); await api.updateUnit("u1", { active: false }); await api.createCustomCalling("r1", { name: "N", category: "C" });
-    api.admin = true;
-    await api.units("r1"); await api.updateUnit("u1", { active: false });
     await api.catalog("r1", "tol lk", "Technologie"); await api.appointers("r1", "ringadministrateur");
     expect(urls).toEqual([
       "https://x/api/rings/r1/units", "https://x/api/rings/r1/setup", "https://x/api/units/u1", "https://x/api/rings/r1/custom-callings",
-      "https://x/api/admin/rings/r1/units", "https://x/api/admin/units/u1",
-      "https://x/api/admin/catalog/callings?ring=r1&q=tol%20lk&category=Technologie", "https://x/api/catalog/callings/ringadministrateur/appointers?ring=r1",
+      "https://x/api/catalog/callings?ring=r1&q=tol%20lk&category=Technologie", "https://x/api/catalog/callings/ringadministrateur/appointers?ring=r1",
     ]);
   });
 });

@@ -30,7 +30,7 @@ describe("Geplakte codes", () => {
 
   it("herverificatie met TOTP: een geplakte code mét spatie ('123 456') geeft een volledige code en een werkende knop", async () => {
     const reauth = vi.fn(async () => {});
-    auth.value = { reauth, reauthWithPasskey: vi.fn(), requestReauthCode: vi.fn(), isAdmin: false, me: { user: { mfaEnabled: true } }, api: { meta: vi.fn(async () => ({ nativeTotpLogin: true })) } };
+    auth.value = { reauth, reauthWithPasskey: vi.fn(), requestReauthCode: vi.fn(), me: { user: { mfaEnabled: true } }, api: { meta: vi.fn(async () => ({ nativeTotpLogin: true })) } };
     const action = vi.fn().mockRejectedValueOnce(new ApiRequestError(403, "Bevestig eerst opnieuw", "reauth-required")).mockResolvedValue("ok");
     render(<Harness action={action} />);
     fireEvent.click(screen.getByRole("button", { name: "Actie" }));

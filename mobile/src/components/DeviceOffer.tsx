@@ -14,7 +14,7 @@ type Plan = Extract<DeviceState, { kind: "none" | "registered" | "replace-own" |
  * (geen aandringen); via Profiel kan het altijd later. Een lokale koppeling van een ander account wordt alleen na expliciete bevestiging vervangen.
  */
 export function DeviceOffer() {
-  const { api, me, isAdmin } = useAuth();
+  const { api, me } = useAuth();
   const server = useServerCapabilities(api);
   const { run, dialog } = useReauth();
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -23,7 +23,7 @@ export function DeviceOffer() {
   const checked = useRef<string | null>(null);
 
   const userId = me?.user.id ?? null;
-  const eligible = !!userId && !isAdmin && !!me?.user.mfaEnabled && server.status === "ready" && server.caps.deviceAutoEnroll && deviceLoginSupported();
+  const eligible = !!userId && !!me?.user.mfaEnabled && server.status === "ready" && server.caps.deviceAutoEnroll && deviceLoginSupported();
 
   useEffect(() => {
     if (!eligible || !userId || checked.current === userId) return;

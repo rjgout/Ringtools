@@ -1,6 +1,5 @@
 import { digitsOnly } from "../lib/codeInput";
 import { useEffect, useState } from "react";
-import { AdminLogin } from "./AdminLogin";
 import { useAuth } from "../lib/auth";
 import { nativeDeviceKeys } from "../lib/deviceKey";
 import { ApiRequestError } from "../lib/api";
@@ -22,7 +21,6 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [admin, setAdmin] = useState(false);
   // Servercapaciteiten uit GET /meta: met automatische herpogingen (ook als de aanvraag tijdens de ontgrendeling werd geblokkeerd).
   const caps = useServerCapabilities(api);
   const trustedDevices = caps.caps.trustedDevices;
@@ -142,7 +140,6 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
     }
   }
 
-  if (admin) return <AdminLogin onBack={() => setAdmin(false)} />;
 
   return (
     <main className="page center">
@@ -180,6 +177,7 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
             <label htmlFor="code">Inlogcode uit de e-mail</label>
             <input id="code" className="code" inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={(e) => setCode(digitsOnly(e.target.value, 8))} autoFocus />
             {info && <p className="muted">{info}</p>}
+            <p className="muted">Geen code ontvangen? Controleer de spammap en of het e-mailadres klopt. Heb je nog nooit ingelogd? Activeer dan eerst je uitnodiging via &lsquo;Ik heb een uitnodiging&rsquo; (kies &lsquo;Ander e-mailadres&rsquo; om terug te gaan).</p>
           </div>
         )}
         {error && <div className="error" role="alert">{error}</div>}
@@ -201,7 +199,6 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
         )}
         {onHaveInvitation && step === "email" && <button type="button" className="btn btn-ghost btn-block" onClick={onHaveInvitation}>Ik heb een uitnodiging</button>}
         {onLinkDevice && trustedDevices && step === "email" && nativeDeviceKeys.available() && <button type="button" className="btn btn-ghost btn-block" onClick={onLinkDevice}>Toestel koppelen met een code</button>}
-        <button type="button" className="btn btn-ghost btn-block" onClick={() => setAdmin(true)}>Inloggen als beheerder (webmin)</button>
         {caps.status === "unavailable" && (
           <p className="muted" role="status">
             Sommige inlogopties konden niet worden opgehaald. <button type="button" className="btn btn-ghost" onClick={caps.retry}>Opnieuw proberen</button>

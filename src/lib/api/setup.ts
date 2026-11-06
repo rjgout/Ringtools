@@ -91,12 +91,6 @@ export async function catalogFor(userId: string, ringId: string, q: string, cate
   return catalogResult(ringId, q, category);
 }
 
-/** Zelfde overzicht voor de webmin (apart pad: de webmin-API en de gebruikers-API blijven gescheiden). */
-export async function catalogForAdmin(ringId: string, q: string, category: string) {
-  if (!(await prisma.ring.findUnique({ where: { id: ringId } }))) throw new ApiError(404, "Niet gevonden.", "not-found");
-  return catalogResult(ringId, q, category);
-}
-
 async function catalogResult(ringId: string, q: string, category: string) {
   const needle = q.trim();
   const own = (await listCustomCallings(ringId))

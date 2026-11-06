@@ -134,7 +134,7 @@ describe("Native passkey-login: pending-login", () => {
     for (const path of ["/auth/refresh", "/auth/reauth", "/devices", "/auth/logout"]) {
       expect((await call("POST", path, { token: pending, body: {} })).status, path).toBe(401);
     }
-    expect((await call("GET", "/admin/me", { token: pending })).status).toBe(401);
+    expect((await call("GET", "/admin/me", { token: pending })).status).toBe(410); // /admin is gesloten voor de app
     // De code is eenmalig: opnieuw gebruiken lukt niet.
     const { code } = await createMagicLinkToken(u.user.id, { withCode: true });
     expect((await call("POST", "/auth/login", { body: { email: u.user.email, code } })).status).toBe(200);
@@ -441,11 +441,11 @@ describe("Herverificatie met passkey: extra beveiligingscontroles", () => {
     expect((await call("POST", "/auth/reauth/passkey/verify", { token: pending.body.pendingToken, body: { response: {} } })).status).toBe(401);
   });
 
-  it("webmin gebruikt geen passkey-herverificatie in de app (alleen TOTP)", async () => {
+  it("webmin gebruikt de app niet: geen passkey-herverificatie en /admin is gesloten", async () => {
     const admin = await createTestUser("ADMIN", "Webmin Pk");
     const token = (await createVerifiedSession(admin.id, "Test")).rawToken;
     expect((await call("POST", "/auth/reauth/passkey/options", { token })).status).toBe(403);
-    expect((await call("POST", "/admin/auth/reauth/passkey/options", { token })).status).toBe(404);
+    expect((await call("POST", "/admin/auth/reauth/passkey/options", { token })).status).toBe(410);
   });
 });
 

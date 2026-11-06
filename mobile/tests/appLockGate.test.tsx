@@ -41,16 +41,13 @@ vi.mock("../src/lib/storage", () => ({ storage }));
 
 const apiMock = vi.hoisted(() => ({
   me: vi.fn(),
-  adminMe: vi.fn(),
   refresh: vi.fn(async () => ({ rotated: false })),
   unregisterDeviceToken: vi.fn(async () => ({ ok: true })),
 }));
 vi.mock("../src/lib/api", async (orig) => {
   const actual = await orig<typeof import("../src/lib/api")>();
   class ApiClient {
-    admin = false;
     me = apiMock.me;
-    adminMe = apiMock.adminMe;
     refresh = apiMock.refresh;
     unregisterDeviceToken = apiMock.unregisterDeviceToken;
   }
@@ -111,7 +108,6 @@ beforeEach(() => {
   store.mode = null;
   vi.clearAllMocks();
   apiMock.me.mockResolvedValue(ME);
-  apiMock.adminMe.mockResolvedValue({ user: { id: "a1", name: "Webmin", email: "w@x.nl" } });
 });
 afterEach(cleanup);
 
@@ -169,14 +165,18 @@ describe("Appvergrendeling: geen gegevens vóór ontgrendeling", () => {
     expect(document.body.textContent).not.toMatch(/uitschakel|uitzetten/i);
   });
 
-  it.each([
-    ["gewone gebruiker", null],
-    ["webmin", "admin"],
-  ])("geldt voor alle rollen: %s", async (_name, mode) => {
-    store.mode = mode;
+  it("geldt voor elke gewone gebruiker; een bewaarde beheerderssessie (oudere appversie) wordt nooit hervat maar gewist", async () => {
     harness({ authenticate: async () => ({ ok: true }) });
     await waitFor(() => expect(screen.getByTestId("probe").textContent).toMatch(/^signedIn:/));
-    expect(mode === "admin" ? apiMock.adminMe : apiMock.me).toHaveBeenCalledTimes(1);
+    expect(apiMock.me).toHaveBeenCalledTimes(1);
+    cleanup();
+    vi.clearAllMocks();
+    apiMock.me.mockResolvedValue(ME);
+    store.mode = "admin";
+    harness({ authenticate: async () => ({ ok: true }) });
+    await waitFor(() => expect(screen.getByTestId("probe").textContent).toMatch(/signedOut/));
+    expect(apiMock.me).not.toHaveBeenCalled(); // geen enkele aanroep met de oude beheerderssessie
+    expect(storage.clearSession).toHaveBeenCalled();
   });
 });
 

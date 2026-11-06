@@ -54,9 +54,8 @@ export const storage = {
   },
   getToken: () => get(TOKEN),
   setToken: (v: string) => set(TOKEN, v),
-  /** "admin" na een webmin-login; anders leeg (gewone gebruiker). */
+  /** Verouderd: "admin" werd bewaard na een webmin-login in oudere appversies. Wordt bij het opstarten genegeerd en gewist (systeembeheer is uitsluitend via de website). */
   getMode: () => get(MODE),
-  setMode: (v: string) => set(MODE, v),
   getRing: () => get(RING),
   setRing: (v: string) => set(RING, v),
   getPushToken: () => get(PUSH),

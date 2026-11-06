@@ -1,6 +1,5 @@
 import type { PasskeyAssertion, PasskeyRequestOptions } from "./passkeys";
 import type {
-  AdminRing,
   AppointAuthority,
   CatalogResult,
   ChurchFunctionCode,
@@ -33,7 +32,6 @@ import type {
   TokenResult,
   UnitInfo,
   UnitKind,
-  UserSearchHit,
 } from "@shared/api-types";
 
 export class ApiRequestError extends Error {
@@ -72,8 +70,6 @@ export type ApiClientOptions = {
 
 /** Dunne client voor /api/mobile/v1. Het sessietoken gaat alleen in de Authorization-header, nooit in een URL. */
 export class ApiClient {
-  /** Beheermodus (webmin): sessie-, refresh- en logoutroutes liggen dan onder /admin. */
-  admin = false;
   constructor(private opts: ApiClientOptions) {}
 
   private async request<T>(method: "GET" | "POST", path: string, body?: unknown, tokenOverride?: string | null): Promise<T> {
@@ -165,27 +161,13 @@ export class ApiClient {
     return this.request<{ ok: boolean }>("POST", "/auth/mfa/cancel", {}, pendingToken);
   }
   refresh() {
-    return this.request<{ rotated: boolean; token?: string; expiresAt?: string }>("POST", this.admin ? "/admin/auth/refresh" : "/auth/refresh", {});
+    return this.request<{ rotated: boolean; token?: string; expiresAt?: string }>("POST", "/auth/refresh", {});
   }
   logout(pushToken?: string) {
-    return this.admin ? this.request<{ ok: boolean }>("POST", "/admin/auth/logout", {}) : this.request<{ ok: boolean }>("POST", "/auth/logout", { pushToken });
+    return this.request<{ ok: boolean }>("POST", "/auth/logout", { pushToken });
   }
   me() {
     return this.request<Me>("GET", "/me");
-  }
-  // ---- Webmin ----
-  adminLogin(username: string, password: string) {
-    return this.request<{ pendingToken: string; expiresAt: string }>("POST", "/admin/auth/login", { username, password }, null);
-  }
-  /** Tweede stap: het wachtende token gaat alleen in de Authorization-header. */
-  adminVerify(pendingToken: string, proof: { code?: string; recoveryCode?: string }) {
-    return this.request<TokenResult>("POST", "/admin/auth/totp", proof, pendingToken);
-  }
-  adminMe() {
-    return this.request<{ user: { id: string; name: string; email: string }; isAdmin: boolean }>("GET", "/admin/me");
-  }
-  adminReauth(code: string) {
-    return this.request<TokenResult>("POST", "/admin/auth/reauth", { code });
   }
   /** Herverificatie van een ingelogde MFA-gebruiker met een passkey (alleen als native passkeys op de server aan staan). */
   reauthPasskeyOptions() {
@@ -197,43 +179,28 @@ export class ApiClient {
   userReauth(code: string) {
     return this.request<TokenResult>("POST", "/auth/reauth", { code });
   }
-  adminRings() {
-    return this.request<{ rings: AdminRing[] }>("GET", "/admin/rings");
-  }
-  adminCreateRing(input: { name: string; existingUserId?: string; userName?: string; userEmail?: string; churchFunction: string; role: string }) {
-    return this.request<{ id: string; name: string }>("POST", "/admin/rings", input);
-  }
-  adminRenameRing(id: string, name: string) {
-    return this.request<{ ok: boolean }>("POST", `/admin/rings/${encodeURIComponent(id)}/rename`, { name });
-  }
-  adminSetRingActive(id: string, active: boolean) {
-    return this.request<{ ok: boolean }>("POST", `/admin/rings/${encodeURIComponent(id)}/active`, { active });
-  }
-  adminSearchUsers(q: string) {
-    return this.request<{ users: UserSearchHit[] }>("GET", `/admin/users?q=${encodeURIComponent(q)}`);
-  }
-  // ---- Gebruikersbeheer (ringbeheerder: eigen ring; webmin: via /admin) ----
+  // ---- Gebruikersbeheer (ringbeheerder: eigen ring) ----
   ringUsers(ringId: string) {
-    return this.request<{ users: ManagedUser[] }>("GET", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/users`);
+    return this.request<{ users: ManagedUser[] }>("GET", `/rings/${encodeURIComponent(ringId)}/users`);
   }
   addRingUser(ringId: string, input: { existingUserId?: string; name?: string; email?: string; churchFunction: string; churchFunctionCode?: ChurchFunctionCode; role: string; isRingManager: boolean; appointAuthority?: AppointAuthority }) {
-    return this.request<{ userId: string; name: string; joinedRounds: number }>("POST", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/users`, input);
+    return this.request<{ userId: string; name: string; joinedRounds: number }>("POST", `/rings/${encodeURIComponent(ringId)}/users`, input);
   }
   updateRingUser(membershipId: string, input: { churchFunction: string; churchFunctionCode?: ChurchFunctionCode; role: string; isRingManager: boolean; active: boolean; appointAuthority?: AppointAuthority; name?: string; email?: string }) {
-    return this.request<{ ok: boolean; joinedRounds: number }>("POST", `${this.admin ? "/admin" : ""}/memberships/${encodeURIComponent(membershipId)}`, input);
+    return this.request<{ ok: boolean; joinedRounds: number }>("POST", `/memberships/${encodeURIComponent(membershipId)}`, input);
   }
-  // ---- Uitnodigingen (ringbeheerder: eigen ring; webmin: via /admin) ----
+  // ---- Uitnodigingen (ringbeheerder: eigen ring) ----
   ringInvitations(ringId: string) {
-    return this.request<{ invitations: InvitationItem[] }>("GET", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/invitations`);
+    return this.request<{ invitations: InvitationItem[] }>("GET", `/rings/${encodeURIComponent(ringId)}/invitations`);
   }
   createInvitation(ringId: string, input: { name: string; email: string; role: string; churchFunction?: string; churchFunctionCode?: ChurchFunctionCode; isRingManager: boolean }) {
-    return this.request<{ id: string; sent: boolean }>("POST", `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/invitations`, input);
+    return this.request<{ id: string; sent: boolean }>("POST", `/rings/${encodeURIComponent(ringId)}/invitations`, input);
   }
   resendInvitation(id: string) {
-    return this.request<InvitationSendResult>("POST", `${this.admin ? "/admin" : ""}/invitations/${encodeURIComponent(id)}/resend`, {});
+    return this.request<InvitationSendResult>("POST", `/invitations/${encodeURIComponent(id)}/resend`, {});
   }
   revokeInvitation(id: string) {
-    return this.request<{ ok: boolean }>("POST", `${this.admin ? "/admin" : ""}/invitations/${encodeURIComponent(id)}/revoke`, {});
+    return this.request<{ ok: boolean }>("POST", `/invitations/${encodeURIComponent(id)}/revoke`, {});
   }
   /** Ontvanger: controleren en activeren; het token staat in de body (nooit in de URL) en er is geen sessie nodig. */
   previewInvitation(token: string) {
@@ -361,9 +328,9 @@ export class ApiClient {
   ontheffingStep(personId: string, step: "inform" | "announce" | "process" | "rename", body: { thanksOffered?: boolean; name?: string } = {}) {
     return this.request<{ ok?: boolean; dossierProcessed?: boolean }>("POST", `/ontheffingen/persons/${encodeURIComponent(personId)}/${step}`, body);
   }
-  // ---- Ringinrichting en catalogus (ringbeheerder: eigen ring; webmin: via /admin) ----
+  // ---- Ringinrichting en catalogus (ringbeheerder: eigen ring) ----
   private ringPath(ringId: string, tail: string) {
-    return `${this.admin ? "/admin" : ""}/rings/${encodeURIComponent(ringId)}/${tail}`;
+    return `/rings/${encodeURIComponent(ringId)}/${tail}`;
   }
   ringSetup(ringId: string) {
     return this.request<RingSetup>("GET", this.ringPath(ringId, "setup"));
@@ -375,7 +342,7 @@ export class ApiClient {
     return this.request<{ id: string }>("POST", this.ringPath(ringId, "units"), input);
   }
   updateUnit(id: string, input: { name?: string; kind?: UnitKind; active?: boolean; responsibleUserId?: string | null; defaultRoepenUserId?: string | null; defaultOndersteunenUserId?: string | null; defaultAanstellenUserId?: string | null }) {
-    return this.request<{ ok: boolean }>("POST", `${this.admin ? "/admin" : ""}/units/${encodeURIComponent(id)}`, input);
+    return this.request<{ ok: boolean }>("POST", `/units/${encodeURIComponent(id)}`, input);
   }
   customCallings(ringId: string) {
     return this.request<{ callings: CustomCalling[] }>("GET", this.ringPath(ringId, "custom-callings"));
@@ -384,11 +351,11 @@ export class ApiClient {
     return this.request<{ id: string }>("POST", this.ringPath(ringId, "custom-callings"), input);
   }
   updateCustomCalling(id: string, input: { name?: string; category?: string; active?: boolean }) {
-    return this.request<{ ok: boolean }>("POST", `${this.admin ? "/admin" : ""}/custom-callings/${encodeURIComponent(id)}`, input);
+    return this.request<{ ok: boolean }>("POST", `/custom-callings/${encodeURIComponent(id)}`, input);
   }
   /** Doorzoekbare roepingencatalogus (standaard + eigen roepingen van deze ring). */
   catalog(ringId: string, q: string, category = "") {
-    return this.request<CatalogResult>("GET", `${this.admin ? "/admin" : ""}/catalog/callings?ring=${encodeURIComponent(ringId)}&q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}`);
+    return this.request<CatalogResult>("GET", `/catalog/callings?ring=${encodeURIComponent(ringId)}&q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}`);
   }
   appointers(ringId: string, code: string) {
     return this.request<EligibleAppointers>("GET", `/catalog/callings/${encodeURIComponent(code)}/appointers?ring=${encodeURIComponent(ringId)}`);
@@ -422,9 +389,9 @@ export class ApiClient {
     return this.request<{ ok: boolean }>("POST", "/devices/unregister", { token }, null);
   }
   sessions() {
-    return this.request<{ sessions: SessionInfo[] }>("GET", this.admin ? "/admin/sessions" : "/sessions");
+    return this.request<{ sessions: SessionInfo[] }>("GET", "/sessions");
   }
   revokeSession(id: string) {
-    return this.request<{ ok: boolean }>("POST", `${this.admin ? "/admin" : ""}/sessions/${encodeURIComponent(id)}/revoke`, {});
+    return this.request<{ ok: boolean }>("POST", `/sessions/${encodeURIComponent(id)}/revoke`, {});
   }
 }

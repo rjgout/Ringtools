@@ -25,7 +25,6 @@ import { NewCalling } from "./screens/NewCalling";
 import { CallingDetail } from "./screens/CallingDetail";
 import { Notifications } from "./screens/Notifications";
 import { Profile } from "./screens/Profile";
-import { AdminHome } from "./screens/admin/AdminHome";
 import { UserManager } from "./screens/UserManager";
 import { RingSetup } from "./screens/RingSetup";
 import { OpenLink } from "./screens/OpenLink";
@@ -59,7 +58,7 @@ function DeepLinks() {
 }
 
 function Shell() {
-  const { status, api, ring, me, startupError, retryStartup, signOut, isAdmin, reloadMe } = useAuth();
+  const { status, api, ring, me, startupError, retryStartup, signOut, reloadMe } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [online, setOnline] = useState(true);
@@ -152,9 +151,6 @@ function Shell() {
   }
   if (status === "signedOut" && linkingDevice) return <DeviceLink onClose={() => setLinkingDevice(false)} />;
   if (status === "signedOut") return (<><Login key={loginEmail} initialEmail={loginEmail} onHaveInvitation={() => setActivation({})} onLinkDevice={() => setLinkingDevice(true)} /></>);
-
-  // Webmin: uitsluitend het beheergedeelte (geen ringen, voorstellen of meldingen).
-  if (isAdmin) return (<div className="shell"><AdminHome /></div>);
 
   return (
     <div className="shell">
