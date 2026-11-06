@@ -7,10 +7,12 @@ import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError,
 
 /** Inloggen met e-mail + 8-cijferige code uit de e-mail. De link in de mail opent deze app direct (universele link). */
 export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: string; onHaveInvitation?: () => void }) {
-  const { api, signIn, finishMfa } = useAuth();
+  const { api, signIn, finishMfa, finishMfaTotp } = useAuth();
   const [email, setEmail] = useState(initialEmail);
   const [code, setCode] = useState("");
-  const [step, setStep] = useState<"email" | "code" | "passkey">("email");
+  const [step, setStep] = useState<"email" | "code" | "passkey" | "totp">("email");
+  const [totpCode, setTotpCode] = useState("");
+  const [useRecovery, setUseRecovery] = useState(false);
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,12 +54,18 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
     try {
       const result = await signIn(email.trim(), code.replace(/\s+/g, ""));
       if (result && "pendingToken" in result) {
-        // Verplichte MFA: nog geen sessie. Eerst de passkey-stap; een pending-login geeft nergens toegang.
+        // Verplichte MFA: nog geen sessie. Eerst de tweede factor; een pending-login geeft nergens toegang.
         setPendingToken(result.pendingToken);
-        setStep("passkey");
         setCode("");
         setBusy(false);
-        await passkey(result.pendingToken);
+        const methods = result.methods ?? ["passkey"]; // oudere server of testdubbel: alleen passkey
+        const passkeyOk = methods.includes("passkey") && getPasskeyProvider() !== null && passkeysUsable(true, nativeCapabilities().limited);
+        if (passkeyOk || !methods.includes("totp")) {
+          setStep("passkey");
+          await passkey(result.pendingToken);
+        } else {
+          setStep("totp"); // authenticator-app (of herstelcode)
+        }
       }
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Er ging iets mis.");
@@ -70,6 +78,23 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
     setStep("email");
     setError(message);
     if (token) await api.cancelMfa(token).catch(() => {}); // de wachtende login wordt direct opgeruimd
+  }
+
+  async function totp(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pendingToken) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const value = totpCode.replace(/\s+/g, "");
+      await finishMfaTotp(pendingToken, useRecovery ? { recoveryCode: totpCode.trim() } : { code: value });
+    } catch (err) {
+      if (err instanceof ApiRequestError && (err.code === "locked" || err.code === "unauthenticated" || err.code === "mfa-not-supported")) await leavePasskey(err.message);
+      else setError(err instanceof ApiRequestError ? err.message : "De verificatie is niet gelukt. Probeer het opnieuw.");
+      setTotpCode("");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function passkey(token: string) {
@@ -101,12 +126,19 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
 
   return (
     <main className="page center">
-      <form className="glass card stack" style={{ width: "100%", maxWidth: 420 }} onSubmit={step === "email" ? request : step === "code" ? login : (e) => { e.preventDefault(); if (pendingToken) void passkey(pendingToken); }}>
+      <form className="glass card stack" style={{ width: "100%", maxWidth: 420 }} onSubmit={step === "email" ? request : step === "code" ? login : step === "totp" ? totp : (e) => { e.preventDefault(); if (pendingToken) void passkey(pendingToken); }}>
         <div>
           <h1>Ringtools</h1>
           <span className="muted">Log in met je e-mailadres. Je ontvangt een code van 8 cijfers.</span>
         </div>
-        {step === "passkey" ? (
+        {step === "totp" ? (
+          <div>
+            <strong>Bevestig dat jij het bent</strong>
+            <p className="muted">{useRecovery ? "Vul een van je eenmalige herstelcodes in." : "Vul de 6-cijferige code uit je authenticator-app in."}</p>
+            <label htmlFor="totp">{useRecovery ? "Herstelcode" : "Code uit je authenticator-app"}</label>
+            <input id="totp" className="code" inputMode={useRecovery ? "text" : "numeric"} autoComplete="one-time-code" maxLength={useRecovery ? 11 : 6} required value={totpCode} onChange={(e) => setTotpCode(e.target.value)} autoFocus />
+          </div>
+        ) : step === "passkey" ? (
           <div>
             <strong>Bevestig dat jij het bent</strong>
             <p className="muted">Voor jouw account is extra verificatie met een passkey nodig. Volg de aanwijzingen van je toestel.</p>
@@ -124,10 +156,15 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
           </div>
         )}
         {error && <div className="error" role="alert">{error}</div>}
-        <button className="btn btn-primary btn-block" disabled={busy || (step === "code" && code.replace(/\s+/g, "").length !== 8)}>
+        <button className="btn btn-primary btn-block" disabled={busy || (step === "code" && code.replace(/\s+/g, "").length !== 8) || (step === "totp" && totpCode.replace(/\s+/g, "").length < (useRecovery ? 10 : 6))}>
           {busy ? "Even geduld…" : step === "email" ? "Stuur code" : step === "passkey" ? "Verifiëren met passkey" : "Inloggen"}
         </button>
-        {step === "passkey" && (
+        {step === "totp" && (
+          <button type="button" className="btn btn-ghost btn-block" onClick={() => { setUseRecovery((v) => !v); setTotpCode(""); setError(null); }}>
+            {useRecovery ? "Terug naar de authenticator-app" : "Ik heb geen toegang tot mijn authenticator"}
+          </button>
+        )}
+        {(step === "passkey" || step === "totp") && (
           <button type="button" className="btn btn-ghost btn-block" onClick={() => void leavePasskey(null)}>Annuleren</button>
         )}
         {step === "code" && (

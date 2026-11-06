@@ -52,6 +52,22 @@ export const env = {
     return process.env.NATIVE_PASSKEYS_ENABLED === "true";
   },
   /**
+   * Native login van accounts met verplichte MFA via e-mailcode + authenticator-app (TOTP). Standaard UIT: pas aanzetten na een toesteltest.
+   * Alleen effectief als `WEB_TOTP_ENABLED` aan staat en het account een bevestigde authenticator-app heeft; geen verlaging van de beveiliging
+   * (e-mailcode én TOTP blijven nodig). Zie docs/E2-3-ONTWIKKELPLAN.md.
+   */
+  get nativeTotpLoginEnabled() {
+    return process.env.NATIVE_TOTP_LOGIN_ENABLED === "true" && process.env.WEB_TOTP_ENABLED === "true";
+  },
+  /** E2.3: vertrouwde toestellen (koppelen, beheren, intrekken). Standaard UIT; een toestel is hiermee nog géén MFA-methode. */
+  get trustedDevicesEnabled() {
+    return process.env.TRUSTED_DEVICES_ENABLED === "true";
+  },
+  /** Eerste passkey of authenticator-app schakelt verificatie automatisch in (server-side, transactioneel). Standaard UIT tot de app MFA-login ondersteunt. */
+  get autoEnableMfa() {
+    return process.env.AUTO_ENABLE_MFA === "true";
+  },
+  /**
    * E2.1: authenticator-app (TOTP) als tweede factor voor gewone webgebruikers. Standaard UIT: zonder deze vlag is er geen enkel
    * gedrag veranderd (gewone gebruikers kennen alleen passkeys; TOTP blijft beperkt tot het beheerdersaccount).
    */

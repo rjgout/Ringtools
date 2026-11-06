@@ -90,7 +90,7 @@ publicRoute("POST", "/invitations/preview", async ({ request, body }) => invitat
 publicRoute("POST", "/invitations/activate", async ({ request, body }) => invitations.activateInvitationApi(body, clientKeyOf(request)));
 
 // Versie en capaciteiten van de API; de app controleert hiermee of ze nog compatibel is.
-publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION, nativePasskeys: env.nativePasskeysEnabled }));
+publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION, nativePasskeys: env.nativePasskeysEnabled, nativeTotpLogin: env.nativeTotpLoginEnabled, trustedDevices: env.trustedDevicesEnabled }));
 
 // Het pushtoken is een geheim van het toestel; wie het kent mag het afmelden. Zo kan de app het
 // ook afmelden als de sessie al is verlopen of ingetrokken (401).
@@ -114,6 +114,10 @@ const pendingTokenOf = (request: Request) => {
   return token;
 };
 publicRoute("POST", "/auth/mfa/passkey/options", async ({ request }) => nativeMfa.loginPasskeyOptions(pendingTokenOf(request)));
+publicRoute("POST", "/auth/mfa/totp/verify", async ({ request, body }) => {
+  const result = await nativeMfa.loginTotpVerify(pendingTokenOf(request), body);
+  return { token: result.token, expiresAt: result.expiresAt, ...(await svc.getMe(result.userId)) };
+});
 publicRoute("POST", "/auth/mfa/passkey/verify", async ({ request, body }) => {
   const result = await nativeMfa.loginPasskeyVerify(pendingTokenOf(request), body);
   return { token: result.token, expiresAt: result.expiresAt, ...(await svc.getMe(result.userId)) };

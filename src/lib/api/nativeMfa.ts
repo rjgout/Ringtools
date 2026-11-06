@@ -6,6 +6,8 @@ import { rateLimit } from "../rateLimit";
 import { createSession, destroySession, getSessionAwaitingMfa, promoteSessionToMfaVerified } from "../auth";
 import { logSecurityEvent } from "../securityEvents";
 import { hasPasskeys, startPasskeyAuthentication, verifyPasskeyAuthentication } from "../webauthn";
+import { isTotpConfirmed, verifyTotpCode, consumeRecoveryCodeLimited } from "../mfa";
+import { totpCodeSchema, recoveryCodeSchema } from "../validation";
 import { ApiError } from "./http";
 import type { ApiAuth } from "./auth";
 
@@ -38,23 +40,28 @@ const assertionSchema = z
   })
   .passthrough();
 
-export type PendingLogin = { mfaRequired: true; method: "passkey"; pendingToken: string; expiresAt: string };
+export type PendingLogin = { mfaRequired: true; method: "passkey" | "totp"; methods: ("passkey" | "totp")[]; pendingToken: string; expiresAt: string };
 
 /**
  * Na een geslaagde e-mailcode voor een account met verplichte MFA. Geeft nooit een volledige sessie.
- * - Functie uit: oude, veilige weigering (de code is dan al verbruikt, net als voorheen).
- * - Geen passkey geregistreerd: de app kan er geen inschrijven (dat blijft webapp-only); veilige melding.
+ * - Methoden: passkey (functievlag `NATIVE_PASSKEYS_ENABLED`, registratie van passkeys blijft webapp-only) en/of authenticator-app
+ *   (functievlag `NATIVE_TOTP_LOGIN_ENABLED`, bevestigde TOTP). Beide extra methoden zijn een tweede factor ná de e-mailcode.
+ * - Geen enkele methode bruikbaar: oude, veilige weigering of melding (de code is dan al verbruikt, net als voorheen).
  */
 export async function beginMfaLogin(user: User): Promise<PendingLogin> {
-  if (!env.nativePasskeysEnabled) throw new ApiError(403, NOT_SUPPORTED, "mfa-not-supported");
-  if (isLocked(user.id)) throw new ApiError(429, "Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw.", "locked");
-  if (!(await hasPasskeys(user.id))) {
+  const passkeyEnabled = env.nativePasskeysEnabled;
+  const totpUsable = env.nativeTotpLoginEnabled && user.role !== "ADMIN" && (await isTotpConfirmed(user.id));
+  if (!passkeyEnabled && !totpUsable) throw new ApiError(403, NOT_SUPPORTED, "mfa-not-supported");
+  const passkeyUsable = passkeyEnabled && (await hasPasskeys(user.id));
+  if (!passkeyUsable && !totpUsable) {
     throw new ApiError(403, "Er is nog geen passkey ingesteld voor jouw account. Stel die eerst in via de webapp en log daarna hier in.", "mfa-enrollment-required");
   }
+  if (isLocked(user.id)) throw new ApiError(429, "Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw.", "locked");
   // Maximaal één wachtende app-login per gebruiker; wachtende webinlogpogingen blijven onaangeroerd.
   await prisma.session.deleteMany({ where: { userId: user.id, mfaAt: null, userAgent: PENDING_AGENT } });
   const pending = await createSession(user.id, PENDING_AGENT);
-  return { mfaRequired: true, method: "passkey", pendingToken: pending.rawToken, expiresAt: pending.expiresAt.toISOString() };
+  const methods: ("passkey" | "totp")[] = [...(passkeyUsable ? (["passkey"] as const) : []), ...(totpUsable ? (["totp"] as const) : [])];
+  return { mfaRequired: true, method: methods[0], methods, pendingToken: pending.rawToken, expiresAt: pending.expiresAt.toISOString() };
 }
 
 async function pendingFor(pendingToken: string) {
@@ -138,4 +145,32 @@ export async function reauthPasskeyVerify(auth: ApiAuth, body: Record<string, un
 /** Voor tests: wist de tijdelijke vergrendelingen. */
 export function resetPasskeyLocks() {
   lockedUntil.clear();
+}
+
+/**
+ * Stap 2 (pending-login) met de authenticator-app of een herstelcode. Dezelfde servercontroles als op het web: bevestigde TOTP, replaybescherming,
+ * persistente lockout en ratelimit; herstelcodes met eigen persistente begrenzing. Pas daarna ontstaat een volledige sessie (nieuw token, de
+ * pending-sessie vervalt). Zonder de functievlag of zonder bevestigde TOTP: weigering.
+ */
+export async function loginTotpVerify(pendingToken: string, body: Record<string, unknown>) {
+  const awaiting = await pendingFor(pendingToken);
+  if (!env.nativeTotpLoginEnabled || !(await isTotpConfirmed(awaiting.userId))) throw new ApiError(403, NOT_SUPPORTED, "mfa-not-supported");
+  if (!rateLimit(`totp-login:${awaiting.userId}`, 10, WINDOW).allowed) throw new ApiError(429, "Te veel pogingen. Probeer het later opnieuw.", "rate-limited");
+
+  const recovery = typeof body.recoveryCode === "string" ? body.recoveryCode : "";
+  if (recovery) {
+    const parsed = recoveryCodeSchema.safeParse(recovery);
+    const outcome = parsed.success ? await consumeRecoveryCodeLimited(awaiting.userId, parsed.data) : "INVALID";
+    if (outcome === "LOCKED") throw new ApiError(429, "Te veel herstelpogingen. Probeer het over 15 minuten opnieuw.", "locked");
+    if (outcome !== "OK") throw new ApiError(401, "Ongeldige of al gebruikte herstelcode.", "invalid-code");
+  } else {
+    const code = totpCodeSchema.safeParse(typeof body.code === "string" ? body.code : "");
+    if (!code.success) throw new ApiError(400, code.error.issues[0]?.message ?? "Ongeldige code.", "validation");
+    const outcome = await verifyTotpCode(awaiting.userId, awaiting.user.email, code.data);
+    if (outcome === "LOCKED") throw new ApiError(429, "Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw, of gebruik een herstelcode.", "locked");
+    if (outcome !== "OK") throw new ApiError(401, "Ongeldige code.", "invalid-code");
+  }
+  const session = await promoteSessionToMfaVerified(awaiting.sessionId, awaiting.userId, FULL_AGENT);
+  await logSecurityEvent({ userId: awaiting.userId, type: "MFA_VERIFIED", detail: "App: authenticator-app" });
+  return { userId: awaiting.userId, token: session.rawToken, expiresAt: session.expiresAt.toISOString() };
 }

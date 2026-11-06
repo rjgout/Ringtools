@@ -8,9 +8,13 @@ import { ApiRequestError } from "../lib/api";
  * actie daarna opnieuw. Er wordt niets lokaal "onthouden": de server beslist.
  */
 export function useReauth() {
-  const { reauth, reauthWithPasskey, requestReauthCode, isAdmin, me } = useAuth();
+  const { reauth, reauthWithPasskey, requestReauthCode, isAdmin, me, api } = useAuth();
   // Accounts met verplichte MFA (passkey) bevestigen met een passkey; een e-mailcode alleen is voor hen nooit genoeg (de server weigert dat).
-  const usesPasskey = !isAdmin && !!me?.user.mfaEnabled;
+  const mfaUser = !isAdmin && !!me?.user.mfaEnabled;
+  // Functievlag op de server: accounts met een authenticator-app bevestigen in de app met een 6-cijferige code (nooit met een e-mailcode alleen).
+  const [totpServer, setTotpServer] = useState(false);
+  const usesTotp = mfaUser && totpServer;
+  const usesPasskey = mfaUser && !usesTotp;
   const [open, setOpen] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState("");
@@ -26,8 +30,9 @@ export function useReauth() {
         setError(null);
         setCodeSent(false);
         setOpen(true);
+        if (mfaUser) void Promise.resolve().then(() => api.meta()).then((m) => setTotpServer(m?.nativeTotpLogin === true)).catch(() => {});
       }),
-    []
+    [mfaUser, api]
   );
 
   const run = useCallback(
@@ -97,7 +102,7 @@ export function useReauth() {
       <strong>Bevestig je identiteit</strong>
       {usesPasskey ? (
         <span className="muted">Voor jouw account is extra verificatie met een passkey nodig. Volg de aanwijzingen van je toestel.</span>
-      ) : isAdmin ? (
+      ) : isAdmin || usesTotp ? (
         <span className="muted">Vul de huidige 6-cijferige code uit je authenticator-app in.</span>
       ) : codeSent ? (
         <span className="muted">Vul de 8-cijferige code uit de e-mail in.</span>
@@ -106,12 +111,12 @@ export function useReauth() {
       )}
       {usesPasskey ? (
         <button className="btn btn-primary" disabled={busy} onClick={() => void submitPasskey()}>{busy ? "Even geduld…" : "Verifiëren met passkey"}</button>
-      ) : !isAdmin && !codeSent ? (
+      ) : !isAdmin && !usesTotp && !codeSent ? (
         <button className="btn btn-primary" disabled={busy} onClick={sendCode}>Stuur code</button>
       ) : (
         <form className="stack" onSubmit={submit}>
-          <input aria-label="Code" className="code" inputMode="numeric" autoComplete="one-time-code" maxLength={isAdmin ? 6 : 8} value={code} onChange={(e) => setCode(e.target.value)} autoFocus required />
-          <button className="btn btn-primary" disabled={busy || code.replace(/\s+/g, "").length !== (isAdmin ? 6 : 8)}>Bevestigen</button>
+          <input aria-label="Code" className="code" inputMode="numeric" autoComplete="one-time-code" maxLength={isAdmin || usesTotp ? 6 : 8} value={code} onChange={(e) => setCode(e.target.value)} autoFocus required />
+          <button className="btn btn-primary" disabled={busy || code.replace(/\s+/g, "").length !== (isAdmin || usesTotp ? 6 : 8)}>Bevestigen</button>
         </form>
       )}
       {error && <div className="error" role="alert">{error}</div>}

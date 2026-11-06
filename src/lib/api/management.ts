@@ -1,6 +1,7 @@
 import type { Role } from "@prisma/client";
 import { prisma } from "../prisma";
 import { rateLimit } from "../rateLimit";
+import { env } from "../env";
 import {
   consumeLoginCode,
   createSession,
@@ -101,7 +102,20 @@ export async function adminReauth(auth: ApiAuth, body: Record<string, unknown>) 
 
 /** Herverificatie van een gewone gebruiker met een verse e-mailcode (zonder passkey-verificatie; die volgt in Fase C). */
 export async function userReauth(auth: ApiAuth, body: Record<string, unknown>) {
-  if (auth.user.mfaEnabled) throw new ApiError(403, "Herverificatie met een passkey wordt in de app nog niet ondersteund.", "mfa-not-supported");
+  if (auth.user.mfaEnabled) {
+    // Accounts met verplichte MFA bevestigen met hun tweede factor, nooit met een e-mailcode alleen. In de app is dat (functievlag) de authenticator-app.
+    const totp = str(body.code).replace(/\s+/g, "");
+    if (!env.nativeTotpLoginEnabled || !/^\d{6}$/.test(totp) || !(await isTotpConfirmed(auth.user.id))) {
+      throw new ApiError(403, "Herverificatie met een passkey wordt in de app nog niet ondersteund.", "mfa-not-supported");
+    }
+    if (!rateLimit(`totp-reverify:${auth.user.id}`, 10, WINDOW).allowed) throw new ApiError(429, "Te veel pogingen. Probeer het later opnieuw.", "rate-limited");
+    const outcome = await verifyTotpCode(auth.user.id, auth.user.email, totp);
+    if (outcome === "LOCKED") throw new ApiError(429, "Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw.", "locked");
+    if (outcome !== "OK") throw new ApiError(401, "Ongeldige code.", "invalid-code");
+    const session = await promoteSessionToMfaVerified(auth.sessionId, auth.user.id, "Ringtools-app");
+    await logSecurityEvent({ userId: auth.user.id, type: "MFA_VERIFIED", detail: "App: authenticator-app (herverificatie)" });
+    return { token: session.rawToken, expiresAt: session.expiresAt.toISOString() };
+  }
   if (!rateLimit(`reauth-code:${auth.user.id}`, 10, WINDOW).allowed) throw new ApiError(429, "Te veel pogingen. Probeer het later opnieuw.", "rate-limited");
   const code = str(body.code).replace(/\s+/g, "");
   const user = /^\d{8}$/.test(code) ? await consumeLoginCode(auth.user.email, code) : null;

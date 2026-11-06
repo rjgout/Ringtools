@@ -23,11 +23,13 @@ type AuthValue = {
   /** Webmin is ingelogd (beheergedeelte); er is dan geen ring of voorstel. */
   isAdmin: boolean;
   /** Geeft `{ pendingToken }` terug als er nog een passkey-verificatie nodig is (verplichte MFA); dan bestaat er nog géén sessie. */
-  signIn: (email: string, code: string) => Promise<{ pendingToken: string } | void>;
+  signIn: (email: string, code: string) => Promise<{ pendingToken: string; methods: ("passkey" | "totp")[] } | void>;
   /** Neemt de sessie over die een geslaagde uitnodigingsactivatie (zonder verplichte MFA) uitgaf; het token gaat direct naar Keychain/Keystore. */
   finishActivation: (result: LoginResult) => Promise<void>;
   /** Rondt een pending-login af na een geslaagde passkey-ceremonie; pas hierna bestaat er een sessie. */
   finishMfa: (pendingToken: string, assertion: PasskeyAssertion) => Promise<void>;
+  /** Rondt een pending-login af met de authenticator-app of een herstelcode (functievlag op de server); pas hierna bestaat er een sessie. */
+  finishMfaTotp: (pendingToken: string, proof: { code?: string; recoveryCode?: string }) => Promise<void>;
   /** Webmin stap 1 (wachtwoord): geeft een wachtend token dat alleen voor stap 2 geldt. */
   adminStart: (username: string, password: string) => Promise<string>;
   /** Webmin stap 2 (TOTP of herstelcode): pas hierna bestaat er een sessie. */
@@ -197,7 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (email: string, code: string) => {
       const result = await api.login(email, code, platform === "web" ? "Browser" : platform === "ios" ? "iPhone/iPad" : "Android");
       // Verplichte MFA: nog geen sessie; de aanroeper doorloopt de passkey-stap en rondt af met finishMfa().
-      if ("mfaRequired" in result && result.mfaRequired) return { pendingToken: result.pendingToken };
+      if ("mfaRequired" in result && result.mfaRequired) return { pendingToken: result.pendingToken, methods: result.methods ?? [result.method] };
       const full = result as LoginResult;
       tokenRef.current = full.token;
       await storage.setToken(full.token);
@@ -220,6 +222,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const finishMfa = useCallback(
     async (pendingToken: string, assertion: PasskeyAssertion) => {
       const result = await api.passkeyVerify(pendingToken, assertion);
+      tokenRef.current = result.token;
+      await storage.setToken(result.token);
+      await applyMe({ user: result.user, rings: result.rings, pendingCount: result.pendingCount });
+      setStatus("signedIn");
+    },
+    [api, applyMe]
+  );
+
+  const finishMfaTotp = useCallback(
+    async (pendingToken: string, proof: { code?: string; recoveryCode?: string }) => {
+      const result = await api.totpVerify(pendingToken, proof);
       tokenRef.current = result.token;
       await storage.setToken(result.token);
       await applyMe({ user: result.user, rings: result.rings, pendingCount: result.pendingCount });
@@ -302,8 +315,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const ring = me?.rings.find((r) => r.id === ringId) ?? null;
   const value = useMemo<AuthValue>(
-    () => ({ status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishActivation, adminStart, adminFinish, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
-    [status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishActivation, adminStart, adminFinish, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
+    () => ({ status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishMfaTotp, finishActivation, adminStart, adminFinish, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
+    [status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishMfaTotp, finishActivation, adminStart, adminFinish, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

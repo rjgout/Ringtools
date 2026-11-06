@@ -128,6 +128,9 @@ export class ApiClient {
   passkeyVerify(pendingToken: string, response: PasskeyAssertion) {
     return this.request<LoginResult>("POST", "/auth/mfa/passkey/verify", { response }, pendingToken);
   }
+  totpVerify(pendingToken: string, proof: { code?: string; recoveryCode?: string }) {
+    return this.request<LoginResult>("POST", "/auth/mfa/totp/verify", proof, pendingToken);
+  }
   cancelMfa(pendingToken: string) {
     return this.request<{ ok: boolean }>("POST", "/auth/mfa/cancel", {}, pendingToken);
   }
