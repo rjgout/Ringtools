@@ -42,3 +42,24 @@ describe("CallingDetail: ringselectie als effect, niet tijdens het renderen", ()
     expect(selectRing).not.toHaveBeenCalled();
   });
 });
+
+describe("CallingDetail: dubbel tikken tijdens opslaan", () => {
+  it("snel dubbel tikken op 'Ondersteunen' verstuurt één verzoek; een dubbele 'Administratief verwerkt' geeft één uitkomst", async () => {
+    const { act, screen } = await import("@testing-library/react");
+    let resolveVote: () => void = () => {};
+    const api = {
+      calling: vi.fn(async () => ({ ...detail("ring-A"), me: { role: "RINGPRESIDIUM", isStaff: true }, rounds: [{ stage: "PRESIDIUM", title: "Ringpresidium", state: "open", canRespond: true, myResponse: null, participants: [] }], readyToProcess: true })),
+      vote: vi.fn(() => new Promise<void>((r) => { resolveVote = r; })),
+      markProcessed: vi.fn(async () => ({ ok: true })),
+    };
+    auth.value = { api, ring: { id: "ring-A" }, selectRing: vi.fn(async () => {}) };
+    render(<MemoryRouter initialEntries={["/roepingen/c1"]}><Routes><Route path="/roepingen/:id" element={<CallingDetail />} /></Routes></MemoryRouter>);
+    const btn = await screen.findByRole("button", { name: "Ondersteunen" });
+    act(() => { btn.click(); btn.click(); }); // twee tikken binnen dezelfde render, vóór de knop uitgeschakeld kan worden
+    resolveVote();
+    await waitFor(() => expect(api.vote).toHaveBeenCalledTimes(1));
+    const proc = await screen.findByRole("button", { name: "Administratief verwerkt" });
+    act(() => { proc.click(); proc.click(); });
+    await waitFor(() => expect(api.markProcessed).toHaveBeenCalledTimes(1));
+  });
+});

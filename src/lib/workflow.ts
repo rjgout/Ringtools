@@ -361,35 +361,40 @@ function stageForStatus(status: Calling["status"]): Stage | null {
 
 /** Brengt ondersteuning uit (of wijzigt een eerdere reactie) zolang de ronde openstaat. */
 export async function castVote(input: { callingId: string; userId: string; support: boolean }): Promise<Calling> {
-  const calling = await prisma.calling.findUniqueOrThrow({ where: { id: input.callingId } });
-  const stage = stageForStatus(calling.status);
-  if (!stage) {
-    throw new WorkflowError("Voor dit voorstel is momenteel geen ondersteuningsronde open.");
-  }
+  // Statuscontrole, deelnemerscontrole en opslaan gebeuren onder dezelfde rijvergrendeling als de herberekening: een reactie
+  // kan zo nooit worden opgeslagen voor een ronde die intussen is gesloten (geen tegenstem naast een al vastgelegd akkoord).
+  await prisma.$transaction(async (tx) => {
+    await lockCalling(tx, input.callingId);
+    const calling = await tx.calling.findUniqueOrThrow({ where: { id: input.callingId } });
+    const stage = stageForStatus(calling.status);
+    if (!stage) {
+      throw new WorkflowError("Voor dit voorstel is momenteel geen ondersteuningsronde open.");
+    }
 
-  const [eligible, membership] = await Promise.all([
-    prisma.eligibleVoter.findUnique({
+    const [eligible, membership] = await Promise.all([
+      tx.eligibleVoter.findUnique({
+        where: { callingId_stage_userId: { callingId: calling.id, stage, userId: input.userId } },
+      }),
+      tx.ringMembership.findUnique({
+        where: { userId_ringId: { userId: input.userId, ringId: calling.ringId } },
+        include: { user: true, ring: true },
+      }),
+    ]);
+    // Naast de bevroren deelnemerslijst moet iemand NU nog actief lid van de
+    // ring zijn met de juiste rol: een gedeactiveerd of van functie veranderd
+    // lid kan niet meer reageren (bestaande reacties blijven wel staan).
+    if (!eligible || !membership || !membership.active || !membership.user.active || !membership.ring.active || membership.role !== STAGE_ROLE[stage]) {
+      throw new WorkflowError("Je kunt voor deze ondersteuningsronde geen ondersteuning uitbrengen.");
+    }
+
+    await tx.vote.upsert({
       where: { callingId_stage_userId: { callingId: calling.id, stage, userId: input.userId } },
-    }),
-    prisma.ringMembership.findUnique({
-      where: { userId_ringId: { userId: input.userId, ringId: calling.ringId } },
-      include: { user: true, ring: true },
-    }),
-  ]);
-  // Naast de bevroren deelnemerslijst moet iemand NU nog actief lid van de
-  // ring zijn met de juiste rol: een gedeactiveerd of van functie veranderd
-  // lid kan niet meer reageren (bestaande reacties blijven wel staan).
-  if (!eligible || !membership || !membership.active || !membership.user.active || !membership.ring.active || membership.role !== STAGE_ROLE[stage]) {
-    throw new WorkflowError("Je kunt voor deze ondersteuningsronde geen ondersteuning uitbrengen.");
-  }
-
-  await prisma.vote.upsert({
-    where: { callingId_stage_userId: { callingId: calling.id, stage, userId: input.userId } },
-    update: { support: input.support },
-    create: { callingId: calling.id, stage, userId: input.userId, support: input.support },
+      update: { support: input.support },
+      create: { callingId: calling.id, stage, userId: input.userId, support: input.support },
+    });
   });
 
-  return recomputeCallingState(calling.id);
+  return recomputeCallingState(input.callingId);
 }
 
 /**
@@ -897,25 +902,29 @@ export async function completeTask(input: {
   doneAt: Date;
   ondersteunenContext?: OndersteuningContext;
 }): Promise<Calling> {
-  const calling = await prisma.calling.findUniqueOrThrow({ where: { id: input.callingId } });
-  if (calling.status !== "APPROVED") {
-    throw new WorkflowError("Taken kunnen alleen worden afgerond nadat de roeping volledig is goedgekeurd.");
-  }
-  if (input.task === "ONDERSTEUNEN" && !input.ondersteunenContext) {
-    throw new WorkflowError("Geef aan of de ondersteuning in een avondmaalsvergadering of ringconferentie plaatsvond.");
-  }
-
   const prefix = TASK_FIELD_PREFIX[input.task];
-  const wasAlreadyDone = calling[`${prefix}DoneAt` as const] !== null;
-  const data: Record<string, unknown> = {
-    [`${prefix}DoneById`]: input.doneById,
-    [`${prefix}DoneAt`]: input.doneAt,
-  };
-  if (input.task === "ONDERSTEUNEN") {
-    data.ondersteunenContext = input.ondersteunenContext;
-  }
-
-  const updated = await prisma.calling.update({ where: { id: input.callingId }, data: data as Prisma.CallingUpdateInput });
+  // Controle en opslaan onder één rijvergrendeling: alleen de aanroep die de taak daadwerkelijk als eerste afrondt, meldt dat.
+  const { updated, wasAlreadyDone } = await prisma.$transaction(async (tx) => {
+    await lockCalling(tx, input.callingId);
+    const calling = await tx.calling.findUniqueOrThrow({ where: { id: input.callingId } });
+    if (calling.status !== "APPROVED") {
+      throw new WorkflowError("Taken kunnen alleen worden afgerond nadat de roeping volledig is goedgekeurd.");
+    }
+    if (input.task === "ONDERSTEUNEN" && !input.ondersteunenContext) {
+      throw new WorkflowError("Geef aan of de ondersteuning in een avondmaalsvergadering of ringconferentie plaatsvond.");
+    }
+    const data: Record<string, unknown> = {
+      [`${prefix}DoneById`]: input.doneById,
+      [`${prefix}DoneAt`]: input.doneAt,
+    };
+    if (input.task === "ONDERSTEUNEN") {
+      data.ondersteunenContext = input.ondersteunenContext;
+    }
+    return {
+      wasAlreadyDone: calling[`${prefix}DoneAt` as const] !== null,
+      updated: await tx.calling.update({ where: { id: input.callingId }, data: data as Prisma.CallingUpdateInput }),
+    };
+  });
 
   // Alleen bij de eerste keer afronden melden, niet bij een correctie van een
   // al afgeronde taak (voorkomt dubbele meldingen).
@@ -927,13 +936,17 @@ export async function completeTask(input: {
 }
 
 export async function markProcessed(input: { callingId: string; processedById: string }): Promise<Calling> {
-  const calling = await prisma.calling.findUniqueOrThrow({ where: { id: input.callingId } });
-  if (!isReadyToProcess(calling)) {
-    throw new WorkflowError("Deze roeping is nog niet gereed om verwerkt te worden.");
-  }
-  return prisma.calling.update({
-    where: { id: input.callingId },
-    data: { status: "PROCESSED", processedAt: new Date(), processedById: input.processedById },
+  return prisma.$transaction(async (tx) => {
+    await lockCalling(tx, input.callingId);
+    const calling = await tx.calling.findUniqueOrThrow({ where: { id: input.callingId } });
+    // Onder de vergrendeling: een tweede (gelijktijdige) verwerking ziet de eerste en wijzigt niets.
+    if (!isReadyToProcess(calling)) {
+      throw new WorkflowError("Deze roeping is nog niet gereed om verwerkt te worden.");
+    }
+    return tx.calling.update({
+      where: { id: input.callingId },
+      data: { status: "PROCESSED", processedAt: new Date(), processedById: input.processedById },
+    });
   });
 }
 
@@ -951,28 +964,36 @@ export async function sendDue30DayReminders(): Promise<number> {
   const presidiumByRing = new Map<string, string[]>();
 
   for (const calling of due) {
-    if (!presidiumByRing.has(calling.ringId)) {
-      presidiumByRing.set(calling.ringId, await activeMemberIds(prisma, calling.ringId, "RINGPRESIDIUM"));
-    }
-    await notify({
-      userIds: presidiumByRing.get(calling.ringId)!,
-      ringId: calling.ringId,
-      event: "REMINDER_30_DAYS",
-      url: callingPath(calling.id),
-      callingId: calling.id,
-      buildEmail: async (user) =>
-        reminder30Email({
-          name: user.name,
-          personName: calling.personName,
-          functionTitle: calling.functionTitle,
-          phaseLabel: phaseLabel(calling),
-          link: await createOpenLink(user.id, calling.id),
-        }),
+    // Atomair claimen: bij twee gelijktijdige runs verstuurt precies één de herinnering. Een fout bij het versturen geeft de claim
+    // weer vrij, zodat de volgende run het opnieuw probeert (zoals voorheen).
+    const claim = await prisma.calling.updateMany({
+      where: { id: calling.id, reminder30SentAt: null, status: { not: "PROCESSED" } },
+      data: { reminder30SentAt: new Date() },
     });
-    // Pas na het (proberen te) versturen markeren, zodat een gedeeltelijke
-    // storing bij de volgende cron-run opnieuw wordt opgepakt. Bij
-    // succesvolle verzending voorkomt dit duplicaten bij elke volgende run.
-    await prisma.calling.update({ where: { id: calling.id }, data: { reminder30SentAt: new Date() } });
+    if (claim.count !== 1) continue;
+    try {
+      if (!presidiumByRing.has(calling.ringId)) {
+        presidiumByRing.set(calling.ringId, await activeMemberIds(prisma, calling.ringId, "RINGPRESIDIUM"));
+      }
+      await notify({
+        userIds: presidiumByRing.get(calling.ringId)!,
+        ringId: calling.ringId,
+        event: "REMINDER_30_DAYS",
+        url: callingPath(calling.id),
+        callingId: calling.id,
+        buildEmail: async (user) =>
+          reminder30Email({
+            name: user.name,
+            personName: calling.personName,
+            functionTitle: calling.functionTitle,
+            phaseLabel: phaseLabel(calling),
+            link: await createOpenLink(user.id, calling.id),
+          }),
+      });
+    } catch (err) {
+      await prisma.calling.updateMany({ where: { id: calling.id }, data: { reminder30SentAt: null } });
+      throw err;
+    }
   }
 
   return due.length;

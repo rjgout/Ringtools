@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
@@ -13,6 +13,7 @@ export function CallingDetail() {
   const navigate = useNavigate();
   const { data, error, loading, reload } = useLoad(() => api.calling(id), [id]);
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false); // synchroon slot: een tweede tik vóór de volgende render start geen tweede verzoek
   const [message, setMessage] = useState<string | null>(null);
 
   // Het voorstel hoort bij een bepaalde ring: de server bepaalt dat, de app volgt (bijv. na een e-maillink).
@@ -26,6 +27,8 @@ export function CallingDetail() {
 
   /** Voert een beheeractie uit, ververst het voorstel en toont de uitkomst. De server beslist over de bevoegdheid. */
   async function act<T>(run: () => Promise<T>, done: string | ((result: T) => string)) {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setMessage(null);
     try {
@@ -35,11 +38,14 @@ export function CallingDetail() {
     } catch (err) {
       setMessage(err instanceof ApiRequestError ? err.message : "Er ging iets mis.");
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
 
   async function vote(support: boolean) {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setMessage(null);
     try {
@@ -49,6 +55,7 @@ export function CallingDetail() {
     } catch (err) {
       setMessage(err instanceof ApiRequestError ? err.message : "Er ging iets mis.");
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
