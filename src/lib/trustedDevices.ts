@@ -177,15 +177,20 @@ export async function listTrustedDevices(userId: string) {
   return prisma.trustedDevice.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
-    select: { id: true, label: true, platform: true, createdAt: true, lastUsedAt: true, revokedAt: true },
+    select: { id: true, label: true, platform: true, createdAt: true, lastUsedAt: true, revokedAt: true, loginEnabledAt: true },
   });
 }
 
 /** Trekt een toestel in (idempotent, atomisch). Een ingetrokken sleutel is nooit meer bruikbaar of opnieuw te registreren (publicKey blijft uniek). */
 export async function revokeTrustedDevice(userId: string, deviceId: string, actorId: string): Promise<boolean> {
-  const result = await prisma.trustedDevice.updateMany({ where: { id: deviceId, userId, revokedAt: null }, data: { revokedAt: new Date(), revokedById: actorId } });
-  if (result.count === 1) await logSecurityEvent({ userId, actorUserId: actorId, type: "TRUSTED_DEVICE_REVOKED" });
-  return result.count === 1;
+  // E2.4a: ook alle sessies die via dit toestel zijn aangemaakt gaan direct weg (zelfde transactie).
+  const revoked = await prisma.$transaction(async (tx) => {
+    const result = await tx.trustedDevice.updateMany({ where: { id: deviceId, userId, revokedAt: null }, data: { revokedAt: new Date(), revokedById: actorId, loginEnabledAt: null } });
+    if (result.count === 1) await tx.session.deleteMany({ where: { deviceId, userId } });
+    return result.count === 1;
+  });
+  if (revoked) await logSecurityEvent({ userId, actorUserId: actorId, type: "TRUSTED_DEVICE_REVOKED" });
+  return revoked;
 }
 
 /**

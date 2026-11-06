@@ -131,6 +131,21 @@ export class ApiClient {
   totpVerify(pendingToken: string, proof: { code?: string; recoveryCode?: string }) {
     return this.request<LoginResult>("POST", "/auth/mfa/totp/verify", proof, pendingToken);
   }
+  deviceChallenge(installationId: string) {
+    return this.request<{ challengeId: string; challenge: string; deviceId: string; expiresAt: string }>("POST", "/auth/device/challenge", { installationId }, null);
+  }
+  deviceLogin(input: { installationId: string; challengeId: string; signature: string }) {
+    return this.request<LoginResult>("POST", "/auth/device/login", input, null);
+  }
+  deviceStatus(installationId: string) {
+    return this.request<{ registered: boolean; loginEnabled: boolean }>("POST", "/auth/device/status", { installationId });
+  }
+  deviceActivateChallenge(installationId: string) {
+    return this.request<{ challengeId: string; challenge: string; deviceId: string; expiresAt: string }>("POST", "/auth/device/activate/challenge", { installationId });
+  }
+  deviceActivateConfirm(input: { installationId: string; challengeId: string; signature: string }) {
+    return this.request<{ ok: boolean }>("POST", "/auth/device/activate/confirm", input);
+  }
   claimDevicePairing(code: string) {
     return this.request<{ registrationToken: string; challenge: string; expiresAt: string }>("POST", "/trusted-devices/pair/claim", { code }, null);
   }

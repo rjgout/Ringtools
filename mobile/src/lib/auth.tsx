@@ -3,6 +3,7 @@ import type { LoginResult, Me, RingInfo } from "@shared/api-types";
 import { ApiClient, ApiRequestError } from "./api";
 import { storage } from "./storage";
 import { API_BASE } from "../config";
+import { loginWithDeviceKey } from "./deviceLogin";
 import { platform } from "./native";
 import { registerForPush } from "./push";
 import { resumeSession } from "./resume";
@@ -30,6 +31,8 @@ type AuthValue = {
   finishMfa: (pendingToken: string, assertion: PasskeyAssertion) => Promise<void>;
   /** Rondt een pending-login af met de authenticator-app of een herstelcode (functievlag op de server); pas hierna bestaat er een sessie. */
   finishMfaTotp: (pendingToken: string, proof: { code?: string; recoveryCode?: string }) => Promise<void>;
+  /** E2.4a: inloggen met een geactiveerd vertrouwd toestel (Face ID); pas na de door de server geverifieerde handtekening bestaat er een sessie. */
+  signInWithDevice: () => Promise<void>;
   /** Webmin stap 1 (wachtwoord): geeft een wachtend token dat alleen voor stap 2 geldt. */
   adminStart: (username: string, password: string) => Promise<string>;
   /** Webmin stap 2 (TOTP of herstelcode): pas hierna bestaat er een sessie. */
@@ -241,6 +244,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [api, applyMe]
   );
 
+  const signInWithDevice = useCallback(async () => {
+    const result = await loginWithDeviceKey(api);
+    tokenRef.current = result.token;
+    await storage.setToken(result.token);
+    await applyMe({ user: result.user, rings: result.rings, pendingCount: result.pendingCount });
+    setStatus("signedIn");
+  }, [api, applyMe]);
+
   const adminStart = useCallback(async (username: string, password: string) => (await api.adminLogin(username, password)).pendingToken, [api]);
 
   const adminFinish = useCallback(
@@ -315,8 +326,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const ring = me?.rings.find((r) => r.id === ringId) ?? null;
   const value = useMemo<AuthValue>(
-    () => ({ status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishMfaTotp, finishActivation, adminStart, adminFinish, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
-    [status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishMfaTotp, finishActivation, adminStart, adminFinish, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
+    () => ({ status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishMfaTotp, signInWithDevice, finishActivation, adminStart, adminFinish, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
+    [status, startupError, retryStartup, me, ring, api, isAdmin, signIn, finishMfa, finishMfaTotp, signInWithDevice, finishActivation, adminStart, adminFinish, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

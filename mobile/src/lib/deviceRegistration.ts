@@ -2,6 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { ApiRequestError, type ApiClient } from "./api";
 import { DeviceKeyError, nativeDeviceKeys, type DeviceKeyProvider } from "./deviceKey";
 import { storage } from "./storage";
+import { readDeviceKeyRef } from "./deviceLogin";
 
 /** Zelfde bericht als de server (src/lib/trustedDevices.ts `registrationMessage`). */
 export const REGISTRATION_CONTEXT = "ringtools-device-registration-v1";
@@ -29,6 +30,8 @@ export async function registerThisDevice(api: ApiClient, rawCode: string, keys: 
   const code = normalizeCode(rawCode);
   if (code.length !== 12) return { ok: false, message: "Vul de koppelcode van 12 tekens in." };
 
+  // Bestaat er al een lokale sleutel (herkoppelen na intrekken, herinstallatie of sleutelverlies), dan wordt die — best effort — opgeruimd. Nooit stilzwijgend hergebruikt.
+  const previous = await readDeviceKeyRef();
   const installationId = randomHex(16);
   const tag = `nl.ringapeldoorn.ringtools.devicekey.${installationId}`;
   let created = false;
@@ -50,6 +53,8 @@ export async function registerThisDevice(api: ApiClient, rawCode: string, keys: 
       platform,
       label: platform === "IOS" ? "iPhone" : "Android-toestel",
     });
+    // Pas na een geslaagde registratie wordt de vorige lokale sleutel opgeruimd (bij een mislukte herkoppeling blijft de oude ongemoeid).
+    if (previous && previous.tag !== tag) await keys.remove(previous.tag).catch(() => undefined);
     return { ok: true };
   } catch (err) {
     if (created) await keys.remove(tag).catch(() => undefined);

@@ -1,16 +1,17 @@
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { AdminLogin } from "./AdminLogin";
 import { useAuth } from "../lib/auth";
 import { nativeDeviceKeys } from "../lib/deviceKey";
 import { ApiRequestError } from "../lib/api";
 import { useServerCapabilities } from "../lib/useServerCapabilities";
+import { deviceLoginMessage, deviceLoginSupported, readDeviceKeyRef } from "../lib/deviceLogin";
 import { API_HOST, APP_VERSION, BUILD_ID } from "../config";
 import { nativeCapabilities, PERSONAL_TEAM_NOTICE } from "../lib/buildProfile";
 import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, PasskeyError, passkeysUsable, subscribePasskeyProvider } from "../lib/passkeys";
 
 /** Inloggen met e-mail + 8-cijferige code uit de e-mail. De link in de mail opent deze app direct (universele link). */
 export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { initialEmail?: string; onHaveInvitation?: () => void; onLinkDevice?: () => void }) {
-  const { api, signIn, finishMfa, finishMfaTotp } = useAuth();
+  const { api, signIn, finishMfa, finishMfaTotp, signInWithDevice } = useAuth();
   const [email, setEmail] = useState(initialEmail);
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code" | "passkey" | "totp">("email");
@@ -27,6 +28,25 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
   const serverPasskeys = caps.caps.nativePasskeys;
   const trustedDevices = caps.caps.trustedDevices;
   const serverTotp = caps.caps.nativeTotpLogin;
+  // E2.4a: knop "Inloggen met Face ID" alleen als de server het aanbiedt, dit een iPhone is en er een lokale toestelsleutel bestaat.
+  const [hasDeviceKey, setHasDeviceKey] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void readDeviceKeyRef().then((r) => { if (active) setHasDeviceKey(!!r); });
+    return () => { active = false; };
+  }, []);
+  const deviceLoginAvailable = caps.caps.deviceLogin && hasDeviceKey && deviceLoginSupported();
+
+  async function loginWithDevice() {
+    setBusy(true);
+    setError(null);
+    try {
+      await signInWithDevice(); // geen e-mailcode: de server geeft pas na een geldige handtekening een sessie
+    } catch (err) {
+      setError(deviceLoginMessage(err));
+      setBusy(false);
+    }
+  }
 
   async function request(e: React.FormEvent) {
     e.preventDefault();
@@ -132,6 +152,12 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
           <h1>Ringtools</h1>
           <span className="muted">Log in met je e-mailadres. Je ontvangt een code van 8 cijfers.</span>
         </div>
+        {step === "email" && deviceLoginAvailable && (
+          <div className="stack">
+            <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={() => void loginWithDevice()}>{busy ? "Even geduld…" : "Inloggen met Face ID"}</button>
+            <span className="muted">Of log in met je e-mailadres hieronder.</span>
+          </div>
+        )}
         {step === "totp" ? (
           <div>
             <strong>Bevestig dat jij het bent</strong>

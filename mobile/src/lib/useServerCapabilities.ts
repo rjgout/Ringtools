@@ -8,10 +8,10 @@ import type { ApiClient } from "./api";
  * - `unavailable`: na alle pogingen niet gelukt; de gebruiker kan handmatig opnieuw proberen. Nooit een gok: zonder /meta wordt niets extra's aangeboden.
  * Dit bepaalt alleen wat het scherm toont. De server beslist bij het inloggen zelf welke tweede factor geldt.
  */
-export type ServerCapabilities = { nativePasskeys: boolean; nativeTotpLogin: boolean; trustedDevices: boolean };
+export type ServerCapabilities = { nativePasskeys: boolean; nativeTotpLogin: boolean; trustedDevices: boolean; deviceLogin: boolean };
 export type CapabilityState = { status: "loading" | "ready" | "unavailable"; caps: ServerCapabilities };
 
-const NONE: ServerCapabilities = { nativePasskeys: false, nativeTotpLogin: false, trustedDevices: false };
+const NONE: ServerCapabilities = { nativePasskeys: false, nativeTotpLogin: false, trustedDevices: false, deviceLogin: false };
 export const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000];
 
 export function useServerCapabilities(api: Pick<ApiClient, "meta">, delays: number[] = RETRY_DELAYS_MS): CapabilityState & { retry: () => void } {
@@ -30,7 +30,7 @@ export function useServerCapabilities(api: Pick<ApiClient, "meta">, delays: numb
           if (!active) return;
           setState({
             status: "ready",
-            caps: { nativePasskeys: meta?.nativePasskeys === true, nativeTotpLogin: meta?.nativeTotpLogin === true, trustedDevices: meta?.trustedDevices === true },
+            caps: { nativePasskeys: meta?.nativePasskeys === true, nativeTotpLogin: meta?.nativeTotpLogin === true, trustedDevices: meta?.trustedDevices === true, deviceLogin: meta?.deviceLogin === true },
           });
         })
         .catch(() => {

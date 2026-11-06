@@ -151,7 +151,7 @@ describe("Servercapaciteiten (/meta) – mislukt, vertraagd of geblokkeerd", () 
     const { result } = renderHook(() => useServerCapabilities(client, [5, 5]));
     expect(result.current.status).toBe("loading");
     await waitFor(() => expect(result.current.status).toBe("ready"));
-    expect(result.current.caps).toEqual({ nativePasskeys: false, nativeTotpLogin: true, trustedDevices: true });
+    expect(result.current.caps).toEqual({ nativePasskeys: false, nativeTotpLogin: true, trustedDevices: true, deviceLogin: false });
     expect(meta).toHaveBeenCalledTimes(2);
   });
 
@@ -160,7 +160,7 @@ describe("Servercapaciteiten (/meta) – mislukt, vertraagd of geblokkeerd", () 
     const client = { meta } as never;
     const { result } = renderHook(() => useServerCapabilities(client, [1, 1]));
     await waitFor(() => expect(result.current.status).toBe("unavailable"));
-    expect(result.current.caps).toEqual({ nativePasskeys: false, nativeTotpLogin: false, trustedDevices: false });
+    expect(result.current.caps).toEqual({ nativePasskeys: false, nativeTotpLogin: false, trustedDevices: false, deviceLogin: false });
     meta.mockResolvedValue(META);
     act(() => result.current.retry());
     await waitFor(() => expect(result.current.status).toBe("ready"));

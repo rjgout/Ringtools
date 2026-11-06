@@ -210,10 +210,10 @@ model OpenLinkToken {
 // is — dat is de enige plek die hele-applicatietoegang bepaalt, dus een
 // gedeeltelijk ingelogde gebruiker kan nergens in de app komen.
 model Session {
-  id             String    @id @default(cuid())
+  id             String         @id @default(cuid())
   userId         String
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash      String    @unique
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash      String         @unique
   userAgent      String?
   mfaAt          DateTime?
   // Tijdstip waarop in DEZE (nog wachtende) sessie een tweede factor is
@@ -221,17 +221,21 @@ model Session {
   // sessie worden afgerond; "er bestaat een factor" is niet genoeg.
   factorProvedAt DateTime?
   expiresAt      DateTime
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime       @default(now())
   // Doorlopende (sliding) sessies: laatste activiteit, tijdstip van de laatste
   // tokenrotatie en de hash van het vorige token (kort geldig na rotatie,
   // zodat gelijktijdige verzoeken niet uitloggen). Zie src/lib/auth.ts.
-  lastSeenAt     DateTime  @default(now())
+  lastSeenAt     DateTime       @default(now())
   rotatedAt      DateTime?
   prevTokenHash  String?
+  // E2.4a: sessie die via een vertrouwd toestel is aangemaakt (wachtwoordloos); verdwijnt met het toestel of bij uitzetten/intrekken.
+  deviceId       String?
+  device         TrustedDevice? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
   @@index([prevTokenHash])
+  @@index([deviceId])
 }
 
 // TOTP-configuratie voor het adminaccount (webmin). Eén rij per gebruiker;
@@ -317,6 +321,9 @@ enum SecurityEventType {
   TRUSTED_DEVICE_PAIRING_CREATED
   TRUSTED_DEVICE_REGISTERED
   TRUSTED_DEVICE_REVOKED
+  TRUSTED_DEVICE_LOGIN_ENABLED
+  TRUSTED_DEVICE_LOGIN_DISABLED
+  TRUSTED_DEVICE_LOGIN
 }
 
 // Beveiligingslogboek: nooit geheimen (codes, secrets, herstelcodes) in
@@ -953,17 +960,21 @@ enum TrustedDevicePlatform {
 // Een geregistreerd toestel is GEEN zelfstandige MFA-methode (E2.4 beoordeelt dat opnieuw). Zonder attestatie kan de server
 // niet bewijzen dat de sleutel in hardware zit; dat staat in docs/E2-3-TOESTELSLEUTELS-ONDERZOEK.md.
 model TrustedDevice {
-  id             String                @id @default(cuid())
-  userId         String
-  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  label          String
-  platform       TrustedDevicePlatform
-  installationId String                @unique
-  publicKey      String                @unique // base64 SPKI (ECDSA P-256); nooit hergebruikt, ook niet na intrekking
-  createdAt      DateTime              @default(now())
-  lastUsedAt     DateTime?
-  revokedAt      DateTime?
-  revokedById    String?
+  id              String                 @id @default(cuid())
+  userId          String
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label           String
+  platform        TrustedDevicePlatform
+  installationId  String                 @unique
+  publicKey       String                 @unique // base64 SPKI (ECDSA P-256); nooit hergebruikt, ook niet na intrekking
+  createdAt       DateTime               @default(now())
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
+  revokedById     String?
+  // E2.4a: expliciete activering als inlogmethode (null = alleen geregistreerd, géén inlogmethode)
+  loginEnabledAt  DateTime?
+  sessions        Session[]
+  loginChallenges DeviceLoginChallenge[]
 
   @@index([userId])
 }
@@ -984,4 +995,25 @@ model MfaPairing {
   createdAt      DateTime  @default(now())
 
   @@index([userId])
+}
+
+enum DeviceChallengePurpose {
+  LOGIN
+  ACTIVATE
+}
+
+// E2.4a: eenmalige challenge voor wachtwoordloos inloggen (LOGIN) of het activeren van een toestel als inlogmethode (ACTIVATE).
+// Gebonden aan één toestel en één doel; kort geldig; atomair te verbruiken. Elke challenge is een willekeurige waarde, niet te raden.
+model DeviceLoginChallenge {
+  id             String                 @id @default(cuid())
+  deviceId       String
+  device         TrustedDevice          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  purpose        DeviceChallengePurpose
+  challenge      String
+  expiresAt      DateTime
+  failedAttempts Int                    @default(0)
+  consumedAt     DateTime?
+  createdAt      DateTime               @default(now())
+
+  @@index([deviceId, createdAt])
 }

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRecentMfa } from "@/lib/session";
 import { rateLimit } from "@/lib/rateLimit";
 import { createPairing, revokeTrustedDevice, TrustedDeviceError } from "@/lib/trustedDevices";
+import { disableDeviceLogin } from "@/lib/deviceLogin";
 
 export type PairingResult = { ok: boolean; message: string; code?: string; expiresAt?: string };
 export type RevokeResult = { ok: boolean; message: string };
@@ -29,4 +30,13 @@ export async function revokeTrustedDeviceAction(_prev: RevokeResult | null, form
   const done = id ? await revokeTrustedDevice(session.user.id, id, session.user.id) : false;
   revalidatePath("/profiel/beveiliging");
   return done ? { ok: true, message: "Toestel ingetrokken." } : { ok: false, message: "Dit toestel is niet gevonden of al ingetrokken." };
+}
+
+/** Zet wachtwoordloos inloggen voor een toestel uit (het toestel blijft gekoppeld) en beëindigt de via dat toestel aangemaakte sessies. Vereist recente MFA. */
+export async function disableDeviceLoginAction(_prev: RevokeResult | null, formData: FormData): Promise<RevokeResult> {
+  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  const id = String(formData.get("deviceId") ?? "");
+  const done = id ? await disableDeviceLogin(session.user.id, id, session.user.id) : false;
+  revalidatePath("/profiel/beveiliging");
+  return done ? { ok: true, message: "Wachtwoordloos inloggen is uitgezet voor dit toestel." } : { ok: false, message: "Dit toestel had geen wachtwoordloos inloggen." };
 }

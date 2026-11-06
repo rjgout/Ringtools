@@ -64,6 +64,10 @@ export const env = {
     return process.env.TRUSTED_DEVICES_ENABLED === "true";
   },
   /** Eerste passkey of authenticator-app schakelt verificatie automatisch in (server-side, transactioneel). Standaard UIT tot de app MFA-login ondersteunt. */
+  /** E2.4a: wachtwoordloos inloggen met een geactiveerd vertrouwd toestel (iOS). Standaard UIT; vereist TRUSTED_DEVICES_ENABLED. Nooit zonder akkoord van de eigenaar activeren. */
+  get nativeDeviceLoginEnabled() {
+    return process.env.NATIVE_DEVICE_LOGIN_ENABLED === "true" && process.env.TRUSTED_DEVICES_ENABLED === "true";
+  },
   get autoEnableMfa() {
     return process.env.AUTO_ENABLE_MFA === "true";
   },

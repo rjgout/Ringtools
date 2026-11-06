@@ -29,7 +29,7 @@ export default async function BeveiligingPage() {
 
   const showDevices = user.role !== "ADMIN" && trustedDevicesAvailable();
   const devices = showDevices
-    ? (await listTrustedDevices(user.id)).map((d) => ({ ...d, createdAt: d.createdAt.toISOString(), lastUsedAt: d.lastUsedAt?.toISOString() ?? null, revokedAt: d.revokedAt?.toISOString() ?? null }))
+    ? (await listTrustedDevices(user.id)).map((d) => ({ ...d, createdAt: d.createdAt.toISOString(), lastUsedAt: d.lastUsedAt?.toISOString() ?? null, revokedAt: d.revokedAt?.toISOString() ?? null, loginEnabledAt: d.loginEnabledAt?.toISOString() ?? null }))
     : [];
 
   return (
