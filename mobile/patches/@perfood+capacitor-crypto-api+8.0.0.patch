@@ -1,16 +1,3 @@
-diff --git a/node_modules/@perfood/capacitor-crypto-api/Package.swift b/node_modules/@perfood/capacitor-crypto-api/Package.swift
-index 00d5b0c..09b415e 100644
---- a/node_modules/@perfood/capacitor-crypto-api/Package.swift
-+++ b/node_modules/@perfood/capacitor-crypto-api/Package.swift
-@@ -3,7 +3,7 @@ import PackageDescription
- 
- let package = Package(
-     name: "PerfoodCapacitorCryptoApi",
--    platforms: [.iOS(.v16)],
-+    platforms: [.iOS(.v15)],
-     products: [
-         .library(
-             name: "PerfoodCapacitorCryptoApi",
 diff --git a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/BiometryApi.java b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/BiometryApi.java
 index 73390b3..3d693d6 100644
 --- a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/BiometryApi.java
