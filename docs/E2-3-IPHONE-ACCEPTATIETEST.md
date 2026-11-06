@@ -37,3 +37,20 @@ Onderaan het inlogscherm staat "Versie … · build <commit> · server <host>". 
 - Server kan zonder attestatie de hardwarebinding niet bewijzen; Android-venster ~5 s.
 - Automatische MFA (`AUTO_ENABLE_MFA`) pas na slagen van sectie C testen: dan op een nieuw testaccount de eerste authenticator-app bevestigen → MFA gaat aan; met een tweede methode of bestaand account verandert niets.
 - Passkey-only accounts in de Personal Team-app: nog geen aanmeldroute (openstaand).
+
+---
+# E2.4a – aanvullende acceptatietest: inloggen met Face ID (alleen na akkoord van de eigenaar op `docs/E2-4A-BEVEILIGINGSREVIEW.md`)
+
+Voorbereiding: back-up gecontroleerd; in Portainer `NATIVE_DEVICE_LOGIN_ENABLED=true` (naast `TRUSTED_DEVICES_ENABLED=true`); `AUTO_ENABLE_MFA` blijft uit. Nieuwste build op de iPhone (controleer het build-ID onderaan het inlogscherm).
+
+1. Het toestel is gekoppeld (E2.3). Op het inlogscherm staat nog GEEN "Inloggen met Face ID" zolang je niets hebt geactiveerd (controle: een gekoppeld toestel is geen inlogmethode).
+2. Log in met e-mailcode + authenticator. Profiel → "Inloggen met Face ID inschakelen" → bevestig je tweede factor als daarom wordt gevraagd → Face ID. Verwacht: "staat aan".
+3. Zonder recente tweede factor (wacht 15 min of log in via de toestelroute, zie 5) moet inschakelen opnieuw een verse tweede factor vragen.
+4. Log uit. Verwacht: knop "Inloggen met Face ID". Tik erop → Face ID → direct het dashboard, zonder e-mailcode of TOTP.
+5. Annuleer de Face ID-prompt: geen sessie, melding "Er is niet ingelogd" met herstelroute. Met toestelcode (indien toegestaan) moet het ook lukken — noteer dit.
+6. Na inloggen via Face ID: probeer een gevoelige actie (gebruikersbeheer als ringbeheerder, of een toestel koppelen): moet een verse tweede factor vragen (toestelsessie telt niet als recente MFA).
+7. Web: Beveiliging → Vertrouwde toestellen → "Uitzetten" bij wachtwoordloos inloggen: de app-sessie van dit toestel eindigt; de knop in de app geeft een melding. Daarna weer inschakelen.
+8. Web: toestel intrekken: idem, en nieuwe aanmelding mislukt met een duidelijke melding en herstelroute. Opnieuw koppelen werkt.
+9. App verwijderen en opnieuw installeren (sleutelverlies): "Inloggen met Face ID" ontbreekt of faalt veilig; inloggen met e-mailcode + authenticator en daarna opnieuw koppelen en activeren. Noteer of de oude sleutel in de keychain overleefde.
+10. Controleer in de Xcode-console dat er geen challenge-, bericht- of handtekeninggegevens verschijnen.
+11. Face ID-appvergrendeling, schermbeveiliging en de bestaande e-mailcode + TOTP-login werken ongewijzigd.

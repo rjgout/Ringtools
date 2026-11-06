@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createPairing, claimPairing, completePairing, registrationMessage, revokeTrustedDevice } from "@/lib/trustedDevices";
 import { activationChallenge, confirmActivation, deviceChallengeMessage, loginChallenge, loginWithDevice, disableDeviceLogin, DEVICE_SESSION_MFA_AT, CHALLENGE_TTL_MS } from "@/lib/deviceLogin";
-import { createSession, getActiveSession, isRecentlyMfaVerified } from "@/lib/auth";
+import { createSession, getActiveSession, isRecentlyMfaVerified, rotateSessionIfDue } from "@/lib/auth";
 import { resetDatabase, createTestUser } from "./setup";
 
 // E2.4a: wachtwoordloos inloggen met een geactiveerd vertrouwd toestel, achter NATIVE_DEVICE_LOGIN_ENABLED (+ TRUSTED_DEVICES_ENABLED).
@@ -202,6 +202,21 @@ describe("Inloggen met een geactiveerd toestel", () => {
     await revokeTrustedDevice(u.id, d.deviceId, u.id);
     expect(await getActiveSession(r.token)).toBeNull();
     expect(await prisma.session.count({ where: { userId: u.id } })).toBe(1);
+  });
+
+  it("sessierotatie en hervatten: de sessie blijft aan het toestel gebonden en verdwijnt alsnog bij intrekken", async () => {
+    const { u, d } = await activeDevice();
+    const p = await loginParts(d);
+    const r = await loginWithDevice({ installationId: d.installationId, challengeId: p.c.challengeId, signature: p.sig });
+    await prisma.session.updateMany({ where: { userId: u.id }, data: { rotatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000), createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000) } });
+    const rot = await rotateSessionIfDue(r.token);
+    expect(rot.status).toBe("ok");
+    const row = await prisma.session.findFirstOrThrow({ where: { userId: u.id } });
+    expect(row.deviceId).toBe(d.deviceId);
+    const token = rot.status === "ok" && rot.rotated ? rot.rawToken : r.token;
+    expect(await getActiveSession(token)).not.toBeNull(); // app opnieuw starten: sessie hervatten
+    await revokeTrustedDevice(u.id, d.deviceId, u.id);
+    expect(await getActiveSession(token)).toBeNull();
   });
 
   it("uitzetten van wachtwoordloos inloggen: toestel blijft gekoppeld, sessies weg, inloggen niet meer mogelijk", async () => {
