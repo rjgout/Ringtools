@@ -72,3 +72,7 @@ Leg in App Store Connect (App Review Information → Notes) en Play Console (App
 7. Dark mode, iPad en kleine telefoon, grote tekst, toetsenbord bij inloggen, Android-terugknop.
 8. Universal Links/App Links verificatie (`adb shell pm get-app-links`, Apple AASA-validatie) nadat de echte Team-ID en vingerafdrukken op de server staan.
 9. Appvergrendeling (E3): koude start vraagt altijd Face ID/Touch ID/vingerafdruk/toestelcode; annuleren blijft vergrendeld; toestel zonder schermvergrendeling krijgt de uitlegmelding; na 30 s achtergrond opnieuw ontgrendelen, korter niet; app-switcher/recente apps tonen geen inhoud; Android-screenshot geblokkeerd; iOS-screenshot (kan niet worden geblokkeerd); pushtik en link uit koude start en achtergrond openen pas na ontgrendelen; Android-terugknop; ook in `App-PersonalTeam` (zie `docs/APP-ONTGRENDELING-ONTWERP.md` §12.6).
+
+## E2.3 – toestelsleutels (alleen bij `TRUSTED_DEVICES_ENABLED`)
+
+Een gekoppeld toestel bewaart een ECDSA-privésleutel uitsluitend in de beveiligde hardware (niet exporteerbaar). Naar de server gaan alleen de publieke sleutel, een zelfgekozen toestellabel ("iPhone"/"Android-toestel"), het platform en een willekeurig installatie-ID (geen hardware-ID). Geen nieuwe gegevenscategorie voor tracking of analytics; geen camera. De plug-in voegt Android-afhankelijkheden toe (`androidx.biometric`, `androidx.credentials`, Play Services Auth); controleer vóór een storerelease het samengevoegde manifest en de Data Safety-verklaring. Geen wijziging van privacy-, opslag- of versleutelingsarchitectuur.

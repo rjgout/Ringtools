@@ -203,3 +203,10 @@ Alle routes onder `/api/mobile/v1`, bearer-sessie met MFA-gate; webmin krijgt ov
 - `GET /catalog/callings` (ringstaf en ringbeheerders van de eigen ring) en `GET /admin/catalog/callings?ring=` (webmin): alleen-lezen catalogus met procedure, bevoegdheden, steunverlening, aanstellingsplicht, handboek en controlepunten.
 - Concept-voorstellen: `suggestions.roepen/aanstellen` bevat `source` (`UNIT_STANDAARD`, `UNIT_VERANTWOORDELIJKE`, `FUNCTIE_RINGPRESIDENT`, `FUNCTIE_ENIGE_BEVOEGDE`) en `basis`; `eligible.*` bevat uitsluitend bevoegde leden.
 
+
+## Vertrouwde toestellen en MFA-login in de app (E2.3, alle vlaggen UIT)
+
+- **Inloggen met MFA:** `NATIVE_TOTP_LOGIN_ENABLED` (+ `WEB_TOTP_ENABLED`): na de e-mailcode volgt een TOTP-/herstelcodestap. Naast `NATIVE_PASSKEYS_ENABLED` (apart, toesteltest nodig; niet mogelijk in de Personal Team-build).
+- **Toestel koppelen:** `TRUSTED_DEVICES_ENABLED`; knop "Toestel koppelen met een code" op het inlogscherm (handmatige invoer, geen camera). Plug-in `@perfood/capacitor-crypto-api` **8.0.0 exact gepind** achter `mobile/src/lib/deviceKey.ts` (vervangbaar). Sleutel: ECDSA P-256, iOS Secure Enclave (toegang: biometrie of toestelcode), Android StrongBox of TEE (fail-closed). Elke registratie krijgt een nieuw installatie-ID en een eigen tag. Geen logging van berichten/handtekeningen in de adapter (de plug-in zelf kan data en handtekening loggen; zie onderzoeksdocument). Transitieve Android-afhankelijkheden: `androidx.biometric`, `androidx.credentials`(+play-services-auth) via de Capacitor-versievariabelen; iOS: alleen `capacitor-swift-pm`.
+- De aanwezigheid van de plug-in veroorzaakt geen nieuwe entitlements of manifestrechten voor de app-functies; `Debug-PersonalTeam` blijft zonder entitlements (Secure Enclave-sleutels vragen er geen).
+- **Echte toesteltests nodig (niet gedaan in deze omgeving):** zie `docs/E2-3-ONTWIKKELPLAN.md` ("Echte iPhone-tests").
