@@ -1,8 +1,10 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { AdminLogin } from "./AdminLogin";
 import { useAuth } from "../lib/auth";
 import { nativeDeviceKeys } from "../lib/deviceKey";
 import { ApiRequestError } from "../lib/api";
+import { useServerCapabilities } from "../lib/useServerCapabilities";
+import { API_HOST, APP_VERSION, BUILD_ID } from "../config";
 import { nativeCapabilities, PERSONAL_TEAM_NOTICE } from "../lib/buildProfile";
 import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, PasskeyError, passkeysUsable, subscribePasskeyProvider } from "../lib/passkeys";
 
@@ -19,21 +21,12 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [admin, setAdmin] = useState(false);
-  // Servercapaciteit (functievlag) uit GET /meta; onbekend of mislukt = niet beschikbaar (veilige standaardmelding).
-  // Reactief: de provider kan pas na het eerste renderen (en na /meta) geregistreerd worden.
+  // Servercapaciteiten uit GET /meta: met automatische herpogingen (ook als de aanvraag tijdens de ontgrendeling werd geblokkeerd).
   const providerReady = useSyncExternalStore(subscribePasskeyProvider, () => getPasskeyProvider() !== null);
-  const [serverPasskeys, setServerPasskeys] = useState<boolean | undefined>(undefined);
-  const [trustedDevices, setTrustedDevices] = useState(false);
-  const [serverTotp, setServerTotp] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    Promise.resolve()
-      .then(() => api.meta())
-      .then((meta) => { if (active) { setServerPasskeys(meta?.nativePasskeys === true); setTrustedDevices(meta?.trustedDevices === true); setServerTotp(meta?.nativeTotpLogin === true); } })
-      .catch(() => {});
-    return () => { active = false; };
-  }, [api]);
+  const caps = useServerCapabilities(api);
+  const serverPasskeys = caps.caps.nativePasskeys;
+  const trustedDevices = caps.caps.trustedDevices;
+  const serverTotp = caps.caps.nativeTotpLogin;
 
   async function request(e: React.FormEvent) {
     e.preventDefault();
@@ -61,13 +54,18 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
         setPendingToken(result.pendingToken);
         setCode("");
         setBusy(false);
-        const methods = result.methods ?? ["passkey"]; // oudere server of testdubbel: alleen passkey
+        // De server bepaalt welke tweede factor geldt. Ontbreekt die informatie: fail closed, geen gok en geen passkeyroute.
+        const methods = result.methods ?? [];
         const passkeyOk = methods.includes("passkey") && getPasskeyProvider() !== null && passkeysUsable(true, nativeCapabilities().limited);
-        if (passkeyOk || !methods.includes("totp")) {
+        if (passkeyOk) {
           setStep("passkey");
           await passkey(result.pendingToken);
+        } else if (methods.includes("totp")) {
+          setStep("totp"); // authenticator-app (of herstelcode), ook als het account daarnaast een passkey heeft
+        } else if (methods.includes("passkey")) {
+          await leavePasskey(PASSKEY_UNAVAILABLE_MESSAGE, result.pendingToken); // geen passkeyroute starten die hier niet beschikbaar is
         } else {
-          setStep("totp"); // authenticator-app (of herstelcode)
+          await leavePasskey("De inlogmethode van je account kon niet worden vastgesteld. Werk de app bij of log in via de webapp.", result.pendingToken);
         }
       }
     } catch (err) {
@@ -179,11 +177,20 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
         {onHaveInvitation && step === "email" && <button type="button" className="btn btn-ghost btn-block" onClick={onHaveInvitation}>Ik heb een uitnodiging</button>}
         {onLinkDevice && trustedDevices && step === "email" && nativeDeviceKeys.available() && <button type="button" className="btn btn-ghost btn-block" onClick={onLinkDevice}>Toestel koppelen met een code</button>}
         <button type="button" className="btn btn-ghost btn-block" onClick={() => setAdmin(true)}>Inloggen als beheerder (webmin)</button>
-        {providerReady && passkeysUsable(serverPasskeys, nativeCapabilities().limited) ? (
+        {caps.status === "loading" ? (
+          <p className="muted" role="status">Inlogopties worden opgehaald…</p>
+        ) : caps.status === "unavailable" ? (
+          <p className="muted" role="status">
+            De inlogopties konden niet worden opgehaald. <button type="button" className="btn btn-ghost" onClick={caps.retry}>Opnieuw proberen</button>
+          </p>
+        ) : providerReady && passkeysUsable(serverPasskeys, nativeCapabilities().limited) ? (
           <p className="muted">Heeft jouw account extra verificatie met een passkey? Na de inlogcode verifieer je dan met je passkey op dit toestel.</p>
+        ) : serverTotp ? (
+          <p className="muted">Heeft jouw account een authenticator-app? Na de inlogcode vul je de code uit die app in. Accounts met alleen een passkey kunnen in de app nog niet inloggen; gebruik daarvoor voorlopig de webapp.</p>
         ) : (
-          <p className="muted">{serverTotp ? "Heeft jouw account een authenticator-app? Na de inlogcode vul je de code uit die app in. Accounts met alleen een passkey kunnen in de app nog niet inloggen; gebruik daarvoor voorlopig de webapp." : "Accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd."}</p>
+          <p className="muted">Accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd.</p>
         )}
+        <p className="muted" style={{ fontSize: "0.75rem" }} data-testid="build-info">Versie {APP_VERSION} · build {BUILD_ID} · server {API_HOST}</p>
       </form>
     </main>
   );

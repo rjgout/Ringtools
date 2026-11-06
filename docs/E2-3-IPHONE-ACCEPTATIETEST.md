@@ -8,6 +8,9 @@ Vereisten: iPhone met iOS 18 of nieuwer, schermvergrendeling en Face ID/Touch ID
 1. Installeer `App-PersonalTeam` via Xcode op de iPhone (`npm run cap:sync`, open `mobile/ios`, kies scheme `App-PersonalTeam`).
 2. Web (laptop): log in als gewone gebruiker (niet webmin), stel onder Beveiliging een authenticator-app in, bewaar de herstelcodes, schakel verificatie in.
 
+## A2. Controleer eerst welke bundel en welke server de app gebruikt
+Onderaan het inlogscherm staat "Versie … · build <commit> · server <host>". Controleer dat de build overeenkomt met de gewenste commit (`git rev-parse --short HEAD` in je checkout) en de server met jouw NAS (`VITE_API_URL` in `mobile/.env`, anders is de standaard `https://ringapeldoorn.nl`). Een oude bundel toont de oude tekst en geen koppelknop. Na elke wijziging: `cd mobile && npm run build && npx cap sync ios` (of `npm run cap:sync`), daarna opnieuw bouwen in Xcode (Product → Clean Build Folder bij twijfel). De inlogopties ("Inlogopties worden opgehaald…") verschijnen na een paar seconden; lukt dat niet, dan staat er "Opnieuw proberen".
+
 ## B. Appvergrendeling (regressie)
 3. Start de app: Face ID wordt gevraagd vóór enig scherm. App naar de achtergrond < 30 s en terug: geen prompt; > 30 s: opnieuw prompt. App-switcher toont een afgeschermd beeld.
 

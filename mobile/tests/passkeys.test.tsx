@@ -23,7 +23,7 @@ function setup(over: Record<string, unknown> = {}) {
     passkeyOptions: vi.fn(async () => ({ options: { challenge: "ch" } })),
     cancelMfa: vi.fn(async () => ({ ok: true })),
   };
-  const signIn = vi.fn(async () => ({ pendingToken: "p".repeat(43) }));
+  const signIn = vi.fn(async () => ({ pendingToken: "p".repeat(43), methods: ["passkey" as const] }));
   const finishMfa = vi.fn(async () => {});
   auth.value = { api, signIn, finishMfa, ...over };
   return { api, signIn, finishMfa };
@@ -173,12 +173,14 @@ describe("Inlogscherm: melding over passkeys volgt de werkelijke beschikbaarheid
     expect(screen.getByText(WARN)).toBeTruthy();
   });
 
-  it("meta mislukt of ontbreekt: waarschuwing blijft", async () => {
+  it("meta mislukt: geen gok — neutrale 'ophalen'-melding, geen passkey-claim en geen verouderde waarschuwing", async () => {
     withMeta(async () => { throw new Error("netwerk"); });
     registerPasskeyProvider({ authenticate: async () => ASSERTION });
     render(<Login />);
     await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
-    expect(screen.getByText(WARN)).toBeTruthy();
+    expect(screen.getByText(/Inlogopties worden opgehaald/)).toBeTruthy();
+    expect(screen.queryByText(OK)).toBeNull();
+    expect(screen.queryByText(WARN)).toBeNull();
   });
 
   it("server aan + provider + standaardbuild: neutrale melding zonder 'kan niet inloggen'", async () => {

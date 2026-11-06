@@ -7,6 +7,9 @@ export const API_BASE = `${API_URL}/api/mobile/v1`;
 /** In de browser-dev-server proxyt Vite /api naar de backend; native gebruikt de volledige URL. */
 export const IS_DEV_BROWSER = import.meta.env.DEV;
 export const APP_VERSION = "1.0.0";
+/** Korte build-ID (git-commit) uit de build; toont op het inlogscherm welke bundel er draait. Niet geheim. */
+declare const __RINGTOOLS_BUILD_ID__: string;
+export const BUILD_ID = typeof __RINGTOOLS_BUILD_ID__ === "string" ? __RINGTOOLS_BUILD_ID__ : "dev";
 /** API-versie waarvoor deze client is gebouwd (server: API_VERSION in src/lib/api/router.ts). */
 export const SUPPORTED_API_VERSION = 1;
 

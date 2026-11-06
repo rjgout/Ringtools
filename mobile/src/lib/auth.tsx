@@ -199,7 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (email: string, code: string) => {
       const result = await api.login(email, code, platform === "web" ? "Browser" : platform === "ios" ? "iPhone/iPad" : "Android");
       // Verplichte MFA: nog geen sessie; de aanroeper doorloopt de passkey-stap en rondt af met finishMfa().
-      if ("mfaRequired" in result && result.mfaRequired) return { pendingToken: result.pendingToken, methods: result.methods ?? [result.method] };
+      if ("mfaRequired" in result && result.mfaRequired) return { pendingToken: result.pendingToken, methods: result.methods ?? (result.method ? [result.method] : []) };
       const full = result as LoginResult;
       tokenRef.current = full.token;
       await storage.setToken(full.token);
