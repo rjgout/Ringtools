@@ -1,22 +1,48 @@
-/* Liquid Glass-stijl, gelijk aan de webapp (src/app/globals.css), mobile-first met veilige schermranden. */
+/* Ringtools – stijlfundament volgens de Apple Human Interface Guidelines (fase V1, zie docs/VORMGEVING-HIG-ANALYSE.md).
+   Regels: alle kleuren via tokens in :root (Light, Dark, Verhoogd contrast); alle ruimtes op het 8pt-grid (4pt voor fijne ruimte);
+   tekst schaalt mee met Dynamic Type (iOS) of de systeemtekstgrootte (Android); veilige schermranden overal; Reduce Motion en
+   Reduce Transparency worden gerespecteerd. Een test (tests/designTokens.test.ts) bewaakt deze regels. */
 :root {
-  --bg: #eef1f8;
-  --bg-accent-1: #c7d2fe;
-  --bg-accent-2: #fbcfe8;
-  --surface: 255 255 255;
-  --surface-alpha: 0.6;
-  --surface-border: 255 255 255;
-  --surface-border-alpha: 0.5;
-  --text: #0f1222;
-  --text-muted: #565a73;
-  --primary: #4f46e5;
-  --primary-ink: #ffffff;
-  --success: #15803d;
-  --success-bg: #dcfce7;
-  --danger: #b91c1c;
-  --danger-bg: #fee2e2;
-  --warning-bg: #fef3c7;
-  --warning-ink: #92400e;
+  /* Systeemkleuren (iOS-waarden; Light) */
+  --bg: #f2f2f7;                    /* systemGroupedBackground */
+  --bg-elevated: #ffffff;           /* secondarySystemGroupedBackground */
+  --fill: 120 120 128;              /* systemFill (RGB-kanalen) */
+  --fill-alpha: 0.12;
+  --separator: 60 60 67;
+  --separator-alpha: 0.29;
+  --text: #000000;                  /* label */
+  --text-muted: #5c5c61;            /* secondaryLabel, 6,6:1 op --bg-elevated */
+  --tint: #0a60d6;                  /* systemBlue, donkerder voor 4,5:1 tekstcontrast */
+  --on-tint: #ffffff;
+  --success: #1c7c34;               /* systemGreen, tekstvariant */
+  --success-fill: #1f7f37;
+  --on-success-fill: #ffffff;
+  --success-bg: #e3f6e8;
+  --danger: #c4001a;                /* systemRed, tekstvariant */
+  --danger-fill: #d70015;
+  --on-danger-fill: #ffffff;
+  --danger-bg: #fde8ea;
+  --warning-bg: #fff1d6;
+  --warning-ink: #8a4b00;           /* systemOrange, tekstvariant */
+  --shadow: 0 0 0 / 0.08;           /* schaduwkleur: RGB-kanalen / alpha */
+  /* Materialen (glas): tint + vervaging; zonder transparantie vallen ze terug op --bg-elevated */
+  --material: 255 255 255;
+  --material-alpha: 0.72;
+  --material-blur: 20px;
+  /* 8pt-grid (4pt voor fijne ruimte) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --radius-l: 16px;
+  --radius-xl: 24px;
+  --touch: 48px;                    /* minimaal aanraakdoel (HIG: 44 pt) */
+  /* Veilige schermranden */
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
@@ -25,111 +51,168 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0b0c14;
-    --bg-accent-1: #1e1b4b;
-    --bg-accent-2: #3b0764;
-    --surface: 24 26 42;
-    --surface-alpha: 0.55;
-    --surface-border-alpha: 0.12;
-    --text: #f2f3fb;
-    --text-muted: #a9adc7;
-    --primary: #818cf8;
-    --primary-ink: #0b0c14;
-    --success: #4ade80;
-    --success-bg: rgba(34, 197, 94, 0.16);
-    --danger: #f87171;
-    --danger-bg: rgba(239, 68, 68, 0.16);
-    --warning-bg: rgba(245, 158, 11, 0.16);
-    --warning-ink: #fbbf24;
+    --bg: #000000;
+    --bg-elevated: #1c1c1e;
+    --fill: 120 120 128;
+    --fill-alpha: 0.36;
+    --separator: 84 84 88;
+    --separator-alpha: 0.6;
+    --text: #ffffff;
+    --text-muted: #aeaeb4;
+    --tint: #4da3ff;
+    --on-tint: #001b3d;
+    --success: #4cd964;
+    --success-fill: #30d158;
+    --on-success-fill: #00210a;
+    --success-bg: #12301a;
+    --danger: #ff6b61;
+    --danger-fill: #ff6b61;
+    --on-danger-fill: #2b0002;
+    --danger-bg: #3a1214;
+    --warning-bg: #3a2a08;
+    --warning-ink: #ffb340;
+    --shadow: 0 0 0 / 0.4;
+    --material: 44 44 46;
+    --material-alpha: 0.72;
   }
 }
+@media (prefers-contrast: more) {
+  :root {
+    --text-muted: #3c3c43;
+    --tint: #0040dd;
+    --success: #0f5f26;
+    --success-fill: #0f5f26;
+    --danger: #a30014;
+    --danger-fill: #a30014;
+    --warning-ink: #663500;
+    --separator-alpha: 0.6;
+    --material-alpha: 0.95;
+  }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root {
+    --text-muted: #d1d1d6;
+    --tint: #70b8ff;
+    --success: #7be58f;
+    --success-fill: #5ee07a;
+    --danger: #ff9289;
+    --danger-fill: #ff9289;
+    --warning-ink: #ffd180;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root { --material: 255 255 255; --material-alpha: 1; --material-blur: 0px; }
+}
+@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
+  :root { --material: 28 28 30; }
+}
+
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body, #root { height: 100%; margin: 0; }
+/* Dynamic Type: op iOS volgt tekst de systeemgrootte (font: -apple-system-*); elders schalen rem-waarden mee met de systeemtekstgrootte. */
 body {
   background: var(--bg);
-  background-image: radial-gradient(60% 50% at 10% 0%, var(--bg-accent-1) 0%, transparent 60%),
-    radial-gradient(50% 40% at 100% 10%, var(--bg-accent-2) 0%, transparent 60%);
-  background-attachment: fixed;
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-  font-size: 16px;
-  line-height: 1.4;
+  font-family: -apple-system, system-ui, "Roboto", sans-serif;
+  font-size: 1.0625rem; /* 17 pt = HIG-body */
+  line-height: 1.3;
   overscroll-behavior: none;
   -webkit-text-size-adjust: 100%;
+  touch-action: manipulation; /* geen onbedoeld zoomen bij dubbel tikken; knijpzoomen blijft mogelijk */
+}
+@supports (font: -apple-system-body) {
+  body { font: -apple-system-body; font-family: -apple-system, system-ui, sans-serif; }
 }
 .shell { display: flex; flex-direction: column; height: 100%; }
 .page {
   flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  padding: calc(var(--sat) + 16px) calc(var(--sar) + 16px) 24px calc(var(--sal) + 16px);
+  padding: calc(var(--sat) + var(--space-4)) calc(var(--sar) + var(--space-4)) var(--space-5) calc(var(--sal) + var(--space-4));
 }
 .page.center { display: flex; align-items: center; justify-content: center; }
-.stack { display: flex; flex-direction: column; gap: 12px; }
-.row { display: flex; align-items: center; gap: 12px; }
+.stack { display: flex; flex-direction: column; gap: var(--space-3); }
+.row { display: flex; align-items: center; gap: var(--space-3); }
 .row.between { justify-content: space-between; }
 .grow { flex: 1; min-width: 0; }
-h1 { font-size: 1.5rem; margin: 0 0 4px; }
-h2 { font-size: 1.05rem; margin: 8px 0 0; }
-.muted { color: var(--text-muted); font-size: 0.9rem; }
-.glass {
-  background: rgb(var(--surface) / var(--surface-alpha));
-  border: 1px solid rgb(var(--surface-border) / var(--surface-border-alpha));
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03), 0 8px 30px rgba(15, 18, 34, 0.08);
+h1 { font-size: 1.75rem; font-weight: 700; margin: 0 0 var(--space-1); line-height: 1.15; }   /* Title 1 */
+h2 { font-size: 1.25rem; font-weight: 600; margin: var(--space-2) 0 0; line-height: 1.2; }    /* Title 3 */
+@supports (font: -apple-system-title1) {
+  h1 { font: -apple-system-title1; font-weight: 700; margin: 0 0 var(--space-1); }
+  h2 { font: -apple-system-title3; font-weight: 600; margin: var(--space-2) 0 0; }
 }
-.card { border-radius: 24px; padding: 18px; }
-.panel { border-radius: 18px; padding: 14px; }
+.muted { color: var(--text-muted); font-size: 0.9375rem; }                                      /* Subheadline 15 pt */
+@supports (font: -apple-system-subheadline) { .muted { font: -apple-system-subheadline; } }
+
+/* Oppervlakken. .glass blijft de klassenaam voor kaarten; kaarten zijn nu effen gegroepeerde oppervlakken (inset grouped), glas is voor balken en overlays. */
+.glass {
+  background: var(--bg-elevated);
+  border: 1px solid rgb(var(--separator) / var(--separator-alpha));
+  box-shadow: 0 1px 2px rgb(var(--shadow));
+}
+.material {
+  background: rgb(var(--material) / var(--material-alpha));
+  -webkit-backdrop-filter: blur(var(--material-blur)) saturate(180%);
+  backdrop-filter: blur(var(--material-blur)) saturate(180%);
+}
+.card { border-radius: var(--radius-xl); padding: var(--space-4) var(--space-4); }
+.panel { border-radius: var(--radius-l); padding: var(--space-3) var(--space-4); }
 a.panel, button.panel { display: block; width: 100%; text-align: left; color: inherit; text-decoration: none; font: inherit; }
 .btn {
-  display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 8px;
-  border: 0; border-radius: 16px; padding: 12px 20px; text-align: center; font: inherit; font-weight: 600; cursor: pointer; color: var(--text); /* padding: tekst die op een smal scherm afbreekt houdt ruimte */
+  display: inline-flex; min-height: var(--touch); align-items: center; justify-content: center; gap: var(--space-2);
+  border: 0; border-radius: var(--radius-l); padding: var(--space-3) var(--space-5); text-align: center; font: inherit; font-weight: 600; cursor: pointer; color: var(--text); /* padding: tekst die op een smal scherm afbreekt houdt ruimte */
+  transition: transform 0.12s ease-out, opacity 0.12s ease-out;
 }
 .btn:active { transform: scale(0.98); }
 .btn:disabled { opacity: 0.5; pointer-events: none; }
-.btn-primary { background: linear-gradient(180deg, var(--primary), color-mix(in srgb, var(--primary) 80%, black)); color: var(--primary-ink); }
-.btn-success { background: linear-gradient(180deg, #22c55e, #15803d); color: #fff; flex: 1; }
-.btn-danger { background: linear-gradient(180deg, #ef4444, #b91c1c); color: #fff; flex: 1; }
-.btn-ghost { background: rgb(var(--surface) / var(--surface-alpha)); border: 1px solid rgb(var(--surface-border) / var(--surface-border-alpha)); }
+.btn-primary { background: var(--tint); color: var(--on-tint); }
+.btn-success { background: var(--success-fill); color: var(--on-success-fill); flex: 1; }
+.btn-danger { background: var(--danger-fill); color: var(--on-danger-fill); flex: 1; }
+.btn-ghost { background: var(--bg-elevated); border: 1px solid rgb(var(--separator) / var(--separator-alpha)); color: var(--tint); }
 .btn-block { width: 100%; }
-label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; }
+label { display: block; font-size: 0.9375rem; font-weight: 600; margin-bottom: var(--space-2); }
 input, select {
-  width: 100%; min-height: 48px; border-radius: 14px; border: 1px solid rgb(var(--surface-border) / 0.35);
-  background: rgb(var(--surface) / 0.7); color: var(--text); padding: 0 14px; font: inherit; font-size: 16px; /* 16px voorkomt inzoomen op iOS */
+  width: 100%; min-height: var(--touch); border-radius: var(--radius-m); border: 1px solid rgb(var(--separator) / var(--separator-alpha));
+  background: var(--bg-elevated); color: var(--text); padding: 0 var(--space-3); font: inherit; font-size: 1.0625rem; /* ≥16 px voorkomt inzoomen op iOS */
 }
-input:focus-visible, select:focus-visible, .btn:focus-visible, a:focus-visible, button:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
-.code { text-align: center; letter-spacing: 0.4em; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
-.badge { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; background: var(--warning-bg); color: var(--warning-ink); }
+input:focus-visible, select:focus-visible, .btn:focus-visible, a:focus-visible, button:focus-visible { outline: 3px solid var(--tint); outline-offset: 2px; }
+.code { text-align: center; letter-spacing: 0.4em; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.badge { display: inline-block; border-radius: 999px; padding: var(--space-1) var(--space-3); font-size: 0.8125rem; font-weight: 600; background: var(--warning-bg); color: var(--warning-ink); }  /* Footnote 13 pt */
 .badge.ok { background: var(--success-bg); color: var(--success); }
 .badge.bad { background: var(--danger-bg); color: var(--danger); }
-.error { color: var(--danger); font-size: 0.9rem; }
-.banner { padding: calc(var(--sat) + 8px) 16px 8px; text-align: center; font-size: 0.85rem; background: var(--warning-bg); color: var(--warning-ink); }
+.error { color: var(--danger); font-size: 0.9375rem; }
+.banner { padding: calc(var(--sat) + var(--space-2)) var(--space-4) var(--space-2); text-align: center; font-size: 0.875rem; background: var(--warning-bg); color: var(--warning-ink); }
 .tabbar {
-  display: flex; padding: 6px calc(var(--sar) + 8px) calc(var(--sab) + 6px) calc(var(--sal) + 8px);
-  border-top: 1px solid rgb(var(--surface-border) / var(--surface-border-alpha));
-  background: rgb(var(--surface) / 0.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  display: flex; padding: var(--space-1) calc(var(--sar) + var(--space-2)) calc(var(--sab) + var(--space-1)) calc(var(--sal) + var(--space-2));
+  border-top: 1px solid rgb(var(--separator) / var(--separator-alpha));
+  background: rgb(var(--material) / var(--material-alpha));
+  -webkit-backdrop-filter: blur(var(--material-blur)) saturate(180%); backdrop-filter: blur(var(--material-blur)) saturate(180%);
   /* Ringbeheerders hebben zes tabs: op een smal scherm schuift de balk horizontaal in plaats van de pagina te laten overlopen. */
   overflow-x: auto; scrollbar-width: none;
 }
 .tabbar::-webkit-scrollbar { display: none; }
-.tab { flex: 1 0 auto; padding: 0 5px; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  color: var(--text-muted); text-decoration: none; font-size: 0.74rem; font-weight: 600; position: relative; }
-.tab.active { color: var(--primary); }
-.tab .dot { position: absolute; top: 4px; right: calc(50% - 22px); min-width: 18px; height: 18px; border-radius: 9px; padding: 0 5px; background: var(--danger); color: #fff; font-size: 0.7rem; line-height: 18px; text-align: center; }
-.spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgb(var(--surface-border) / 0.3); border-top-color: var(--primary); animation: spin 0.8s linear infinite; margin: 24px auto; }
+.tab { flex: 1 0 auto; padding: 0 var(--space-1); min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1);
+  color: var(--text-muted); text-decoration: none; font-size: 0.75rem; font-weight: 600; position: relative; }   /* Caption 1 12 pt */
+@supports (font: -apple-system-caption1) { .tab { font: -apple-system-caption1; font-weight: 600; } }
+.tab.active { color: var(--tint); }
+.tab .dot { position: absolute; top: var(--space-1); right: calc(50% - 24px); min-width: 20px; height: 20px; border-radius: 10px; padding: 0 var(--space-1); background: var(--danger-fill); color: var(--on-danger-fill); font-size: 0.75rem; line-height: 20px; text-align: center; }
+.spinner { width: 32px; height: 32px; border-radius: 50%; border: 3px solid rgb(var(--separator) / var(--separator-alpha)); border-top-color: var(--tint); animation: spin 0.8s linear infinite; margin: var(--space-5) auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (min-width: 700px) { .page { padding-left: max(calc(var(--sal) + 16px), 10vw); padding-right: max(calc(var(--sar) + 16px), 10vw); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } .btn:active { transform: none; } }
+@media (min-width: 700px) { .page { padding-left: max(calc(var(--sal) + var(--space-4)), 10vw); padding-right: max(calc(var(--sar) + var(--space-4)), 10vw); } }
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 3s; }
+  .btn { transition: none; }
+  .btn:active { transform: none; }
+}
 
 /* Appvergrendeling (E3) */
 .lock-content { display: contents; }
 .lock-content[hidden] { display: none !important; }
 .lock-screen {
   position: fixed; inset: 0; z-index: 900; display: flex; align-items: center; justify-content: center;
-  padding: max(var(--sat), 16px) max(var(--sar), 16px) max(var(--sab), 16px) max(var(--sal), 16px);
-  background: var(--bg, #0b1220);
+  padding: max(var(--sat), var(--space-4)) max(var(--sar), var(--space-4)) max(var(--sab), var(--space-4)) max(var(--sal), var(--space-4));
+  background: var(--bg);
 }
 .lock-card { width: 100%; max-width: 420px; text-align: center; }
 .privacy-cover {
   position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
-  background: var(--bg, #0b1220); color: var(--text, #fff); font-size: 1.4rem; font-weight: 600;
+  background: var(--bg); color: var(--text); font-size: 1.5rem; font-weight: 600;
 }

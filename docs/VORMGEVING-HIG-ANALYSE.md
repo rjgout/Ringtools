@@ -1,6 +1,6 @@
 # Vormgeving: Apple HIG / Liquid Glass – analyse en plan (voorstel, nog niet gebouwd)
 
-Status: **alleen analyse**. Geen code gewijzigd. Uitgangspunt van de eigenaar: de app moet aanvoelen als een echte iOS-app (Liquid Glass, ook op Android een vergelijkbare look), volgens de Apple Human Interface Guidelines: Clarity, Deference, Depth; 8pt-grid; systeemkleuren met volledige Dark Mode; SF Pro met Dynamic Type; geen Safe Area-schendingen of hardcoded kleuren.
+Status: **V1 (fundament) gebouwd op branch `claude/hig-vormgeving`**; V2–V4 nog niet. Eigenaar heeft V1 goedgekeurd. Uitgangspunt van de eigenaar: de app moet aanvoelen als een echte iOS-app (Liquid Glass, ook op Android een vergelijkbare look), volgens de Apple Human Interface Guidelines: Clarity, Deference, Depth; 8pt-grid; systeemkleuren met volledige Dark Mode; SF Pro met Dynamic Type; geen Safe Area-schendingen of hardcoded kleuren.
 
 ## 1. Wat Hallmark (Nutlope/hallmark) wel en niet is
 
@@ -68,3 +68,11 @@ Wat afwijkt van de HIG (gemeten, niet geschat):
 3. Referentie voor "iOS 27": levert de eigenaar schermafbeeldingen/documentatie aan, of bouw ik op de HIG van iOS 26?
 4. Gewenste kleur: blijft indigo als merkkleur (als *tint*), of volledig systeemblauw?
 5. Voor Android: Apple-look in dezelfde structuur, of platformeigen Material 3 met glasaccenten?
+
+## 7. Stand V1 (gebouwd)
+
+- `mobile/src/styles.css` herschreven op tokens: systeemkleuren (Light, Dark, Verhoogd contrast, Reduce Transparency), 4/8pt-spacingtokens, radiustokens, `--touch` 48 px, Dynamic Type (`font: -apple-system-*` met rem-terugval), `touch-action: manipulation`, Reduce Motion. Klassenamen blijven gelijk; schermen zijn niet gewijzigd.
+- `index.html`: `user-scalable=no` verwijderd (zoomen weer mogelijk).
+- Kaarten zijn nu effen *inset grouped*-oppervlakken (`--bg-elevated`); glas (`.material`, tabbalk) is gereserveerd voor balken en overlays (V3 breidt dat uit). Merkkleur is systeemblauw (donkerder tintvariant voor 4,5:1).
+- `mobile/tests/designTokens.test.ts` bewaakt: geen kleurliteralen buiten `:root`, geen `transition: all`/`100vw`, geen zoomblokkade, spacing op het 4pt-grid, geen vaste px-lettergroottes, aanwezigheid van Reduce Motion/Transparency/Contrast en veilige schermranden, en WCAG-contrast (4,5:1; tekst 7:1) per modus (licht, donker, beide met verhoogd contrast). Deze test vond meteen een contrastfout in de eerste groene knop (4,40:1), die is hersteld.
+- Gesimuleerd gecontroleerd (Chromium, iPhone 14-viewport, Light en Dark). **Niet** getest: echte Dynamic Type, SF Pro, Increased Contrast, Reduce Transparency, safe areas rond het Dynamic Island, Android-systeemtekstgrootte. Die blijven open voor een toesteltest.
