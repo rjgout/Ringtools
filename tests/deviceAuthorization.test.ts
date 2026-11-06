@@ -131,7 +131,7 @@ describe("Toestelroutes: autorisatie op de server", () => {
     expect((await call("/auth/device/enroll/complete", ta, e.body)).status).toBe(200);
     await prisma.trustedDevice.updateMany({ where: { userId: a.id }, data: { revokedAt: new Date(), loginEnabledAt: null } });
     const again = await startEnrollment(a.id);
-    const msg = enrollmentMessage({ id: again.enrollmentId, challenge: again.challenge }, a.id, e.installationId);
+    const msg = enrollmentMessage({ id: again.enrollmentId, challenge: again.challenge }, a.id, e.installationId!);
     await expect(completeEnrollment(a.id, { ...e.body!, enrollmentId: again.enrollmentId, signature: sign(crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey, msg) })).rejects.toBeTruthy();
     expect(await prisma.trustedDevice.count({ where: { userId: a.id, revokedAt: null } })).toBe(0);
   });
