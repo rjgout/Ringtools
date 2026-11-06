@@ -89,3 +89,11 @@ Gevonden logicafouten (met de correctie):
 Knoppen: `.btn` is nu een capsule (min. 48 px); hiërarchie primair (gevuld, tint) / secundair (`btn-ghost`: grijs gevuld, tekst in tint) / tertiair (`btn-plain`, alleen tekst); `btn-small` (44 px) voor knoppen binnen lijstrijen; ondersteunen/niet ondersteunen blijven groen/rood gevuld met contrast ≥ 4,5:1 in alle modi.
 
 Tests: `mobile/tests/navigation.test.tsx` (pure navigatielogica, tabbalk, navigatiebalk, segmenten) en uitgebreide `designTokens.test.ts`. Nog niet gebouwd: grote titel die inklapt bij scrollen, sheets met detents, swipe-acties, pull-to-refresh, haptiek (V2b/V3).
+
+## 9. Besluiten van de eigenaar (6 november 2026)
+
+1. **Android** krijgt dezelfde Apple-look en structuur (tabbalk met iconen, navigatiebalk, segmenten, knophiërarchie). Het systeemfont blijft het lettertype (SF Pro mag niet buiten Apple-platformen); het Android-gedrag (terugknop, systeemgebaren) blijft leidend.
+2. **Accentkleur** blijft systeemblauw (tintvariant met 4,5:1-contrast).
+3. **iOS 27-referentie:** er wordt gebouwd op de HIG van iOS 26 (Liquid Glass) zoals bekend; er is geen iOS 27-referentie aangeleverd en de overeenkomst met iOS 27 kan niet worden gecontroleerd.
+4. **Native tabbalk en navigatiebalk:** alleen wat zonder nieuwe plug-ins of entitlements kan. Voorlopig blijft de app een gebundelde webclient; native chrome (V4) is niet gestart.
+5. V1 en V2 staan op `main` (`c4fd3d4`). Nog niet gebouwd: grote titel die inklapt bij scrollen, sheets met detents, swipe-acties, pull-to-refresh, haptiek (V2b/V3).
