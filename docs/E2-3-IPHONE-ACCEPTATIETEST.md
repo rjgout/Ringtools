@@ -1,8 +1,8 @@
 # E2.3 – acceptatietest op een echte iPhone (vóór activering in Portainer)
 
-Vereisten: iPhone met iOS 16 of nieuwer, schermvergrendeling en Face ID/Touch ID ingesteld, Mac met Xcode, build `App-PersonalTeam` (zie `docs/MOBILE.md`, gratis Personal Team; geen nieuwe entitlements). Een simulator bewijst de Secure Enclave **niet**.
+Vereisten: iPhone met iOS 18 of nieuwer, schermvergrendeling en Face ID/Touch ID ingesteld, Mac met Xcode, build `App-PersonalTeam` (zie `docs/MOBILE.md`, gratis Personal Team; geen nieuwe entitlements). Een simulator bewijst de Secure Enclave **niet**.
 
-**Testserver:** gebruik bij voorkeur een aparte testomgeving. Zet tijdelijk (alleen daar) `WEB_TOTP_ENABLED=true`, `NATIVE_TOTP_LOGIN_ENABLED=true`, `TRUSTED_DEVICES_ENABLED=true`. `AUTO_ENABLE_MFA` blijft `false`. Op productie pas activeren na akkoord van de eigenaar.
+**Omgeving:** er is geen aparte testserver; `main` op de Synology NAS (Watchtower) is de enige omgeving. Voor je begint: (1) maak een databaseback-up en controleer die (`docs/BACKUP-HERSTEL.md`); (2) zet in Portainer alleen `WEB_TOTP_ENABLED=true`, `NATIVE_TOTP_LOGIN_ENABLED=true` en `TRUSTED_DEVICES_ENABLED=true` (de eigenaar doet dit zelf; de Watchtower-configuratie blijft ongewijzigd); `AUTO_ENABLE_MFA` blijft `false` totdat sectie C op de echte iPhone is bevestigd. Test met je eigen account; er worden geen automatische tests op de productiedatabase gedraaid. Terugdraaien = vlaggen weer op `false`.
 
 ## A. Voorbereiding
 1. Installeer `App-PersonalTeam` via Xcode op de iPhone (`npm run cap:sync`, open `mobile/ios`, kies scheme `App-PersonalTeam`).

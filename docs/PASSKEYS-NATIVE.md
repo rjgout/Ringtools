@@ -80,7 +80,7 @@ Geen wijziging aan `project.pbxproj`, `Info.plist`, `AndroidManifest.xml`, signi
 
 **iPhone:**
 - **Niet mogelijk met `App-PersonalTeam`** (gratis Personal Team: geen Associated Domains → `DOMAIN_NOT_ASSOCIATED`; de app registreert de provider daar bewust niet).
-- Nodig: betaald Apple Developer Program, App ID met capability *Associated Domains*, een provisioning profile met die capability, een Debug-/Release-build met de productie-entitlements (die nu `webcredentials:ringapeldoorn.nl` bevatten) op een fysiek toestel met iOS 16+ en een ingestelde schermvergrendeling/biometrie; de iCloud-sleutelhanger (of een andere passkey-provider) staat aan.
+- Nodig: betaald Apple Developer Program, App ID met capability *Associated Domains*, een provisioning profile met die capability, een Debug-/Release-build met de productie-entitlements (die nu `webcredentials:ringapeldoorn.nl` bevatten) op een fysiek toestel met iOS 18+ en een ingestelde schermvergrendeling/biometrie; de iCloud-sleutelhanger (of een andere passkey-provider) staat aan.
 - Voorwaarde op de server: `APPLE_APP_ID` gezet, AASA bereikbaar (iOS cachet het bestand via de Apple-CDN; na een wijziging kan het even duren).
 
 **Android:**
