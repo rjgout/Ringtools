@@ -57,3 +57,15 @@ describe("Herverificatie-blok staat bovenin, nooit onder het toetsenbord", () =>
     expect(sheet).toMatch(/overflow-y:\s*auto/); // bij een klein scherm scrolt het blok
   });
 });
+
+import { groupedCode } from "../src/lib/codeInput";
+describe("Gegroepeerde codes (koppel- en uitnodigingscode)", () => {
+  it("geplakt met extra spatie, regeleinde, kleine letters of zonder streepjes geeft steeds dezelfde volledige code", () => {
+    const want = "ABCD-EFGH-JKLM";
+    for (const pasted of ["ABCD-EFGH-JKLM", "abcd-efgh-jklm", " ABCD-EFGH-JKLM \n", "ABCD EFGH JKLM", "abcdefghjklm", "ABCD-EFGH-JKLM-extra"]) expect(groupedCode(pasted)).toBe(want);
+  });
+  it("tijdens het typen verschijnt het streepje pas als er een volgend teken is", () => {
+    expect(groupedCode("ABCD")).toBe("ABCD");
+    expect(groupedCode("ABCDE")).toBe("ABCD-E");
+  });
+});

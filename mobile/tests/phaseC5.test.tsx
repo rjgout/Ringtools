@@ -141,7 +141,7 @@ describe("Account activeren", () => {
     await waitFor(() => expect((screen.getByRole("button", { name: "Account activeren" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Account activeren" }));
     expect(await screen.findByText("Je account is geactiveerd")).toBeTruthy();
-    expect(activateInvitation).toHaveBeenCalledWith(expect.objectContaining({ email: "eva@example.nl", code: "abcd-efgh-jkmn" }));
+    expect(activateInvitation).toHaveBeenCalledWith(expect.objectContaining({ email: "eva@example.nl", code: "ABCD-EFGH-JKMN" })); // invoer wordt genormaliseerd; de server normaliseert hetzelfde (hoofdletters, zonder streepjes)
   });
 
   it("foutmelding van de server (bijv. te veel pogingen) blijft zichtbaar en leest als gewone taal", async () => {

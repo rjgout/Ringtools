@@ -1,3 +1,4 @@
+import { groupedCode } from "../lib/codeInput";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { InvitationPreview } from "@shared/api-types";
 import { useAuth } from "../lib/auth";
@@ -128,7 +129,7 @@ export function Activate({ token, onFinished, onCancel }: { token?: string; onFi
             </div>
             <div>
               <label htmlFor="inv-code">Activeringscode</label>
-              <input id="inv-code" className="code" autoCapitalize="characters" autoComplete="off" autoCorrect="off" spellCheck={false} placeholder="XXXX-XXXX-XXXX" required value={code} onChange={(e) => setCode(e.target.value)} />
+              <input id="inv-code" className="code" autoCapitalize="characters" autoComplete="off" autoCorrect="off" spellCheck={false} placeholder="XXXX-XXXX-XXXX" required value={code} onChange={(e) => setCode(groupedCode(e.target.value))} />
             </div>
             {error && <div className="error" role="alert">{error}</div>}
             <button className="btn btn-primary btn-block" disabled={busy || code.replace(/[^A-Za-z0-9]/g, "").length !== 12}>{busy ? "Even geduld…" : "Account activeren"}</button>
