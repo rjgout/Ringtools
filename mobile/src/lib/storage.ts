@@ -11,6 +11,7 @@ const RING = "ringtools.ring";
 const MODE = "ringtools.mode";
 const PUSH = "ringtools.pushToken";
 const DEVICE = "ringtools.deviceId";
+const DEVICE_KEY = "ringtools.deviceKey";
 const PENDING_UNREGISTER = "ringtools.pendingPushUnregister";
 
 const memory = new Map<string, string>();
@@ -64,6 +65,9 @@ export const storage = {
     await set(DEVICE, id);
     return id;
   },
+  /** Verwijzing naar de toestelsleutel (installatie-ID, tag); de privésleutel zelf verlaat nooit de beveiligde hardware. Blijft bestaan bij uitloggen. */
+  getDeviceKey: () => get(DEVICE_KEY),
+  setDeviceKey: (v: string) => set(DEVICE_KEY, v),
   /** Wist de sessiegegevens; de installatie-ID en een nog niet afgemeld pushtoken blijven bewust bestaan. */
   async clearSession() {
     await Promise.all([TOKEN, RING, PUSH, MODE].map(remove));

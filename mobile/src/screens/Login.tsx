@@ -1,12 +1,13 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { AdminLogin } from "./AdminLogin";
 import { useAuth } from "../lib/auth";
+import { nativeDeviceKeys } from "../lib/deviceKey";
 import { ApiRequestError } from "../lib/api";
 import { nativeCapabilities, PERSONAL_TEAM_NOTICE } from "../lib/buildProfile";
 import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, PasskeyError, passkeysUsable, subscribePasskeyProvider } from "../lib/passkeys";
 
 /** Inloggen met e-mail + 8-cijferige code uit de e-mail. De link in de mail opent deze app direct (universele link). */
-export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: string; onHaveInvitation?: () => void }) {
+export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { initialEmail?: string; onHaveInvitation?: () => void; onLinkDevice?: () => void }) {
   const { api, signIn, finishMfa, finishMfaTotp } = useAuth();
   const [email, setEmail] = useState(initialEmail);
   const [code, setCode] = useState("");
@@ -22,12 +23,13 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
   // Reactief: de provider kan pas na het eerste renderen (en na /meta) geregistreerd worden.
   const providerReady = useSyncExternalStore(subscribePasskeyProvider, () => getPasskeyProvider() !== null);
   const [serverPasskeys, setServerPasskeys] = useState<boolean | undefined>(undefined);
+  const [trustedDevices, setTrustedDevices] = useState(false);
 
   useEffect(() => {
     let active = true;
     Promise.resolve()
       .then(() => api.meta())
-      .then((meta) => { if (active) setServerPasskeys(meta?.nativePasskeys === true); })
+      .then((meta) => { if (active) { setServerPasskeys(meta?.nativePasskeys === true); setTrustedDevices(meta?.trustedDevices === true); } })
       .catch(() => {});
     return () => { active = false; };
   }, [api]);
@@ -174,6 +176,7 @@ export function Login({ initialEmail = "", onHaveInvitation }: { initialEmail?: 
         )}
         {nativeCapabilities().limited && <p role="note" className="muted">{PERSONAL_TEAM_NOTICE}</p>}
         {onHaveInvitation && step === "email" && <button type="button" className="btn btn-ghost btn-block" onClick={onHaveInvitation}>Ik heb een uitnodiging</button>}
+        {onLinkDevice && trustedDevices && step === "email" && nativeDeviceKeys.available() && <button type="button" className="btn btn-ghost btn-block" onClick={onLinkDevice}>Toestel koppelen met een code</button>}
         <button type="button" className="btn btn-ghost btn-block" onClick={() => setAdmin(true)}>Inloggen als beheerder (webmin)</button>
         {providerReady && passkeysUsable(serverPasskeys, nativeCapabilities().limited) ? (
           <p className="muted">Heeft jouw account extra verificatie met een passkey? Na de inlogcode verifieer je dan met je passkey op dit toestel.</p>

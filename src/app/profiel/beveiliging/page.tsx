@@ -8,6 +8,8 @@ import { totpAllowedForUser } from "@/lib/mfaMethods";
 import { UserTotpPanel } from "@/components/mfa/UserTotpPanel";
 import { PasskeyManager } from "@/components/mfa/PasskeyManager";
 import { SessionList } from "@/components/mfa/SessionList";
+import { TrustedDevicesPanel } from "@/components/mfa/TrustedDevicesPanel";
+import { trustedDevicesAvailable, listTrustedDevices } from "@/lib/trustedDevices";
 
 export default async function BeveiligingPage() {
   const user = await requireUser();
@@ -24,6 +26,11 @@ export default async function BeveiligingPage() {
           orderBy: { createdAt: "desc" },
           select: { id: true, deviceLabel: true, createdAt: true, lastUsedAt: true },
         });
+
+  const showDevices = user.role !== "ADMIN" && trustedDevicesAvailable();
+  const devices = showDevices
+    ? (await listTrustedDevices(user.id)).map((d) => ({ ...d, createdAt: d.createdAt.toISOString(), lastUsedAt: d.lastUsedAt?.toISOString() ?? null, revokedAt: d.revokedAt?.toISOString() ?? null }))
+    : [];
 
   return (
     <div className="mx-auto max-w-lg space-y-4 py-4">
@@ -70,6 +77,13 @@ export default async function BeveiligingPage() {
               />
             </>
           )}
+        </div>
+      )}
+
+      {showDevices && (
+        <div className="glass-card space-y-3">
+          <h2 className="font-semibold">Vertrouwde toestellen</h2>
+          <TrustedDevicesPanel devices={devices} mfaEnabled={user.mfaEnabled} />
         </div>
       )}
 

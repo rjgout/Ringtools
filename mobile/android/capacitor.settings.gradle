@@ -34,3 +34,6 @@ project(':capacitor-status-bar').projectDir = new File('../node_modules/@capacit
 
 include ':capawesome-capacitor-passkeys'
 project(':capawesome-capacitor-passkeys').projectDir = new File('../node_modules/@capawesome/capacitor-passkeys/android')
+
+include ':perfood-capacitor-crypto-api'
+project(':perfood-capacitor-crypto-api').projectDir = new File('../node_modules/@perfood/capacitor-crypto-api/android')

@@ -16,6 +16,7 @@ import { appLock, nativeLockSources } from "./lib/appLockSources";
 import { nativeCapabilities } from "./lib/buildProfile";
 import { ErrorState, Spinner, TabBar } from "./components/ui";
 import { Login } from "./screens/Login";
+import { DeviceLink } from "./screens/DeviceLink";
 import { Home } from "./screens/Home";
 import { Callings } from "./screens/Callings";
 import { NewCalling } from "./screens/NewCalling";
@@ -63,6 +64,7 @@ function Shell() {
   const pendingRoute = useRef<string | null>(null);
   // Uitnodiging activeren werkt zonder sessie: een token uit een link, of handmatige invoer (token ontbreekt).
   const [activation, setActivation] = useState<{ token?: string } | null>(null);
+  const [linkingDevice, setLinkingDevice] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
 
   useEffect(() => void setupNativeChrome(), []);
@@ -135,7 +137,8 @@ function Shell() {
       </>
     );
   }
-  if (status === "signedOut") return (<><Login key={loginEmail} initialEmail={loginEmail} onHaveInvitation={() => setActivation({})} /></>);
+  if (status === "signedOut" && linkingDevice) return <DeviceLink onClose={() => setLinkingDevice(false)} />;
+  if (status === "signedOut") return (<><Login key={loginEmail} initialEmail={loginEmail} onHaveInvitation={() => setActivation({})} onLinkDevice={() => setLinkingDevice(true)} /></>);
 
   // Webmin: uitsluitend het beheergedeelte (geen ringen, voorstellen of meldingen).
   if (isAdmin) return (<div className="shell"><AdminHome /></div>);

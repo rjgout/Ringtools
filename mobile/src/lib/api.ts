@@ -131,6 +131,12 @@ export class ApiClient {
   totpVerify(pendingToken: string, proof: { code?: string; recoveryCode?: string }) {
     return this.request<LoginResult>("POST", "/auth/mfa/totp/verify", proof, pendingToken);
   }
+  claimDevicePairing(code: string) {
+    return this.request<{ registrationToken: string; challenge: string; expiresAt: string }>("POST", "/trusted-devices/pair/claim", { code }, null);
+  }
+  completeDevicePairing(input: { registrationToken: string; publicKey: string; signature: string; installationId: string; platform: "IOS" | "ANDROID"; label: string }) {
+    return this.request<{ ok: boolean; deviceId: string }>("POST", "/trusted-devices/pair/complete", input, null);
+  }
   cancelMfa(pendingToken: string) {
     return this.request<{ ok: boolean }>("POST", "/auth/mfa/cancel", {}, pendingToken);
   }
