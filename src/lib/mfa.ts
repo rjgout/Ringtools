@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { prisma } from "./prisma";
 import { encryptSecret, decryptSecret, hashToken } from "./crypto";
 import { logSecurityEvent } from "./securityEvents";
+import { autoEnableMfaAfterFirstMethod, usableMethodCount } from "./autoMfa";
 
 const ISSUER = "Ringtools";
 const PERIOD_SECONDS = 30;
@@ -153,6 +154,8 @@ export async function confirmTotpEnrollment(
   opts: { issueRecoveryCodes?: boolean } = {}
 ): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; outcome: TotpOutcome }> {
   const credential = await prisma.totpCredential.findUnique({ where: { userId } });
+  const userRow = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  const hadUsableMethodBefore = !userRow || (await usableMethodCount(userId, userRow.role)) > 0;
   const pendingValid =
     !!credential?.pendingSecretEncrypted && !!credential.pendingCreatedAt && Date.now() - credential.pendingCreatedAt.getTime() <= PENDING_SECRET_TTL_MS;
 
@@ -182,6 +185,7 @@ export async function confirmTotpEnrollment(
     if (swapped.count !== 1) return { ok: false, outcome: "LOCKED" };
     const recoveryCodes = opts.issueRecoveryCodes === false ? [] : await regenerateRecoveryCodes(userId);
     await logSecurityEvent({ userId, type: "TOTP_ENROLLED" });
+    await autoEnableMfaAfterFirstMethod(userId, hadUsableMethodBefore);
     return { ok: true, recoveryCodes };
   }
 
@@ -194,6 +198,7 @@ export async function confirmTotpEnrollment(
   await prisma.totpCredential.update({ where: { userId }, data: { confirmedAt: new Date() } });
   const recoveryCodes = opts.issueRecoveryCodes === false ? [] : await regenerateRecoveryCodes(userId);
   await logSecurityEvent({ userId, type: "TOTP_ENROLLED" });
+  await autoEnableMfaAfterFirstMethod(userId, hadUsableMethodBefore);
   return { ok: true, recoveryCodes };
 }
 

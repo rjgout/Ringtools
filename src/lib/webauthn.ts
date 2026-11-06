@@ -10,6 +10,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { env } from "./env";
 import { logSecurityEvent } from "./securityEvents";
+import { autoEnableMfaAfterFirstMethod, usableMethodCount } from "./autoMfa";
 
 const RP_NAME = "Ringtools";
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -128,6 +129,8 @@ export async function verifyPasskeyRegistration(
   }
 
   const { credential } = result.registrationInfo;
+  const userRow = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  const hadUsableMethodBefore = !userRow || (await usableMethodCount(userId, userRow.role)) > 0;
   await prisma.webAuthnCredential.create({
     data: {
       userId,
@@ -139,6 +142,7 @@ export async function verifyPasskeyRegistration(
     },
   });
   await logSecurityEvent({ userId, type: "PASSKEY_REGISTERED", detail: deviceLabel?.trim() || undefined });
+  await autoEnableMfaAfterFirstMethod(userId, hadUsableMethodBefore);
   return { ok: true };
 }
 
