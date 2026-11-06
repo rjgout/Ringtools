@@ -26,14 +26,17 @@ export class DeviceLoginError extends Error {
 
 export const RECOVERY_HINT = "Lukt het niet? Log in met je e-mailcode en authenticator-app en koppel dit toestel opnieuw.";
 
-export type DeviceKeyRef = { installationId: string; tag: string };
+/** Lokale verwijzing naar de toestelsleutel. `userId`/`name` (optioneel, niet geheim) leggen vast voor wélk account Face ID hier is ingesteld. */
+export type DeviceKeyRef = { installationId: string; tag: string; userId?: string; name?: string };
 
 export async function readDeviceKeyRef(): Promise<DeviceKeyRef | null> {
   try {
     const raw = await storage.getDeviceKey();
     if (!raw) return null;
     const v = JSON.parse(raw) as Partial<DeviceKeyRef>;
-    return typeof v.installationId === "string" && typeof v.tag === "string" ? { installationId: v.installationId, tag: v.tag } : null;
+    return typeof v.installationId === "string" && typeof v.tag === "string"
+      ? { installationId: v.installationId, tag: v.tag, ...(typeof v.userId === "string" ? { userId: v.userId } : {}), ...(typeof v.name === "string" ? { name: v.name } : {}) }
+      : null;
   } catch {
     return null;
   }

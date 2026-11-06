@@ -130,12 +130,13 @@ describe("Inloggen met e-mailcode + authenticator-app in de app", () => {
     expect(api.cancelMfa).toHaveBeenCalled();
   });
 
-  it("scherm toont de ingeladen servercapaciteiten: koppelknop en TOTP-tekst, en geen verouderde passkey-melding", async () => {
+  it("scherm toont geen technische uitleg meer, wel de herstelroute 'koppelen met een code' als de server toestellen aanbiedt", async () => {
     const { api } = setup();
     api.meta.mockResolvedValue({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: false, nativeTotpLogin: true, trustedDevices: true });
     render(<Login onLinkDevice={() => {}} />);
-    expect(await screen.findByText(/authenticator-app\? Na de inlogcode/)).toBeTruthy();
-    expect(screen.queryByText(/Accounts met passkey-verificatie kunnen in de app nog niet inloggen/)).toBeNull();
+    await waitFor(() => expect(api.meta).toHaveBeenCalled());
+    expect(screen.queryByText(/authenticator-app\? Na de inlogcode/)).toBeNull();
+    expect(screen.queryByText(/Accounts met passkey-verificatie/)).toBeNull();
     expect(screen.getByTestId("build-info").textContent).toMatch(/build .* · server /);
   });
 });
@@ -151,7 +152,7 @@ describe("Servercapaciteiten (/meta) – mislukt, vertraagd of geblokkeerd", () 
     const { result } = renderHook(() => useServerCapabilities(client, [5, 5]));
     expect(result.current.status).toBe("loading");
     await waitFor(() => expect(result.current.status).toBe("ready"));
-    expect(result.current.caps).toEqual({ nativePasskeys: false, nativeTotpLogin: true, trustedDevices: true, deviceLogin: false });
+    expect(result.current.caps).toEqual({ nativePasskeys: false, nativeTotpLogin: true, trustedDevices: true, deviceLogin: false, deviceAutoEnroll: false });
     expect(meta).toHaveBeenCalledTimes(2);
   });
 
@@ -160,7 +161,7 @@ describe("Servercapaciteiten (/meta) – mislukt, vertraagd of geblokkeerd", () 
     const client = { meta } as never;
     const { result } = renderHook(() => useServerCapabilities(client, [1, 1]));
     await waitFor(() => expect(result.current.status).toBe("unavailable"));
-    expect(result.current.caps).toEqual({ nativePasskeys: false, nativeTotpLogin: false, trustedDevices: false, deviceLogin: false });
+    expect(result.current.caps).toEqual({ nativePasskeys: false, nativeTotpLogin: false, trustedDevices: false, deviceLogin: false, deviceAutoEnroll: false });
     meta.mockResolvedValue(META);
     act(() => result.current.retry());
     await waitFor(() => expect(result.current.status).toBe("ready"));

@@ -140,6 +140,15 @@ export class ApiClient {
   deviceStatus(installationId: string) {
     return this.request<{ registered: boolean; loginEnabled: boolean }>("POST", "/auth/device/status", { installationId });
   }
+  deviceEnrollChallenge() {
+    return this.request<{ enrollmentId: string; challenge: string; userId: string; expiresAt: string }>("POST", "/auth/device/enroll/challenge", {});
+  }
+  deviceEnrollComplete(input: { enrollmentId: string; publicKey: string; installationId: string; signature: string; platform: "IOS"; label: string }) {
+    return this.request<{ ok: boolean; deviceId: string }>("POST", "/auth/device/enroll/complete", input);
+  }
+  deviceDisable(installationId: string) {
+    return this.request<{ ok: boolean }>("POST", "/auth/device/disable", { installationId });
+  }
   deviceActivateChallenge(installationId: string) {
     return this.request<{ challengeId: string; challenge: string; deviceId: string; expiresAt: string }>("POST", "/auth/device/activate/challenge", { installationId });
   }

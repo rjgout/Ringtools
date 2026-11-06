@@ -115,14 +115,14 @@ describe("Inlogscherm: Inloggen met Face ID", () => {
     const a = setup({ key: false });
     await a.ready;
     render(<Login />);
-    await screen.findByText(/authenticator-app/);
+    await waitFor(() => expect((a.api.meta as ReturnType<typeof vi.fn>)).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: "Inloggen met Face ID of toestelcode" })).toBeNull();
     expect(screen.getByLabelText("E-mailadres")).toBeTruthy();
     cleanup();
     const b = setup({ deviceLogin: false });
     await b.ready;
     render(<Login />);
-    await screen.findByText(/authenticator-app/);
+    await waitFor(() => expect((b.api.meta as ReturnType<typeof vi.fn>)).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: "Inloggen met Face ID of toestelcode" })).toBeNull();
   });
 

@@ -59,6 +59,12 @@ export class LockController {
   private active = true;
   /** Volgnummer van de laatste bevestiging van de schermbescherming; oudere uitkomsten tellen niet meer. */
   private verifySeq = 0;
+  /**
+   * E2.5: de vergrendeling beschermt een BESTAANDE sessie. Zonder sessie (uitgelogd, verlopen of ingetrokken) is er niets te beschermen: dan
+   * verschijnt direct het inlogscherm zonder lokale ontgrendeling. Standaard `true` (fail-closed); alleen `configureSession(false)` en
+   * `sessionEnded()` zetten dit uit, en alleen `sessionStarted()` zet het weer aan. De bestaande sessiecontrole (30 s achtergrond) blijft ongewijzigd.
+   */
+  private sessionRequired = true;
 
   constructor(private readonly deps: LockDeps) {
     this.now = deps.now ?? (() => Date.now());
@@ -67,6 +73,31 @@ export class LockController {
   }
 
   getSnapshot = (): LockSnapshot => this.snap;
+
+  /**
+   * Vóór `start()` aanroepen met de uitkomst van een sessiecontrole die GEEN token leest (alleen of de sleutel bestaat). Bij `false` (geen opgeslagen
+   * sessie) is er geen lokale ontgrendeling nodig; bij `true` (of een mislukte controle) geldt de volledige vergrendeling.
+   */
+  configureSession(hasSession: boolean): void {
+    this.sessionRequired = hasSession;
+    if (!this.deps.enabled || hasSession) return;
+    this.set({ phase: "unlocked", failure: null, verifying: false });
+  }
+
+  /** Er is nu een sessie (inloggen geslaagd of hervat). Een zojuist geslaagde aanmelding telt als ontgrendeling: geen tweede prompt. */
+  sessionStarted(): void {
+    this.sessionRequired = true;
+    this.awayAt = null;
+  }
+
+  /** De sessie is weg (uitloggen, verlopen, ingetrokken): niets meer te beschermen; direct het inlogscherm, zonder ontgrendelprompt. */
+  sessionEnded(): void {
+    this.sessionRequired = false;
+    this.awayAt = null;
+    this.verifySeq++;
+    if (!this.deps.enabled) return;
+    this.set({ phase: "unlocked", failure: null, verifying: false, shielded: !this.active });
+  }
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -195,7 +226,7 @@ export class LockController {
     if (!this.deps.enabled) return;
     this.active = false;
     this.verifySeq++; // een lopende bevestiging is verouderd; de volgende terugkeer start een nieuwe
-    if (this.snap.phase === "unlocked" && this.awayAt === null && !this.inflight) this.awayAt = this.now();
+    if (this.sessionRequired && this.snap.phase === "unlocked" && this.awayAt === null && !this.inflight) this.awayAt = this.now();
     this.set({ shielded: true });
   }
 
@@ -204,6 +235,11 @@ export class LockController {
     this.active = true;
     if (!this.deps.enabled) return this.emitResume(); // ontwikkelbrowser: geen vergrendeling, wel gewoon verversen
     if (this.inflight) return; // de eigen prompt veroorzaakt ook voorgrond-/achtergrondwisselingen; het resultaat bepaalt de toestand
+    if (this.snap.phase === "unlocked" && !this.sessionRequired) {
+      this.set({ shielded: false }); // geen sessie: geen vergrendeling, wel de afscherming van de app-switcher opheffen
+      this.emitResume();
+      return;
+    }
     if (this.snap.phase === "unlocked") {
       const away = this.awayAt;
       this.awayAt = null;

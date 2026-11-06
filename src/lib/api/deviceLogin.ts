@@ -1,6 +1,8 @@
 import { rateLimit } from "../rateLimit";
 import { TrustedDeviceError } from "../trustedDevices";
-import { activationChallenge, confirmActivation, deviceLoginStatus, loginChallenge, loginWithDevice } from "../deviceLogin";
+import { activationChallenge, confirmActivation, deviceLoginStatus, disableDeviceLogin, loginChallenge, loginWithDevice } from "../deviceLogin";
+import { completeEnrollment, startEnrollment } from "../deviceEnrollment";
+import { prisma } from "../prisma";
 import { ApiError, str } from "./http";
 import { requireFreshAuth } from "./management";
 import type { ApiAuth } from "./auth";
@@ -55,4 +57,33 @@ export async function activationConfirmApi(auth: ApiAuth, body: Record<string, u
 
 export async function deviceStatusApi(auth: ApiAuth, body: Record<string, unknown>) {
   return deviceLoginStatus(auth.user.id, str(body.installationId));
+}
+
+// ---- E2.5: automatische Face ID-inrichting (ingelogd + recente MFA) ----
+
+export async function enrollChallengeApi(auth: ApiAuth) {
+  requireFreshAuth(auth);
+  limit("devenroll", auth.user.id, 10);
+  const c = await errors(() => startEnrollment(auth.user.id));
+  return { enrollmentId: c.enrollmentId, challenge: c.challenge, userId: c.userId, expiresAt: c.expiresAt.toISOString() };
+}
+
+export async function enrollCompleteApi(auth: ApiAuth, body: Record<string, unknown>) {
+  requireFreshAuth(auth);
+  limit("devenroll", auth.user.id, 10);
+  const res = await errors(() =>
+    completeEnrollment(auth.user.id, {
+      enrollmentId: str(body.enrollmentId), publicKey: str(body.publicKey), installationId: str(body.installationId),
+      signature: str(body.signature), platform: str(body.platform), label: str(body.label),
+    })
+  );
+  return { ok: true, deviceId: res.deviceId };
+}
+
+/** Zet Face ID-inloggen voor een eigen toestel uit (recente MFA); beëindigt de via dat toestel aangemaakte sessies. */
+export async function deviceDisableApi(auth: ApiAuth, body: Record<string, unknown>) {
+  requireFreshAuth(auth);
+  const d = await prisma.trustedDevice.findFirst({ where: { installationId: str(body.installationId), userId: auth.user.id }, select: { id: true } });
+  const done = d ? await disableDeviceLogin(auth.user.id, d.id, auth.user.id) : false;
+  return { ok: done };
 }

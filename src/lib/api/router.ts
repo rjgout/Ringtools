@@ -96,13 +96,16 @@ publicRoute("POST", "/auth/device/login", async ({ request, body }) => {
   return { token: result.token, expiresAt: result.expiresAt.toISOString(), ...(await svc.getMe(result.userId)) };
 });
 authedRoute("POST", "/auth/device/status", async ({ auth, body }) => deviceLoginApi.deviceStatusApi(auth, body));
+authedRoute("POST", "/auth/device/enroll/challenge", async ({ auth }) => deviceLoginApi.enrollChallengeApi(auth));
+authedRoute("POST", "/auth/device/enroll/complete", async ({ auth, body }) => deviceLoginApi.enrollCompleteApi(auth, body));
+authedRoute("POST", "/auth/device/disable", async ({ auth, body }) => deviceLoginApi.deviceDisableApi(auth, body));
 authedRoute("POST", "/auth/device/activate/challenge", async ({ auth, body }) => deviceLoginApi.activationChallengeApi(auth, body));
 authedRoute("POST", "/auth/device/activate/confirm", async ({ auth, body }) => deviceLoginApi.activationConfirmApi(auth, body));
 publicRoute("POST", "/trusted-devices/pair/claim", async ({ request, body }) => trustedDevicesApi.claimPairingApi(body, clientKeyOf(request)));
 publicRoute("POST", "/trusted-devices/pair/complete", async ({ request, body }) => trustedDevicesApi.completePairingApi(body, clientKeyOf(request)));
 
 // Versie en capaciteiten van de API; de app controleert hiermee of ze nog compatibel is.
-publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION, nativePasskeys: env.nativePasskeysEnabled, nativeTotpLogin: env.nativeTotpLoginEnabled, trustedDevices: env.trustedDevicesEnabled, deviceLogin: env.nativeDeviceLoginEnabled }));
+publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION, nativePasskeys: env.nativePasskeysEnabled, nativeTotpLogin: env.nativeTotpLoginEnabled, trustedDevices: env.trustedDevicesEnabled, deviceLogin: env.nativeDeviceLoginEnabled, deviceAutoEnroll: env.nativeDeviceAutoEnrollEnabled }));
 
 // Het pushtoken is een geheim van het toestel; wie het kent mag het afmelden. Zo kan de app het
 // ook afmelden als de sessie al is verlopen of ingetrokken (401).

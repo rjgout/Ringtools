@@ -200,7 +200,7 @@ export type DeviceInfo = { id: string; platform: "ios" | "android"; active: bool
 
 export type LoginResult = Me & { token: string; expiresAt: string };
 
-export type ApiMeta = { apiVersion: number; minAppVersion: string; /** Native passkeys zijn op de server ingeschakeld (functievlag). */ nativePasskeys?: boolean; /** Native login met e-mailcode + authenticator-app (functievlag). */ nativeTotpLogin?: boolean; /** Vertrouwde toestellen koppelen (functievlag). */ trustedDevices?: boolean; /** Wachtwoordloos inloggen met een geactiveerd vertrouwd toestel (functievlag, alleen iPhone). */ deviceLogin?: boolean };
+export type ApiMeta = { apiVersion: number; minAppVersion: string; /** Native passkeys zijn op de server ingeschakeld (functievlag). */ nativePasskeys?: boolean; /** Native login met e-mailcode + authenticator-app (functievlag). */ nativeTotpLogin?: boolean; /** Vertrouwde toestellen koppelen (functievlag). */ trustedDevices?: boolean; /** Wachtwoordloos inloggen met een geactiveerd vertrouwd toestel (functievlag, alleen iPhone). */ deviceLogin?: boolean; /** Face ID automatisch aanbieden en inrichten na de eerste volledige aanmelding (functievlag). */ deviceAutoEnroll?: boolean };
 
 /** Antwoord op /auth/login voor een account met verplichte MFA zodra native passkeys zijn ingeschakeld: nog géén sessie. */
 export type PendingMfaLogin = { mfaRequired: true; method: "passkey" | "totp"; /** Beschikbare tweede factoren; ontbreekt bij oudere servers (dan alleen passkey). */ methods?: ("passkey" | "totp")[]; pendingToken: string; expiresAt: string };

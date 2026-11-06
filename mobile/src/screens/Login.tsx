@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { AdminLogin } from "./AdminLogin";
 import { useAuth } from "../lib/auth";
 import { nativeDeviceKeys } from "../lib/deviceKey";
@@ -6,8 +6,8 @@ import { ApiRequestError } from "../lib/api";
 import { useServerCapabilities } from "../lib/useServerCapabilities";
 import { deviceLoginMessage, deviceLoginSupported, readDeviceKeyRef } from "../lib/deviceLogin";
 import { API_HOST, APP_VERSION, BUILD_ID } from "../config";
-import { nativeCapabilities, PERSONAL_TEAM_NOTICE } from "../lib/buildProfile";
-import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, PasskeyError, passkeysUsable, subscribePasskeyProvider } from "../lib/passkeys";
+import { nativeCapabilities } from "../lib/buildProfile";
+import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, PasskeyError, passkeysUsable } from "../lib/passkeys";
 
 /** Inloggen met e-mail + 8-cijferige code uit de e-mail. De link in de mail opent deze app direct (universele link). */
 export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { initialEmail?: string; onHaveInvitation?: () => void; onLinkDevice?: () => void }) {
@@ -23,16 +23,14 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
   const [info, setInfo] = useState<string | null>(null);
   const [admin, setAdmin] = useState(false);
   // Servercapaciteiten uit GET /meta: met automatische herpogingen (ook als de aanvraag tijdens de ontgrendeling werd geblokkeerd).
-  const providerReady = useSyncExternalStore(subscribePasskeyProvider, () => getPasskeyProvider() !== null);
   const caps = useServerCapabilities(api);
-  const serverPasskeys = caps.caps.nativePasskeys;
   const trustedDevices = caps.caps.trustedDevices;
-  const serverTotp = caps.caps.nativeTotpLogin;
   // E2.4a: knop "Inloggen met Face ID" alleen als de server het aanbiedt, dit een iPhone is en er een lokale toestelsleutel bestaat.
   const [hasDeviceKey, setHasDeviceKey] = useState(false);
+  const [deviceOwner, setDeviceOwner] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
-    void readDeviceKeyRef().then((r) => { if (active) setHasDeviceKey(!!r); });
+    void readDeviceKeyRef().then((r) => { if (active) { setHasDeviceKey(!!r); setDeviceOwner(r?.name ?? null); } });
     return () => { active = false; };
   }, []);
   const deviceLoginAvailable = caps.caps.deviceLogin && hasDeviceKey && deviceLoginSupported();
@@ -155,7 +153,8 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
         {step === "email" && deviceLoginAvailable && (
           <div className="stack">
             <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={() => void loginWithDevice()}>{busy ? "Even geduld…" : "Inloggen met Face ID of toestelcode"}</button>
-            <span className="muted">Je bevestigt met Face ID of, als je toestel dat toestaat, met je toestelcode. Of log in met je e-mailadres hieronder.</span>
+            <span className="muted">{deviceOwner ? `Voor het account van ${deviceOwner}. ` : ""}Je bevestigt met Face ID of, als je toestel dat toestaat, met je toestelcode.</span>
+            <strong>Of log in met een e-mailcode</strong>
           </div>
         )}
         {step === "totp" ? (
@@ -199,22 +198,13 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
             Ander e-mailadres
           </button>
         )}
-        {nativeCapabilities().limited && <p role="note" className="muted">{PERSONAL_TEAM_NOTICE}</p>}
         {onHaveInvitation && step === "email" && <button type="button" className="btn btn-ghost btn-block" onClick={onHaveInvitation}>Ik heb een uitnodiging</button>}
         {onLinkDevice && trustedDevices && step === "email" && nativeDeviceKeys.available() && <button type="button" className="btn btn-ghost btn-block" onClick={onLinkDevice}>Toestel koppelen met een code</button>}
         <button type="button" className="btn btn-ghost btn-block" onClick={() => setAdmin(true)}>Inloggen als beheerder (webmin)</button>
-        {caps.status === "loading" ? (
-          <p className="muted" role="status">Inlogopties worden opgehaald…</p>
-        ) : caps.status === "unavailable" ? (
+        {caps.status === "unavailable" && (
           <p className="muted" role="status">
-            De inlogopties konden niet worden opgehaald. <button type="button" className="btn btn-ghost" onClick={caps.retry}>Opnieuw proberen</button>
+            Sommige inlogopties konden niet worden opgehaald. <button type="button" className="btn btn-ghost" onClick={caps.retry}>Opnieuw proberen</button>
           </p>
-        ) : providerReady && passkeysUsable(serverPasskeys, nativeCapabilities().limited) ? (
-          <p className="muted">Heeft jouw account extra verificatie met een passkey? Na de inlogcode verifieer je dan met je passkey op dit toestel.</p>
-        ) : serverTotp ? (
-          <p className="muted">Heeft jouw account een authenticator-app? Na de inlogcode vul je de code uit die app in. Accounts met alleen een passkey kunnen in de app nog niet inloggen; gebruik daarvoor voorlopig de webapp.</p>
-        ) : (
-          <p className="muted">Accounts met passkey-verificatie kunnen in de app nog niet inloggen. Gebruik daarvoor voorlopig de webapp; je beveiliging blijft ongewijzigd.</p>
         )}
         <p className="muted" style={{ fontSize: "0.75rem" }} data-testid="build-info">Versie {APP_VERSION} · build {BUILD_ID} · server {API_HOST}</p>
       </form>

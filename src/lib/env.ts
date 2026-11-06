@@ -68,6 +68,10 @@ export const env = {
   get nativeDeviceLoginEnabled() {
     return process.env.NATIVE_DEVICE_LOGIN_ENABLED === "true" && process.env.TRUSTED_DEVICES_ENABLED === "true";
   },
+  /** E2.5: automatisch aanbieden en inrichten van Face ID-inloggen na de eerste volledige aanmelding. Standaard UIT; vereist NATIVE_DEVICE_LOGIN_ENABLED. */
+  get nativeDeviceAutoEnrollEnabled() {
+    return process.env.NATIVE_DEVICE_AUTO_ENROLL_ENABLED === "true" && this.nativeDeviceLoginEnabled;
+  },
   get autoEnableMfa() {
     return process.env.AUTO_ENABLE_MFA === "true";
   },

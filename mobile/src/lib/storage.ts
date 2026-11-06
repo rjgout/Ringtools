@@ -12,6 +12,7 @@ const MODE = "ringtools.mode";
 const PUSH = "ringtools.pushToken";
 const DEVICE = "ringtools.deviceId";
 const DEVICE_KEY = "ringtools.deviceKey";
+const DEVICE_OFFER = "ringtools.deviceOfferDeclined";
 const PENDING_UNREGISTER = "ringtools.pendingPushUnregister";
 
 const memory = new Map<string, string>();
@@ -45,6 +46,12 @@ async function remove(key: string): Promise<void> {
 }
 
 export const storage = {
+  /** Bestaat er een opgeslagen sessie? Controleert ALLEEN of de sleutel bestaat; de waarde (het token) wordt niet gelezen (geen token lezen vóór ontgrendelen). */
+  async hasSession(): Promise<boolean> {
+    if (!native) return memory.has(TOKEN);
+    await init();
+    return (await SecureStorage.keys()).includes(TOKEN);
+  },
   getToken: () => get(TOKEN),
   setToken: (v: string) => set(TOKEN, v),
   /** "admin" na een webmin-login; anders leeg (gewone gebruiker). */
@@ -69,6 +76,10 @@ export const storage = {
   getDeviceKey: () => get(DEVICE_KEY),
   setDeviceKey: (v: string) => set(DEVICE_KEY, v),
   clearDeviceKey: () => remove(DEVICE_KEY),
+  /** Gebruiker-ID voor wie het automatische Face ID-aanbod is afgewezen of mislukt (om niet te blijven aandringen); het aanbod in Profiel blijft beschikbaar. */
+  getDeviceOfferDeclined: () => get(DEVICE_OFFER),
+  setDeviceOfferDeclined: (userId: string) => set(DEVICE_OFFER, userId),
+  clearDeviceOfferDeclined: () => remove(DEVICE_OFFER),
   /** Wist de sessiegegevens; de installatie-ID en een nog niet afgemeld pushtoken blijven bewust bestaan. */
   async clearSession() {
     await Promise.all([TOKEN, RING, PUSH, MODE].map(remove));

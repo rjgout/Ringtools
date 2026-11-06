@@ -128,6 +128,7 @@ model User {
   openLinkTokens      OpenLinkToken[]
   devicePushTokens    DevicePushToken[]
   trustedDevices      TrustedDevice[]
+  deviceEnrollments   DeviceEnrollment[]
   mfaPairings         MfaPairing[]
 
   createdCallings          Calling[]            @relation("CallingCreatedBy")
@@ -1016,4 +1017,19 @@ model DeviceLoginChallenge {
   createdAt      DateTime               @default(now())
 
   @@index([deviceId, createdAt])
+}
+
+// E2.5: eenmalige registratiechallenge voor het automatisch inrichten van Face ID-inloggen vanuit een volledig geauthenticeerde sessie
+// (recente MFA). Gebonden aan één gebruiker; kort geldig; atomair te verbruiken. Een koppelcode is hiervoor niet nodig en levert nooit een sessie.
+model DeviceEnrollment {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge      String
+  expiresAt      DateTime
+  failedAttempts Int       @default(0)
+  consumedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([userId, createdAt])
 }

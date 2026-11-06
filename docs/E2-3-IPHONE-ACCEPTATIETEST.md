@@ -54,3 +54,22 @@ Voorbereiding: back-up gecontroleerd; in Portainer `NATIVE_DEVICE_LOGIN_ENABLED=
 9. App verwijderen en opnieuw installeren (sleutelverlies): "Inloggen met Face ID" ontbreekt of faalt veilig; inloggen met e-mailcode + authenticator en daarna opnieuw koppelen en activeren. Noteer of de oude sleutel in de keychain overleefde.
 10. Controleer in de Xcode-console dat er geen challenge-, bericht- of handtekeninggegevens verschijnen.
 11. Face ID-appvergrendeling, schermbeveiliging en de bestaande e-mailcode + TOTP-login werken ongewijzigd.
+
+---
+
+# E2.5 – acceptatietest: automatische Face ID-inrichting en vereenvoudigde vergrendeling
+
+Voorbereiding: back-up gecontroleerd; in Portainer `TRUSTED_DEVICES_ENABLED=true`, `NATIVE_DEVICE_LOGIN_ENABLED=true`, `NATIVE_DEVICE_AUTO_ENROLL_ENABLED=true` (plus `WEB_TOTP_ENABLED`/`NATIVE_TOTP_LOGIN_ENABLED` voor inloggen met authenticator-app); `AUTO_ENABLE_MFA` blijft uit. Nieuwste build op de iPhone. Het account heeft MFA aan.
+
+1. Verse installatie (of app verwijderen en opnieuw installeren), niet ingelogd: de app opent **direct het inlogscherm**, zonder Face ID-prompt en zonder vergrendelscherm.
+2. Log in met e-mailcode + authenticator. Verwacht: direct na het inloggen een scherm "Inloggen met Face ID instellen". Tik "Instellen" → één Face ID-prompt → bevestiging. Geen koppelcode, geen navigatie naar Profiel.
+3. Herhaal 1–2, maar kies "Niet nu" (of annuleer Face ID): je blijft ingelogd, er is niets geregistreerd (web: Beveiliging → Vertrouwde toestellen toont geen nieuw toestel) en de app dringt niet opnieuw aan. Profiel → "Inloggen met Face ID instellen" werkt daarna wel.
+4. Zet de app 10 s op de achtergrond en terug: geen prompt. Meer dan 30 s: één Face ID-prompt.
+5. Log uit: direct het inlogscherm, **zonder** extra Face ID-prompt. Sluit en open de app: nog steeds direct het inlogscherm (geen vergrendelscherm).
+6. Tik "Inloggen met Face ID" op het inlogscherm: precies **één** Face ID-prompt, daarna direct het dashboard. Je wordt daarna niet nogmaals om ontgrendelen gevraagd.
+7. Koude start terwijl je ingelogd bent: één Face ID-prompt voor de app, geen inhoud zichtbaar voor ontgrendelen; app-switcher toont het afschermscherm.
+8. Intrekken van de sessie op het web terwijl de app open is: de app toont het inlogscherm zonder extra prompt.
+9. Tweede account op dezelfde iPhone: log in met een ander account (MFA aan). Verwacht: aanbod vermeldt dat Face ID al is ingesteld voor het account van de eerste gebruiker; zonder bevestiging ("Vervangen en instellen") gebeurt er niets. Na bevestiging is alleen het nieuwe account gekoppeld.
+10. Profiel: "Inloggen met Face ID: ingeschakeld" met "Uitschakelen" (vraagt een verse tweede factor); daarna kan het weer worden ingesteld.
+11. Een account zonder MFA of het beheerdersaccount krijgt geen aanbod.
+12. Xcode-console: geen challenges, berichten of handtekeningen zichtbaar.

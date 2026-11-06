@@ -145,10 +145,7 @@ describe("Inloggen met verplichte MFA in de app", () => {
   });
 });
 
-describe("Inlogscherm: melding over passkeys volgt de werkelijke beschikbaarheid", () => {
-  const WARN = /kunnen in de app nog niet inloggen/;
-  const OK = /verifieer je dan met je passkey/;
-
+describe("Inlogscherm: geen technische uitleg voor gewone gebruikers (E2.5)", () => {
   function withMeta(meta: () => Promise<unknown>, limited = false) {
     const s = setup({});
     (auth.value.api as Record<string, unknown>).meta = vi.fn(meta);
@@ -156,70 +153,26 @@ describe("Inlogscherm: melding over passkeys volgt de werkelijke beschikbaarheid
     return s;
   }
   afterEach(() => { delete (window as { __RINGTOOLS_BUILD__?: unknown }).__RINGTOOLS_BUILD__; });
+  const TECHNICAL = /passkey|authenticator|Secure Enclave|Personal Team|API/i;
 
-  it("server uit: waarschuwing blijft", async () => {
-    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: false }));
+  it.each([
+    ["server uit", { apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: false }, false],
+    ["server aan met provider", { apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true }, false],
+    ["Personal Team-build", { apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true, nativeTotpLogin: true }, true],
+  ])("%s: het inlogscherm toont geen uitleg over passkeys, TOTP, Secure Enclave of Personal Team", async (_n, meta, limited) => {
+    withMeta(async () => meta, limited);
     registerPasskeyProvider({ authenticate: async () => ASSERTION });
     render(<Login />);
     await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
-    expect(screen.getByText(WARN)).toBeTruthy();
-    expect(screen.queryByText(OK)).toBeNull();
+    const text = document.body.textContent ?? "";
+    expect(text.replace(/Inloggen als beheerder \(webmin\)/, "")).not.toMatch(TECHNICAL);
+    expect(screen.getByLabelText("E-mailadres")).toBeTruthy();
   });
 
-  it("server aan maar geen provider: waarschuwing blijft", async () => {
-    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true }));
-    render(<Login />);
-    await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
-    expect(screen.getByText(WARN)).toBeTruthy();
-  });
-
-  it("meta mislukt: geen gok — neutrale 'ophalen'-melding, geen passkey-claim en geen verouderde waarschuwing", async () => {
+  it("meta mislukt: alleen een discrete herstelmelding (na alle pogingen), nooit een gok of technische uitleg", async () => {
     withMeta(async () => { throw new Error("netwerk"); });
-    registerPasskeyProvider({ authenticate: async () => ASSERTION });
     render(<Login />);
     await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
-    expect(screen.getByText(/Inlogopties worden opgehaald/)).toBeTruthy();
-    expect(screen.queryByText(OK)).toBeNull();
-    expect(screen.queryByText(WARN)).toBeNull();
-  });
-
-  it("server aan + provider + standaardbuild: neutrale melding zonder 'kan niet inloggen'", async () => {
-    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true }));
-    registerPasskeyProvider({ authenticate: async () => ASSERTION });
-    render(<Login />);
-    expect(await screen.findByText(OK)).toBeTruthy();
-    expect(screen.queryByText(WARN)).toBeNull();
-  });
-
-  it("provider pas na /meta geregistreerd: melding wordt bijgewerkt (standaardbuild)", async () => {
-    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true }));
-    render(<Login />);
-    await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
-    await new Promise((r) => setTimeout(r, 10)); // /meta is verwerkt, nog geen provider
-    expect(screen.getByText(WARN)).toBeTruthy();
-    expect(screen.queryByText(OK)).toBeNull();
-    act(() => registerPasskeyProvider({ authenticate: async () => ASSERTION }));
-    expect(await screen.findByText(OK)).toBeTruthy();
-    expect(screen.queryByText(WARN)).toBeNull();
-    act(() => registerPasskeyProvider(null)); // en weer terug naar de veilige melding
-    expect(await screen.findByText(WARN)).toBeTruthy();
-  });
-
-  it("Personal Team-build: provider later geregistreerd verandert niets", async () => {
-    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true }), true);
-    render(<Login />);
-    await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
-    act(() => registerPasskeyProvider({ authenticate: async () => ASSERTION }));
-    expect(screen.getByText(WARN)).toBeTruthy();
-    expect(screen.queryByText(OK)).toBeNull();
-  });
-
-  it("Personal Team-build: waarschuwing blijft, ook met server aan en provider", async () => {
-    withMeta(async () => ({ apiVersion: 1, minAppVersion: "1.0.0", nativePasskeys: true }), true);
-    registerPasskeyProvider({ authenticate: async () => ASSERTION });
-    render(<Login />);
-    await waitFor(() => expect((auth.value.api as { meta: ReturnType<typeof vi.fn> }).meta).toHaveBeenCalled());
-    expect(screen.getByText(WARN)).toBeTruthy();
-    expect(screen.queryByText(OK)).toBeNull();
+    expect((document.body.textContent ?? "").replace(/Inloggen als beheerder \(webmin\)/, "")).not.toMatch(TECHNICAL);
   });
 });

@@ -13,10 +13,13 @@ export type LockApi = {
   isUnlocked: () => boolean;
   /** Stabiel: meldt zich nadat de vergrendeling is beoordeeld en de app ontgrendeld is (terugkeer of ontgrendelen). */
   onResume: (listener: () => void) => () => void;
+  /** E2.5: meldt dat er een sessie is (inloggen/hervatten) of niet meer is (uitloggen/verlopen). Zonder sessie geen lokale ontgrendeling. */
+  sessionStarted: () => void;
+  sessionEnded: () => void;
 };
 
 /** Zonder provider (bijv. in tests van losse schermen) gedraagt de context zich als ontgrendeld. */
-const LockContext = createContext<LockApi>({ phase: "unlocked", shielded: false, failure: null, unlock: () => {}, isUnlocked: () => true, onResume: () => () => {} });
+const LockContext = createContext<LockApi>({ phase: "unlocked", shielded: false, failure: null, unlock: () => {}, isUnlocked: () => true, onResume: () => () => {}, sessionStarted: () => {}, sessionEnded: () => {} });
 export const useAppLock = () => useContext(LockContext);
 
 const MESSAGES: Record<LockFailure, string> = {
@@ -123,7 +126,7 @@ export function AppLockGate({ controller, sources, children }: { controller: Loc
 
   const unlock = useCallback(() => void controller.unlock(), [controller]);
   const api = useMemo<LockApi>(
-    () => ({ phase: snap.phase, shielded: snap.shielded, failure: snap.failure, unlock, isUnlocked: controller.isUnlocked, onResume: controller.onResume }),
+    () => ({ phase: snap.phase, shielded: snap.shielded, failure: snap.failure, unlock, isUnlocked: controller.isUnlocked, onResume: controller.onResume, sessionStarted: controller.sessionStarted.bind(controller), sessionEnded: controller.sessionEnded.bind(controller) }),
     [snap, unlock, controller]
   );
 

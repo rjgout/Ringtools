@@ -7,6 +7,8 @@ import { API_HOST } from "./config";
 import { nativeCapabilities } from "./lib/buildProfile";
 import { registerCapawesomePasskeys } from "./lib/capawesomePasskeys";
 import { ensurePrivacyScreen } from "./lib/privacyScreen";
+import { appLock } from "./lib/appLockSources";
+import { storage } from "./lib/storage";
 
 // Native passkey-plug-in koppelen (alleen native en niet in de Personal Team-build). Dit schakelt niets in: de serverfunctievlag blijft leidend.
 void registerCapawesomePasskeys({ isNative, passkeysCapable: nativeCapabilities().passkeys, rpId: API_HOST.split(":")[0] }).catch(() => {
@@ -17,8 +19,14 @@ void registerCapawesomePasskeys({ isNative, passkeysCapable: nativeCapabilities(
 // aantoonbaar geslaagde activering en blokkeert de app anders (fail-closed).
 void ensurePrivacyScreen();
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-);
+// E2.5: eerst veilig vaststellen of er een opgeslagen sessie is (zonder het token te lezen); het splashscreen blijft ondertussen staan, dus er is geen
+// zichtbare inhoud. Geen sessie → direct het inlogscherm zonder lokale ontgrendeling. Bestaande sessie of een mislukte controle → volledige vergrendeling (fail-closed).
+void (async () => {
+  const hasSession = await storage.hasSession().catch(() => true);
+  appLock.configureSession(hasSession);
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  );
+})();

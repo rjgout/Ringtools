@@ -105,6 +105,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   api_ref.current = api;
+  // E2.5: de lokale appvergrendeling beschermt alleen een bestaande sessie. Ingelogd → vergrendeling actief (een zojuist geslaagde aanmelding telt als
+  // ontgrendeling, dus geen tweede prompt); uitgelogd/verlopen/ingetrokken → direct het inlogscherm zonder ontgrendelprompt.
+  useEffect(() => {
+    if (status === "signedIn") lockRef.current.sessionStarted();
+    else if (status === "signedOut") lockRef.current.sessionEnded();
+  }, [status]);
   useEffect(() => {
     flushRef.current = async () => {
       const pending = await storage.getPendingUnregister();

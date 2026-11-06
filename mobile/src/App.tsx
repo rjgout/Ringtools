@@ -28,6 +28,7 @@ import { UserManager } from "./screens/UserManager";
 import { RingSetup } from "./screens/RingSetup";
 import { OpenLink } from "./screens/OpenLink";
 import { Activate } from "./screens/Activate";
+import { DeviceOffer } from "./components/DeviceOffer";
 
 /**
  * Universele links/app-links en pushmeldingen: koude start, draaiende app en hervatten vanuit de achtergrond.
@@ -170,6 +171,7 @@ function Shell() {
           </Routes>
         )}
       </main>
+      <DeviceOffer />
       <TabBar unread={unread} pending={me?.pendingCount ?? 0} canManageUsers={!!ring?.isRingManager} />
     </div>
   );
