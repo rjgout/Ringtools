@@ -7,7 +7,7 @@ import { App as CapApp } from "@capacitor/app";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { API_HOST } from "./config";
-import { isNative, onBackButton, onNetworkChange, setupNativeChrome } from "./lib/native";
+import { watchKeyboard, isNative, onBackButton, onNetworkChange, setupNativeChrome } from "./lib/native";
 import { installDeepLinkHandlers } from "./lib/deeplinks";
 import { routeInbox } from "./lib/routeInbox";
 import { useRouteInbox } from "./lib/useRouteInbox";
@@ -71,6 +71,7 @@ function Shell() {
   const [loginEmail, setLoginEmail] = useState("");
 
   useEffect(() => void setupNativeChrome(), []);
+  useEffect(() => watchKeyboard(), []); // tabbalk weg zolang het toetsenbord open is
   useEffect(() => void onNetworkChange(setOnline).then((off) => off), []);
   const lock = useAppLock();
   const lockedRef = useRef(false);
