@@ -144,7 +144,7 @@ bijwerken van deze tabel en van `docs/MOBILE.md`.
 
 - **Workflowregels (vastgesteld door de eigenaar).** Een lege hoge raad leidt nooit tot goedkeuring; presidiumakkoord start de hogeraadronde nooit
   automatisch (status `PRESIDIUM_APPROVED` → expliciete, idempotente vrijgave met audit); gezamenlijke besluiten leggen een werkelijk genomen besluit vast
-  en maken nooit reacties namens anderen aan; negatieve reacties worden nooit stilzwijgend overschreven. LCR blijft de bron voor ledengegevens en
+  en maken nooit reacties namens anderen aan (wel tonen de deelnemers van een vergaderbesluit de status "akkoord in vergadering", afgeleid van het besluit zelf, zonder stem en zonder tellingen te wijzigen; een eigen reactie gaat altijd voor); negatieve reacties worden nooit stilzwijgend overschreven. LCR blijft de bron voor ledengegevens en
   roepingen: bewaar geen blijvend personenregister en importeer nooit persoonsgegevens uit LCR (alleen functietitels).
 
 - **Catalogus en bevoegdheden.** Onbekende regels zijn `ONBEKEND`/`TE_BEOORDELEN`, nooit de ruimste standaardbevoegdheid; alleen `GEVERIFIEERD` kent (expliciet aangewezen) personen bevoegdheid toe, en
@@ -173,6 +173,8 @@ bijwerken van deze tabel en van `docs/MOBILE.md`.
 - **Afbakening:** Ringtools ondersteunt uitsluitend roepingen en ontheffingen. Organisatorische aanwijzingen en taakverdelingen krijgen geen afzonderlijke workflow. Registreren van een presidiumakkoord en vrijgeven aan de hoge raad blijven twee aparte, expliciete handelingen.
 
 ## Design
+
+Aan/uit-keuzes zijn overal schakelaars (iOS-stijl), geen vinkjes: `input[type="checkbox"]` wordt globaal als schakelaar getekend (`mobile/src/styles.css`, `src/app/globals.css`).
 
 Mobile-first; Liquid Glass-stijl behouden (tokens in `src/app/globals.css` en `mobile/src/styles.css`); iPhone, iPad en
 Android; veilige schermranden (`env(safe-area-inset-*)`); dark mode; correct toetsenbord- en navigatiegedrag (Android-

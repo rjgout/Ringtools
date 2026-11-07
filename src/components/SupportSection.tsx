@@ -7,6 +7,8 @@ export type SupportParticipant = {
   name: string;
   /** true = ondersteunt, false = ondersteunt niet, null = nog niet gereageerd */
   support: boolean | null;
+  /** Status via een gezamenlijk besluit in een vergadering (telt niet als stem). */
+  meeting?: "AKKOORD" | "AFWEZIG" | null;
   lastInvitedAt: Date | null;
   /** Is deze persoon nog actief lid van de ring met de rol van deze groep? */
   stillInvolved: boolean;
@@ -40,7 +42,7 @@ export function SupportSection({
   const myResponse = mine?.support ?? null;
   const supports = participants.filter((p) => p.support === true).length;
   const declines = participants.filter((p) => p.support === false).length;
-  const waiting = participants.filter((p) => p.support === null);
+  const waiting = participants.filter((p) => p.support === null && !p.meeting);
   const remindable = waiting.filter((p) => p.stillInvolved);
 
   return (
@@ -61,7 +63,11 @@ export function SupportSection({
               <li key={p.userId} className="space-y-1.5 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-medium">{p.name}</span>
-                  {p.support === null ? (
+                  {p.support === null && p.meeting === "AKKOORD" ? (
+                    <span className="badge badge-success">Akkoord in vergadering</span>
+                  ) : p.support === null && p.meeting === "AFWEZIG" ? (
+                    <span className="badge badge-pending">Afwezig bij vergadering</span>
+                  ) : p.support === null ? (
                     <span className="badge badge-pending">Nog niet gereageerd</span>
                   ) : (
                     <span className={`badge ${p.support ? "badge-success" : "badge-danger"}`}>
@@ -74,7 +80,7 @@ export function SupportSection({
                     Laatst uitgenodigd: {p.lastInvitedAt ? formatDateTime(p.lastInvitedAt) : "–"}
                   </span>
                   <span className="flex flex-wrap items-center gap-2">
-                    {p.support === null && p.stillInvolved && (
+                    {p.support === null && !p.meeting && p.stillInvolved && (
                       <form action={remindAction}>
                         <input type="hidden" name="callingId" value={callingId} />
                         <input type="hidden" name="userId" value={p.userId} />

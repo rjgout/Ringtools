@@ -14,7 +14,7 @@ import { DeleteCallingButton } from "@/components/DeleteCallingButton";
 import { markProcessedAction, releaseToHogeraadAction } from "@/lib/actions/calling.actions";
 import { GroupDecisionForm } from "@/components/GroupDecisionForm";
 import { SubmitButton } from "@/components/SubmitButton";
-import { groupDecisionViews, hasGroupDecision } from "@/lib/api/service";
+import { groupDecisionViews, hasGroupDecision, meetingStatusMap, meetingStatusOf } from "@/lib/api/service";
 
 const MELDINGEN: Record<string, (q: Record<string, string | undefined>) => string> = {
   "vrijgave-mislukt": () => "Vrijgeven is niet gelukt. Controleer of er actieve hogeraadsleden zijn ingericht.",
@@ -86,16 +86,19 @@ export default async function CallingDetailPage({
   const presidiumMembers = users.filter((u) => u.role === "RINGPRESIDIUM").map((u) => ({ id: u.id, name: u.name }));
   const today = new Date().toISOString().slice(0, 10);
 
+  const meeting = await meetingStatusMap(calling.id);
   function participantsOf(
     eligible: typeof presidiumEligible,
     votes: typeof presidiumVotes,
-    involved: Set<string>
+    involved: Set<string>,
+    stage: "PRESIDIUM" | "HOGERAAD"
   ): SupportParticipant[] {
     const byUser = new Map(votes.map((v) => [v.userId, v]));
     return eligible.map((e) => ({
       userId: e.userId,
       name: e.user.name,
       support: byUser.get(e.userId)?.support ?? null,
+      meeting: meetingStatusOf(meeting, stage, e.userId, byUser.has(e.userId)),
       lastInvitedAt: e.lastInvitedAt,
       stillInvolved: involved.has(e.userId),
     }));
@@ -199,7 +202,7 @@ export default async function CallingDetailPage({
         <SupportSection
           title="Ondersteuningsronde ringpresidium"
           callingId={calling.id}
-          participants={participantsOf(presidiumEligible, presidiumVotes, presidiumInvolved)}
+          participants={participantsOf(presidiumEligible, presidiumVotes, presidiumInvolved, "PRESIDIUM")}
           isStaff={staff}
           currentUserId={user.id}
           canCurrentUserRespond={
@@ -213,7 +216,7 @@ export default async function CallingDetailPage({
         <SupportSection
           title="Ondersteuningsronde hoge raad"
           callingId={calling.id}
-          participants={participantsOf(hogeraadEligible, hogeraadVotes, hogeraadInvolved)}
+          participants={participantsOf(hogeraadEligible, hogeraadVotes, hogeraadInvolved, "HOGERAAD")}
           isStaff={staff}
           currentUserId={user.id}
           canCurrentUserRespond={

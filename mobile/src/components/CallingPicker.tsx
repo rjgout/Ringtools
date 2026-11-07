@@ -72,7 +72,7 @@ export function CallingPicker({ ringId, value, onChange, canAddCustom = true }: 
           {selected?.ruleStatus === "TE_BEOORDELEN" && <div className="muted" role="note">Menselijke controle nodig: de regels voor deze roeping zijn niet geverifieerd.</div>}
           {selected?.reviewNotes.length ? <div className="muted">Let op: een of meer regels staan nog ter controle bij de beheerder.</div> : null}
           {value.requiresConfirmation && (
-            <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={value.customConfirmed} onChange={(e) => onChange({ ...value, customConfirmed: e.target.checked })} /> De bevoegde leiding heeft de procedure voor deze roeping gecontroleerd{value.source === "EIGEN" ? " (eigen roeping)" : " (bevoegdheden niet geverifieerd)"}</label>
+            <label className="row"><input type="checkbox" checked={value.customConfirmed} onChange={(e) => onChange({ ...value, customConfirmed: e.target.checked })} /> De bevoegde leiding heeft de procedure voor deze roeping gecontroleerd{value.source === "EIGEN" ? " (eigen roeping)" : " (bevoegdheden niet geverifieerd)"}</label>
           )}
           <button type="button" className="btn btn-ghost" onClick={() => onChange(null)}>Andere roeping kiezen</button>
         </div>

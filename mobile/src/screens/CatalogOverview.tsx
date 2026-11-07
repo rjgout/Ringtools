@@ -115,7 +115,7 @@ export function CatalogOverview({ ringId }: { ringId: string }) {
           <option value="EIGEN">{KIND_LABEL.EIGEN}</option>
         </select>
       </div>
-      <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={onlyReview} onChange={(e) => setOnlyReview(e.target.checked)} /> Alleen functies met controlepunten of nog te beoordelen regels</label>
+      <label className="row"><input type="checkbox" checked={onlyReview} onChange={(e) => setOnlyReview(e.target.checked)} /> Alleen functies met controlepunten of nog te beoordelen regels</label>
       {!data && !error && <Spinner />}
       {error && <div className="error" role="alert">{error}</div>}
       {data && shown.length === 0 && <span className="muted">Geen functies gevonden.</span>}

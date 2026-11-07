@@ -89,18 +89,18 @@ export function CallingDetail() {
                   </div>
                 </>
               )}
-              {data.me.isStaff && r.state !== "upcoming" && r.participants.some((p) => p.support === null && p.stillInvolved) && (
+              {data.me.isStaff && r.state !== "upcoming" && r.participants.some((p) => p.support === null && !p.meeting && p.stillInvolved) && (
                 <button className="btn btn-ghost" disabled={busy} onClick={() => act(() => api.remind(id), (res) => `${res.sent} herinnering(en) verstuurd${res.skippedRecent ? `, ${res.skippedRecent} recent al herinnerd` : ""}.`)}>Iedereen herinneren die nog niet heeft gereageerd</button>
               )}
               {data.me.isStaff && r.participants.map((p) => (
                 <div key={p.userId} className="stack">
                   <div className="row between">
                     <span>{p.name}{!p.stillInvolved ? " (niet meer betrokken)" : ""}</span>
-                    <span className={`badge ${p.support === true ? "ok" : p.support === false ? "bad" : ""}`}>{p.support === true ? "Ondersteunt" : p.support === false ? "Niet" : "Nog niet"}</span>
+                    <span className={`badge ${p.support === true || (p.support === null && p.meeting === "AKKOORD") ? "ok" : p.support === false ? "bad" : ""}`}>{participantLabel(p)}</span>
                   </div>
                   {p.stillInvolved && r.state !== "done" && r.state !== "upcoming" && (
                     <div className="row">
-                      {p.support === null && <button className="btn btn-ghost btn-small" disabled={busy} aria-label={`Herinner ${p.name}`} onClick={() => act(() => api.remind(id, p.userId), `${p.name} is herinnerd.`)}>Herinner</button>}
+                      {p.support === null && !p.meeting && <button className="btn btn-ghost btn-small" disabled={busy} aria-label={`Herinner ${p.name}`} onClick={() => act(() => api.remind(id, p.userId), `${p.name} is herinnerd.`)}>Herinner</button>}
                       {p.support === false && <button className="btn btn-ghost btn-small" disabled={busy} aria-label={`Vraag ${p.name} opnieuw`} onClick={() => act(() => api.reinvite(id, p.userId), `${p.name} is opnieuw om ondersteuning gevraagd.`)}>Opnieuw vragen</button>}
                       <button className="btn btn-ghost btn-small" disabled={busy} aria-label={`Verwijder ${p.name} uit de ronde`} onClick={() => act(() => api.removeParticipant(id, p.userId), `${p.name} is uit de ronde gehaald.`)}>Uit ronde</button>
                     </div>
@@ -267,7 +267,7 @@ function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
       <div><label htmlFor={`gd-date-${stage}`}>Datum van het besluit</label><input id={`gd-date-${stage}`} type="date" value={decidedOn} onChange={(e) => setDecidedOn(e.target.value)} required /></div>
       {stage === "PRESIDIUM" && (
         <fieldset className="stack"><legend>Leden van het ringpresidium die het besluit hebben genomen</legend>
-          {detail.assignableUsers.filter((u) => u.role === "RINGPRESIDIUM").map((u) => <label key={u.id} className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={present.includes(u.id)} onChange={() => toggle(present, setPresent, u.id)} /> {u.name}</label>)}
+          {detail.assignableUsers.filter((u) => u.role === "RINGPRESIDIUM").map((u) => <label key={u.id} className="row"><input type="checkbox" checked={present.includes(u.id)} onChange={() => toggle(present, setPresent, u.id)} /> {u.name}</label>)}
           <span className="muted">Een secretaris of administrateur legt alleen vast wat het presidium heeft besloten en neemt dit besluit niet zelf.</span>
         </fieldset>
       )}
@@ -281,21 +281,21 @@ function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
             </select>
           </div>
           <fieldset className="stack"><legend>Aanwezig</legend>
-            {members.map((m) => <label key={m.userId} className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={present.includes(m.userId)} disabled={absent.includes(m.userId)} onChange={() => toggle(present, setPresent, m.userId)} /> {m.name}</label>)}
+            {members.map((m) => <label key={m.userId} className="row"><input type="checkbox" checked={present.includes(m.userId)} disabled={absent.includes(m.userId)} onChange={() => toggle(present, setPresent, m.userId)} /> {m.name}</label>)}
           </fieldset>
           <fieldset className="stack"><legend>Afwezig</legend>
-            {members.map((m) => <label key={m.userId} className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={absent.includes(m.userId)} disabled={present.includes(m.userId)} onChange={() => toggle(absent, setAbsent, m.userId)} /> {m.name}</label>)}
+            {members.map((m) => <label key={m.userId} className="row"><input type="checkbox" checked={absent.includes(m.userId)} disabled={present.includes(m.userId)} onChange={() => toggle(absent, setAbsent, m.userId)} /> {m.name}</label>)}
           </fieldset>
         </>
       )}
       <div><label htmlFor={`gd-note-${stage}`}>Korte toelichting (optioneel)</label><input id={`gd-note-${stage}`} value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} /></div>
       {hasNegative && (
         <fieldset className="stack"><legend>Er is een negatieve reactie</legend>
-          <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={resolveNegative} onChange={(e) => setResolveNegative(e.target.checked)} /> De negatieve reactie is in de vergadering afgehandeld (de reactie zelf blijft bewaard)</label>
+          <label className="row"><input type="checkbox" checked={resolveNegative} onChange={(e) => setResolveNegative(e.target.checked)} /> De negatieve reactie is in de vergadering afgehandeld (de reactie zelf blijft bewaard)</label>
           <div><label htmlFor={`gd-res-${stage}`}>Hoe is dit afgehandeld? (minimaal 10 tekens, geen gevoelige details)</label><input id={`gd-res-${stage}`} value={resolutionNote} maxLength={500} onChange={(e) => setResolutionNote(e.target.value)} /></div>
         </fieldset>
       )}
-      <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /> Het {label} heeft dit voorstel in de vergadering akkoord bevonden</label>
+      <label className="row"><input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /> Het {label} heeft dit voorstel in de vergadering akkoord bevonden</label>
       {stage === "PRESIDIUM" && <span className="muted">Na het vastleggen wacht het voorstel op een aparte, expliciete vrijgave aan de hoge raad.</span>}
       <div className="row"><button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>Annuleren</button><button className="btn btn-primary" disabled={busy || !valid}>Besluit vastleggen</button></div>
     </form>
@@ -312,4 +312,13 @@ function ExternalPerson({ id, current, busy, hint, onSave }: { id: string; curre
       <button type="button" className="btn btn-ghost" disabled={busy || name.trim().length < 2} onClick={() => onSave(name.trim())}>Externe persoon registreren</button>
     </div>
   );
+}
+
+/** Status van een deelnemer: eigen reactie, anders de uitkomst van een gezamenlijk besluit in een vergadering (telt niet als stem), anders nog niet gereageerd. */
+export function participantLabel(p: { support: boolean | null; meeting?: "AKKOORD" | "AFWEZIG" | null }): string {
+  if (p.support === true) return "Ondersteunt";
+  if (p.support === false) return "Niet";
+  if (p.meeting === "AKKOORD") return "Akkoord in vergadering";
+  if (p.meeting === "AFWEZIG") return "Afwezig bij vergadering";
+  return "Nog niet";
 }

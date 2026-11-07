@@ -212,6 +212,8 @@ export async function getCallingView(userId: string, callingId: string) {
     staff ? listActiveUsers(calling.ringId) : Promise.resolve([]),
   ]);
 
+  const meeting = await meetingStatusMap(calling.id);
+
   const stageStatus = (stage: "PRESIDIUM" | "HOGERAAD") => {
     const prefix = stage;
     if (calling.status === `${prefix}_VOTING`) return "open" as const;
@@ -229,6 +231,7 @@ export async function getCallingView(userId: string, callingId: string) {
       userId: e.userId,
       name: e.user.name,
       support: byUser.get(e.userId)?.support ?? null,
+      meeting: meetingStatusOf(meeting, stage, e.userId, byUser.has(e.userId)),
       lastInvitedAt: e.lastInvitedAt?.toISOString() ?? e.createdAt.toISOString(),
       stillInvolved: involved.has(e.userId),
     }));
@@ -314,6 +317,21 @@ async function eligibleAssigneesFor(calling: { ringId: string; functionSource: s
     eligibleAppointers(calling.ringId, calling.functionCode, "appointedBy"),
   ]);
   return { ROEPEN: granted.appointers.map((a) => a.id), AANSTELLEN: appointed.appointers.map((a) => a.id) };
+}
+
+/**
+ * Status per persoon na een gezamenlijk besluit in een vergadering. Er wordt NOOIT een reactie namens iemand aangemaakt (geen Vote, tellingen
+ * onveranderd); wie volgens het besluit deelnam, wordt alleen als "akkoord in vergadering" getoond, afwezigen als "afwezig". Een eigen reactie gaat voor.
+ */
+export type MeetingStatus = "AKKOORD" | "AFWEZIG" | null;
+export async function meetingStatusMap(callingId: string) {
+  const rows = await prisma.groupDecision.findMany({ where: { callingId, agreed: true }, select: { stage: true, presentUserIds: true, absentUserIds: true } });
+  return new Map(rows.map((r) => [r.stage as "PRESIDIUM" | "HOGERAAD", { present: new Set(r.presentUserIds), absent: new Set(r.absentUserIds) }]));
+}
+export function meetingStatusOf(map: Awaited<ReturnType<typeof meetingStatusMap>>, stage: "PRESIDIUM" | "HOGERAAD", userId: string, hasVote: boolean): MeetingStatus {
+  const d = map.get(stage);
+  if (!d || hasVote) return null;
+  return d.present.has(userId) ? "AKKOORD" : d.absent.has(userId) ? "AFWEZIG" : null;
 }
 
 export async function hasGroupDecision(callingId: string, stage: "PRESIDIUM" | "HOGERAAD") {

@@ -257,3 +257,23 @@ input:focus-visible, select:focus-visible, .btn:focus-visible, a:focus-visible, 
   position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
   background: var(--bg); color: var(--text); font-size: 1.5rem; font-weight: 600;
 }
+
+/* Schakelaar (iOS-stijl) in plaats van een vinkje: overal waar een aan/uit-keuze staat. */
+input[type="checkbox"] {
+  -webkit-appearance: none; appearance: none; flex: none; position: relative; cursor: pointer;
+  width: 51px !important; min-width: 51px !important; height: 31px !important; min-height: 31px !important; padding: 0 !important;
+  border: 0 !important; border-radius: 999px !important; background: rgb(var(--fill) / 0.32) !important; transition: background 0.2s;
+}
+input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: var(--on-success-fill);
+  box-shadow: 0 2px 4px rgb(var(--shadow)); transition: transform 0.2s;
+}
+input[type="checkbox"]:checked { background: var(--success-fill) !important; }
+input[type="checkbox"]:checked::after { transform: translateX(20px); }
+input[type="checkbox"]:disabled { opacity: 0.5; }
+input[type="checkbox"]:focus-visible { outline: 3px solid var(--tint); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { input[type="checkbox"], input[type="checkbox"]::after { transition: none; } }
+/* Groepsvak en datumveld: geen kader van de browser, en nooit breder dan de kaart. */
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+fieldset > legend { padding: 0; margin-bottom: 8px; font-size: 0.9375rem; font-weight: 600; }
+input[type="date"], input[type="datetime-local"], input[type="time"] { display: block; min-width: 0; max-width: 100%; -webkit-appearance: none; appearance: none; text-align: left; }

@@ -131,8 +131,8 @@ function PersonRow({ v, p, busy, act, showExecution }: { v: OntheffingView; p: O
             <div className="stack">
               <fieldset className="stack">
                 <legend>Is bij de bekendmaking gelegenheid tot dankbetuiging geboden?</legend>
-                <label className="row"><input type="radio" name={`thanks-${p.id}`} style={{ width: 24, minHeight: 24 }} checked={thanks === "ja"} onChange={() => setThanks("ja")} /> Ja, gelegenheid geboden</label>
-                <label className="row"><input type="radio" name={`thanks-${p.id}`} style={{ width: 24, minHeight: 24 }} checked={thanks === "nee"} onChange={() => setThanks("nee")} /> Nee, niet geboden</label>
+                <label className="row"><input type="radio" name={`thanks-${p.id}`} checked={thanks === "ja"} onChange={() => setThanks("ja")} /> Ja, gelegenheid geboden</label>
+                <label className="row"><input type="radio" name={`thanks-${p.id}`} checked={thanks === "nee"} onChange={() => setThanks("nee")} /> Nee, niet geboden</label>
                 <span className="muted">Het gaat om de gelegenheid; het is niet nodig dat leden daadwerkelijk dank hebben uitgesproken.</span>
               </fieldset>
               <button className="btn btn-ghost" disabled={busy || !thanks} onClick={() => act(() => api.ontheffingStep(p.id, "announce", { thanksOffered: thanks === "ja" }), "Vastgelegd.")}>Bekendmaking registreren</button>
@@ -174,7 +174,7 @@ function DecisionForm({ v, members, busy, act }: { v: OntheffingView; members: {
       <div><label htmlFor="d-date">Datum van het besluit</label><input id="d-date" type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} required /></div>
       {stage === "PRESIDIUM" && (
         <>
-          <fieldset className="stack"><legend>Leden van het ringpresidium die het besluit hebben genomen</legend>{pres.map((m) => <label key={m.id} className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={present.includes(m.id)} onChange={() => toggle(present, setPresent, m.id)} /> {m.name}</label>)}</fieldset>
+          <fieldset className="stack"><legend>Leden van het ringpresidium die het besluit hebben genomen</legend>{pres.map((m) => <label key={m.id} className="row"><input type="checkbox" checked={present.includes(m.id)} onChange={() => toggle(present, setPresent, m.id)} /> {m.name}</label>)}</fieldset>
           <span className="muted">Een secretaris of administrateur legt alleen een werkelijk genomen besluit vast; het besluit is van de presidiumleden zelf. Een betrokkene van dit dossier kan het niet nemen.</span>
         </>
       )}
@@ -182,8 +182,8 @@ function DecisionForm({ v, members, busy, act }: { v: OntheffingView; members: {
         <>
           <div><label htmlFor="d-pres">Voorzitter van de vergadering (ringpresidium)</label>
             <select id="d-pres" value={presiding} onChange={(e) => setPresiding(e.target.value)} required><option value="">Kies…</option>{pres.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></div>
-          <fieldset className="stack"><legend>Aanwezige hogeraadsleden</legend>{hr.map((m) => <label key={m.id} className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={present.includes(m.id)} onChange={() => { toggle(present, setPresent, m.id); setAbsent(absent.filter((x) => x !== m.id)); }} /> {m.name}</label>)}</fieldset>
-          <fieldset className="stack"><legend>Afwezig</legend>{hr.map((m) => <label key={m.id} className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={absent.includes(m.id)} onChange={() => { toggle(absent, setAbsent, m.id); setPresent(present.filter((x) => x !== m.id)); }} /> {m.name}</label>)}</fieldset>
+          <fieldset className="stack"><legend>Aanwezige hogeraadsleden</legend>{hr.map((m) => <label key={m.id} className="row"><input type="checkbox" checked={present.includes(m.id)} onChange={() => { toggle(present, setPresent, m.id); setAbsent(absent.filter((x) => x !== m.id)); }} /> {m.name}</label>)}</fieldset>
+          <fieldset className="stack"><legend>Afwezig</legend>{hr.map((m) => <label key={m.id} className="row"><input type="checkbox" checked={absent.includes(m.id)} onChange={() => { toggle(absent, setAbsent, m.id); setPresent(present.filter((x) => x !== m.id)); }} /> {m.name}</label>)}</fieldset>
           <span className="muted">Afwezigheid geldt nooit als ondersteuning. Een betrokkene van dit dossier kan niet aanwezig zijn.</span>
         </>
       )}
@@ -191,11 +191,11 @@ function DecisionForm({ v, members, busy, act }: { v: OntheffingView; members: {
       {negative > 0 && (
         <div className="stack">
           <div className="error" role="alert">Er is een negatieve reactie. Leg vast hoe die is afgehandeld; negatieve reacties worden nooit stilzwijgend overschreven.</div>
-          <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={resolve} onChange={(e) => setResolve(e.target.checked)} /> De negatieve reactie is besproken en afgehandeld</label>
+          <label className="row"><input type="checkbox" checked={resolve} onChange={(e) => setResolve(e.target.checked)} /> De negatieve reactie is besproken en afgehandeld</label>
           <div><label htmlFor="d-res">Toelichting (minimaal 10 tekens)</label><input id="d-res" value={resolution} onChange={(e) => setResolution(e.target.value)} maxLength={500} /></div>
         </div>
       )}
-      <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /> Het besluit is daadwerkelijk akkoord vastgesteld</label>
+      <label className="row"><input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /> Het besluit is daadwerkelijk akkoord vastgesteld</label>
       <div className="row"><button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>Annuleren</button><button className="btn btn-primary" disabled={busy || !agreed || (stage === "PRESIDIUM" && present.length === 0)}>Vastleggen</button></div>
     </form>
   );

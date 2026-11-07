@@ -388,4 +388,20 @@ describe("Gezamenlijk presidiumbesluit bij roepingsvoorstellen: registreren en v
     expect((await prisma.calling.findUniqueOrThrow({ where: { id: calling.id } })).status).toBe("HOGERAAD_VOTING");
     expect(await prisma.eligibleVoter.count({ where: { callingId: calling.id, stage: "HOGERAAD" } })).toBe(2);
   });
+
+  it("na een gezamenlijk presidiumbesluit krijgen de deelnemers de status 'akkoord in vergadering', zonder dat er stemmen namens hen ontstaan", async () => {
+    const s = await setup();
+    const calling = await prisma.calling.create({ data: { ringId: s.ring.id, personName: "Voorbeeld", functionTitle: "Leraar", createdById: s.manager.id } });
+    await prisma.eligibleVoter.createMany({ data: [s.president, s.first, s.second].map((u) => ({ callingId: calling.id, stage: "PRESIDIUM" as const, userId: u.id })) });
+    const detail = async () => ((await call("GET", `/callings/${calling.id}`, { token: s.token })).body.rounds as { stage: string; participants: { userId: string; support: boolean | null; meeting?: string | null }[] }[]).find((r) => r.stage === "PRESIDIUM")!;
+    expect((await detail()).participants.every((p) => p.support === null && !p.meeting)).toBe(true);
+
+    await call("POST", `/callings/${calling.id}/group-decision`, { token: s.token, body: { stage: "PRESIDIUM", decidedOn: today(), agreed: true, presentUserIds: [s.president.id, s.first.id] } });
+    const after = await detail();
+    const by = Object.fromEntries(after.participants.map((p) => [p.userId, p]));
+    expect(by[s.president.id]).toMatchObject({ support: null, meeting: "AKKOORD" });
+    expect(by[s.first.id]).toMatchObject({ support: null, meeting: "AKKOORD" });
+    expect(by[s.second.id].meeting ?? null).toBeNull(); // niet genoemd: blijft 'nog niet'
+    expect(await prisma.vote.count({ where: { callingId: calling.id } })).toBe(0); // nooit een reactie namens iemand
+  });
 });

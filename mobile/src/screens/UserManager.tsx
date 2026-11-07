@@ -183,8 +183,8 @@ export function UserManager({ ringId }: { ringId: string }) {
             <span className="muted">{draft.churchFunctionCode === "RINGPRESIDENT" ? "De ringpresident is op grond van zijn functie bevoegd; een aparte machtiging is niet nodig." : "Alleen een expliciet vastgelegde machtiging maakt een aangewezen raadgever of hogeraadslid bevoegd om te roepen of aan te stellen."}</span>
           </div>}
           {editing === "new" && <span className="muted">Een machtiging (aangewezen raadgever of hogeraadslid) kun je vastleggen nadat de persoon zijn account heeft geactiveerd.</span>}
-          <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={draft.isRingManager} onChange={(e) => setDraft({ ...draft, isRingManager: e.target.checked })} /> Ringbeheerder (beheert de gebruikers van deze ring)</label>
-          {editing !== "new" && <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={draft.active} onChange={(e) => setDraft({ ...draft, active: e.target.checked })} /> Actief in deze ring</label>}
+          <label className="row"><input type="checkbox" checked={draft.isRingManager} onChange={(e) => setDraft({ ...draft, isRingManager: e.target.checked })} /> Ringbeheerder (beheert de gebruikers van deze ring)</label>
+          {editing !== "new" && <label className="row"><input type="checkbox" checked={draft.active} onChange={(e) => setDraft({ ...draft, active: e.target.checked })} /> Actief in deze ring</label>}
           {editing !== "new" && <AccessSection user={editing} busy={busy} onResend={resend} onLoginMail={sendLoginMail} />}
           {message && <div className="error" role="alert">{message}</div>}
           <div className="row">

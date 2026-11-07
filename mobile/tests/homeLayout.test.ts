@@ -16,3 +16,11 @@ describe("Keuzelijsten", () => {
     expect(css).toMatch(/input, select\s*\{\s*width: 100%; min-height: var\(--touch\)/);
   });
 });
+
+describe("Schakelaars", () => {
+  const css = readFileSync("src/styles.css", "utf8");
+  it("een checkbox wordt als schakelaar getekend (geen vinkje)", () => {
+    expect(css).toMatch(/input\[type="checkbox"\]\s*\{[^}]*appearance:\s*none/);
+    expect(css).toMatch(/input\[type="checkbox"\]:checked::after\s*\{\s*transform:\s*translateX/);
+  });
+});

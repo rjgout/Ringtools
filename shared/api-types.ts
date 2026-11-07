@@ -54,7 +54,15 @@ export type Dashboard = {
   myTasks: (CallingItem & { tasks: string[] })[];
 };
 
-export type Participant = { userId: string; name: string; support: boolean | null; lastInvitedAt: string; stillInvolved: boolean };
+export type Participant = {
+  userId: string;
+  name: string;
+  support: boolean | null;
+  /** Status via een gezamenlijk besluit in een vergadering (geen eigen reactie): akkoord of afwezig. Telt niet als stem. Additief veld. */
+  meeting?: "AKKOORD" | "AFWEZIG" | null;
+  lastInvitedAt: string;
+  stillInvolved: boolean;
+};
 
 export type Round = {
   stage: "PRESIDIUM" | "HOGERAAD";
