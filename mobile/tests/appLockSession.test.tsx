@@ -98,6 +98,14 @@ afterEach(() => {
 async function unlockedApp() {
   const controller = mount();
   await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("signedIn:Geheime Naam"));
+  // Het opstarten (sessieverversing, openstaande afmelding, /me) loopt asynchroon na "signedIn" en landt op een trage runner soms later:
+  // wacht tot de netwerkactiviteit tot rust is gekomen (twee opeenvolgende metingen gelijk) en begin dan pas met meten.
+  let last = -1;
+  for (let stable = 0; stable < 2; ) {
+    await new Promise((r) => setTimeout(r, 40));
+    stable = net.calls.length === last ? stable + 1 : 0;
+    last = net.calls.length;
+  }
   net.calls = [];
   return controller;
 }
