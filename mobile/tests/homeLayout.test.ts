@@ -8,3 +8,11 @@ describe("Overzicht: opmaak", () => {
     expect(css).toMatch(/a\.panel\.row,\s*button\.panel\.row\s*\{\s*display:\s*flex/);
   });
 });
+
+describe("Keuzelijsten", () => {
+  const css = readFileSync("src/styles.css", "utf8");
+  it("select heeft dezelfde hoogte als een invoerveld (iOS negeert min-height op native selects)", () => {
+    expect(css).toMatch(/select\s*\{[^}]*appearance:\s*none;[^}]*height:\s*var\(--touch\)/);
+    expect(css).toMatch(/input, select\s*\{\s*width: 100%; min-height: var\(--touch\)/);
+  });
+});
