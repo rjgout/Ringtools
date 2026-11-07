@@ -160,6 +160,10 @@ h2 { font-size: 1.25rem; font-weight: 600; margin: var(--space-2) 0 0; line-heig
 .card { border-radius: var(--radius-xl); padding: var(--space-4) var(--space-4); }
 .panel { border-radius: var(--radius-l); padding: var(--space-3) var(--space-4); }
 a.panel, button.panel { display: block; width: 100%; text-align: left; color: inherit; text-decoration: none; font: inherit; }
+a.panel.row, button.panel.row { display: flex; }
+/* Lege toestand: compacte, rustige regel in plaats van losse tekst. */
+.empty { padding: var(--space-3) var(--space-4); border-radius: var(--radius-l); background: var(--bg-elevated); color: var(--text-muted); font-size: 0.9375rem; }
+.picked { border: 2px solid var(--tint); }
 .btn {
   display: inline-flex; min-height: var(--touch); align-items: center; justify-content: center; gap: var(--space-2);
   border: 0; border-radius: var(--radius-xl); padding: var(--space-3) var(--space-5); text-align: center; font: inherit; font-weight: 600; cursor: pointer; color: var(--text); /* padding: tekst die op een smal scherm afbreekt houdt ruimte */

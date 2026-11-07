@@ -106,6 +106,19 @@ describe("CallingPicker: zoeken en selecteren", () => {
     rerender(<CallingPicker ringId="r1" value={current as never} onChange={onChange} />);
   });
 
+  it("na het kiezen blijft alleen de keuze zichtbaar (geen dubbele lijst, geen losse punt); Andere roeping kiezen toont de lijst weer", async () => {
+    auth.value = { api: { catalog, createCustomCalling: vi.fn() } };
+    const onChange = vi.fn();
+    const chosen = { code: "x", source: "STANDAARD", name: "Ringtolk", category: "Technologie", customConfirmed: false, requiresConfirmation: false };
+    render(<CallingPicker ringId="r1" value={chosen as never} onChange={onChange} />);
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toContain("Gekozen: Ringtolk");
+    expect(status.textContent).not.toContain("·");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Andere roeping kiezen" }));
+    expect(onChange).toHaveBeenCalledWith(null);
+  });
+
   it("voegt een eigen roeping toe onder het zoekresultaat", async () => {
     const createCustomCalling = vi.fn(async () => ({ id: "nieuw-id" }));
     auth.value = { api: { catalog, createCustomCalling } };

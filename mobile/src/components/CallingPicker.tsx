@@ -64,10 +64,10 @@ export function CallingPicker({ ringId, value, onChange, canAddCustom = true }: 
           {(result?.categories ?? []).map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
-      <div><label htmlFor="cp-q">Roeping zoeken</label><input id="cp-q" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" /></div>
+      <div><label htmlFor="cp-q">Roeping zoeken</label><input id="cp-q" type="search" placeholder="Zoek op naam van de roeping" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" autoCorrect="off" enterKeyHint="search" /></div>
       {value && (
-        <div className="glass panel" role="status">
-          <strong>Gekozen: {value.name}</strong> <span className="muted">· {value.category}</span>
+        <div className="glass panel picked stack" role="status">
+          <div><strong>Gekozen: {value.name}</strong>{value.category && <div className="muted">{value.category}</div>}</div>
           {selected?.warning && <div className="muted">{selected.warning}</div>}
           {selected?.ruleStatus === "TE_BEOORDELEN" && <div className="muted" role="note">Menselijke controle nodig: de regels voor deze roeping zijn niet geverifieerd.</div>}
           {selected?.reviewNotes.length ? <div className="muted">Let op: een of meer regels staan nog ter controle bij de beheerder.</div> : null}
@@ -77,9 +77,9 @@ export function CallingPicker({ ringId, value, onChange, canAddCustom = true }: 
           <button type="button" className="btn btn-ghost" onClick={() => onChange(null)}>Andere roeping kiezen</button>
         </div>
       )}
-      <div className="stack" role="listbox" aria-label="Roepingen" style={{ maxHeight: 260, overflowY: "auto" }}>
+      {!value && <div className="stack" role="listbox" aria-label="Roepingen">
         {result?.callings.map((c) => (
-          <button type="button" key={`${c.source}-${c.code}`} role="option" aria-selected={value?.code === c.code} className="glass panel" disabled={!c.ringtoolsProcess} onClick={() => pick(c)}>
+          <button type="button" key={`${c.source}-${c.code}`} role="option" aria-selected={false} className="glass panel" disabled={!c.ringtoolsProcess} onClick={() => pick(c)}>
             <div className="row between">
               <div className="grow" style={{ textAlign: "left" }}>
                 <strong>{c.name}</strong>
@@ -88,9 +88,9 @@ export function CallingPicker({ ringId, value, onChange, canAddCustom = true }: 
             </div>
           </button>
         ))}
-        {result && result.callings.length === 0 && <span className="muted">Geen roeping gevonden.</span>}
-      </div>
-      {canAddCustom && !adding && <button type="button" className="btn btn-ghost" onClick={() => { setAdding(true); setNewName(q); setNewCategory(category); }}>Eigen roeping toevoegen</button>}
+        {result && result.callings.length === 0 && <span className="empty">Geen roeping gevonden.</span>}
+      </div>}
+      {canAddCustom && !adding && !value && <button type="button" className="btn btn-ghost" onClick={() => { setAdding(true); setNewName(q); setNewCategory(category); }}>Eigen roeping toevoegen</button>}
       {adding && (
         <form className="glass card stack" aria-label="Eigen roeping toevoegen" onSubmit={addCustom}>
           <div><label htmlFor="cp-new-name">Naam van de roeping</label><input id="cp-new-name" value={newName} onChange={(e) => setNewName(e.target.value)} required minLength={2} /></div>

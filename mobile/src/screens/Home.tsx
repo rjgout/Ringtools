@@ -18,7 +18,7 @@ export function Home() {
       {data && (
         <>
           <h2>Wacht op jouw reactie</h2>
-          {data.pendingSupport.length === 0 && <p className="muted">Er staat niets voor je klaar.</p>}
+          {data.pendingSupport.length === 0 && <p className="empty" role="status">Er staat niets voor je klaar.</p>}
           {data.pendingSupport.map((c) => (
             <CallingLink key={c.id} id={c.id} name={c.personName} title={c.functionTitle} status={c.phase} mine />
           ))}
