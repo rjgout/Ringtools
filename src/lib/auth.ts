@@ -360,8 +360,21 @@ export async function consumeMagicLinkToken(rawToken: string): Promise<User | nu
  * Zelfde eenmalige token als de link: gebruik van de code maakt de link ongeldig en omgekeerd.
  * Na MAGIC_CODE_MAX_ATTEMPTS foute pogingen is de code onbruikbaar.
  */
+/**
+ * Zoekt het account bij een (al genormaliseerd: getrimd, kleine letters) inlogadres. Eerst exact; daarna tolerant voor oudere
+ * accounts waarvan het opgeslagen adres hoofdletters of spaties bevat (`User.email` is hoofdlettergevoelig uniek). Is het
+ * tolerante resultaat niet eenduidig (meerdere accounts), dan volgt géén account: fail-closed, nooit raden.
+ */
+export async function findUserByLoginEmail(email: string): Promise<User | null> {
+  const exact = await prisma.user.findUnique({ where: { email } });
+  if (exact) return exact;
+  const rows = await prisma.$queryRaw<{ id: string }[]>`SELECT id FROM "User" WHERE lower(btrim(email)) = ${email} LIMIT 2`;
+  if (rows.length !== 1) return null;
+  return prisma.user.findUnique({ where: { id: rows[0].id } });
+}
+
 export async function consumeLoginCode(email: string, code: string): Promise<User | null> {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await findUserByLoginEmail(email);
   if (!user || !user.active || !/^\d{8}$/.test(code)) return null;
 
   const tokens = await prisma.magicLinkToken.findMany({

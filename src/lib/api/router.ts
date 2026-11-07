@@ -212,6 +212,7 @@ authedRoute("POST", "/devices/remove", async ({ auth, body }) => svc.unregisterD
 
 authedRoute("POST", "/auth/reauth", async ({ auth, body }) => mgmt.userReauth(auth, body));
 authedRoute("GET", "/rings/:id/users", async ({ auth, params }) => mgmt.listUsersFor(auth, params.id));
+authedRoute("POST", "/rings/:id/users/:userId/login-mail", async ({ auth, params }) => mgmt.sendLoginMailFor(auth, params.id, params.userId));
 authedRoute("POST", "/rings/:id/users", async ({ auth, params, body }) => mgmt.addUserFor(auth, params.id, body));
 authedRoute("POST", "/memberships/:id", async ({ auth, params, body }) => mgmt.updateUserFor(auth, params.id, body));
 authedRoute("GET", "/rings/:id/invitations", async ({ auth, params }) => invitations.listInvitationsFor(auth, params.id));

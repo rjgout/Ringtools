@@ -51,7 +51,16 @@ describe("Toegangsstatus per gebruiker", () => {
   it("account zonder uitnodiging en nog nooit ingelogd: uitleg dat de persoon zelf een code kan aanvragen, geen opnieuw-versturen", () => {
     const a = accessInfo(user(), NOW);
     expect(a.resendInvitationId).toBeNull();
-    expect(a.guidance?.join(" ")).toMatch(/nog nooit ingelogd/);
+    expect(a.guidance?.join(" ")).toMatch(/nog nooit is ingelogd/);
+    expect(a.guidance?.join(" ")).toMatch(/geen uitnodiging|Een uitnodiging is niet nodig/);
+  });
+  it("inlogmailknop: alleen voor een bestaand, actief account zonder openstaande uitnodiging; met wachttijdmelding", () => {
+    expect(accessInfo(user({ canResendLoginMail: true }), NOW).loginMail.show).toBe(true);
+    expect(accessInfo(user(), NOW).loginMail.show).toBe(false); // server staat het niet toe
+    expect(accessInfo(user({ canResendLoginMail: true, active: false }), NOW).loginMail.show).toBe(false);
+    expect(accessInfo(user({ canResendLoginMail: true, invitation: inv() }), NOW).loginMail.show).toBe(false); // openstaande uitnodiging: eerst die opnieuw versturen
+    const wait = accessInfo(user({ canResendLoginMail: true, loginMailAvailableAt: "2026-11-07T10:03:00Z" }), NOW);
+    expect(wait.loginMail.note).toMatch(/Net verstuurd/);
   });
   it("ingetrokken uitnodiging: geen knop; uitleg", () => {
     const a = accessInfo(user({ invitation: inv({ status: "INGETROKKEN", canResend: false, canRevoke: false }) }), NOW);

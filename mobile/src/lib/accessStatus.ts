@@ -27,9 +27,11 @@ export type AccessInfo = {
   resendNote: string | null;
   /** Begrijpelijke vervolgstappen als een nieuwe uitnodiging niet de oplossing is. */
   guidance: string[] | null;
+  /** Gewone inlogmail door de beheerder (bestaand, actief account): of de knop getoond wordt, en een wachttijdmelding. */
+  loginMail: { show: boolean; note: string | null };
 };
 
-export function accessInfo(u: Pick<ManagedUser, "activated" | "activatedAt" | "active" | "email" | "invitation">, now = new Date()): AccessInfo {
+export function accessInfo(u: Pick<ManagedUser, "activated" | "activatedAt" | "active" | "email" | "invitation" | "canResendLoginMail" | "loginMailAvailableAt">, now = new Date()): AccessInfo {
   const inv = u.invitation ?? null;
   const lines: string[] = [];
   let resendInvitationId: string | null = null;
@@ -60,7 +62,7 @@ export function accessInfo(u: Pick<ManagedUser, "activated" | "activatedAt" | "a
     if (u.activatedAt && !lines.some((l) => l.includes("geaccepteerd"))) lines.unshift(`Account geactiveerd op ${formatWhen(u.activatedAt)}.`);
     guidance = [
       "Opnieuw uitnodigen lost een ontbrekende inlogcode niet op: dit account is al geactiveerd.",
-      `Laat de persoon op het inlogscherm van de app een nieuwe inlogcode aanvragen met precies dit e-mailadres: ${u.email}. Controleer op een typefout.`,
+      `Laat de persoon op het inlogscherm een nieuwe inlogcode aanvragen met precies dit e-mailadres: ${u.email}, of verstuur hieronder een inlogmail naar het geregistreerde adres.`,
       "Kijk ook in de spammap. Er kunnen maximaal 5 codes per 15 minuten worden aangevraagd; wacht daarna even.",
       ...(u.active ? [] : ["Dit account staat op inactief: een inactief account krijgt geen inlogcode. Zet het eerst weer actief."]),
       "Komt er toch niets aan, dan is mogelijk de mailserver gestoord: neem dan contact op met de systeembeheerder.",
@@ -74,14 +76,18 @@ export function accessInfo(u: Pick<ManagedUser, "activated" | "activatedAt" | "a
     resendNote = "De uitnodiging is al het maximale aantal keren verstuurd. Trek hem in en nodig de persoon opnieuw uit.";
   } else if (!inv) {
     guidance = [
-      "Dit account heeft nog nooit ingelogd en er is geen uitnodiging gevonden.",
-      `De persoon kan op het inlogscherm van de app zelf een inlogcode aanvragen met dit e-mailadres: ${u.email}.`,
+      "Dit is een bestaand account zonder uitnodiging dat nog nooit is ingelogd. Een uitnodiging is niet nodig: dit account krijgt gewoon een inlogmail.",
+      `Verstuur hieronder een inlogmail naar het geregistreerde adres (${u.email}), of laat de persoon op het inlogscherm zelf een inlogcode aanvragen.`,
     ];
   } else if (inv.status === "INGETROKKEN") {
     guidance = ["De uitnodiging is ingetrokken. Maak zo nodig een nieuwe uitnodiging aan, of laat de persoon een inlogcode aanvragen als het account al bestaat."];
   }
 
+  const showLoginMail = !!u.canResendLoginMail && u.active && !resendInvitationId;
+  const waiting = u.loginMailAvailableAt && new Date(u.loginMailAvailableAt).getTime() > now.getTime() ? u.loginMailAvailableAt : null;
+
   return {
+    loginMail: { show: showLoginMail, note: waiting ? `Net verstuurd. Opnieuw versturen kan vanaf ${formatWhen(waiting)}.` : null },
     activated: u.activated,
     badge: u.activated ? "Geactiveerd" : "Nog niet geactiveerd",
     lines,

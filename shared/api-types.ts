@@ -144,6 +144,10 @@ export type ManagedUser = {
   activatedAt?: string | null;
   /** Meest recente uitnodiging voor dit e-mailadres binnen deze ring (status, verzenddatum, mogelijkheid tot opnieuw versturen). Additief veld. */
   invitation?: UserInvitation | null;
+  /** Mag de beheerder een gewone inlogmail laten versturen (actief, bestaand account; geen uitnodiging)? Additief veld. */
+  canResendLoginMail?: boolean;
+  /** Eerstvolgend moment waarop opnieuw een inlogmail kan worden verstuurd (afkoelperiode); null = nu. Additief veld. */
+  loginMailAvailableAt?: string | null;
   active: boolean;
   otherRingCount: number;
 };

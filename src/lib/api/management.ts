@@ -8,10 +8,13 @@ import { logSecurityEvent } from "../securityEvents";
 import { addMemberSchema, updateMemberSchema } from "../validation";
 import { AuthorizationError, RingError, addMember, listRingMembers, updateMember } from "../rings";
 import { latestInvitationsByEmail } from "../invitations";
+import { deliverLoginMail } from "../loginMail";
 import { ApiError, str } from "./http";
 import type { ApiAuth } from "./auth";
 
 const WINDOW = 15 * 60 * 1000;
+/** Afkoelperiode per lid voor een door de beheerder gevraagde inlogmail. */
+export const LOGIN_MAIL_COOLDOWN_MS = 5 * 60 * 1000;
 
 /** Vertaalt fouten uit de ringbeheer-lib naar API-fouten (zonder gegevens van andere ringen te lekken). */
 export async function ringErrors<T>(fn: () => Promise<T>): Promise<T> {
@@ -77,8 +80,16 @@ export async function listUsersFor(auth: ApiAuth, ringId: string) {
   await assertCanSeeRingUsers(auth.user, ringId);
   const members = await listRingMembers(ringId);
   const invites = await latestInvitationsByEmail(ringId, members.map((m) => m.user.email));
+  const sentEvents = await prisma.securityEvent.findMany({
+    where: { type: "LOGIN_MAIL_RESENT_BY_MANAGER", userId: { in: members.map((m) => m.userId) }, createdAt: { gt: new Date(Date.now() - LOGIN_MAIL_COOLDOWN_MS) } },
+    orderBy: { createdAt: "desc" },
+  });
+  const lastSent = new Map<string, Date>();
+  for (const e of sentEvents) if (!lastSent.has(e.userId)) lastSent.set(e.userId, e.createdAt);
   return {
     users: members.map((m) => ({
+      canResendLoginMail: m.active && m.user.active && m.user.role !== "ADMIN",
+      loginMailAvailableAt: lastSent.has(m.userId) ? new Date(lastSent.get(m.userId)!.getTime() + LOGIN_MAIL_COOLDOWN_MS).toISOString() : null,
       activatedAt: m.user.activatedAt?.toISOString() ?? null,
       invitation: invites.get(m.user.email.trim().toLowerCase()) ?? null,
       membershipId: m.id,
@@ -117,4 +128,30 @@ export async function updateUserFor(auth: ApiAuth, membershipId: string, body: R
   await assertCanSeeRingUsers(auth.user, m.ringId);
   const { joinedRounds } = await ringErrors(() => updateMember({ actorId: auth.user.id, ...parsed.data }));
   return { ok: true, joinedRounds };
+}
+
+/**
+ * Een ringbeheerder laat een gewone inlogmail (link + code) sturen naar het geregistreerde adres van een bestaand, actief lid van de eigen ring.
+ * Geen uitnodiging en geen nieuw account; de beheerder krijgt nooit de code of link te zien, alleen of de verzendaanvraag slaagde.
+ * Vereist recente MFA; kent een afkoelperiode per lid en deelt de verzendlimiet van de gewone inlogaanvraag; legt een auditgebeurtenis vast.
+ */
+export async function sendLoginMailFor(auth: ApiAuth, ringId: string, userId: string) {
+  requireFreshAuth(auth);
+  await assertCanSeeRingUsers(auth.user, ringId);
+  const m = await prisma.ringMembership.findFirst({ where: { ringId, userId, active: true, ring: { active: true }, user: { active: true, role: { not: "ADMIN" } } }, include: { user: true } });
+  if (!m) throw new ApiError(404, "Niet gevonden.", "not-found");
+  const user = m.user;
+
+  const recent = await prisma.securityEvent.findFirst({
+    where: { userId, type: "LOGIN_MAIL_RESENT_BY_MANAGER", createdAt: { gt: new Date(Date.now() - LOGIN_MAIL_COOLDOWN_MS) } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (recent || !rateLimit(`login-mail-manager:${auth.user.id}`, 20, 60 * 60 * 1000).allowed || !rateLimit(`magic:${user.email.trim().toLowerCase()}`, 5, WINDOW).allowed) {
+    throw new ApiError(429, "Er is zojuist al een inlogmail aangevraagd voor dit lid. Probeer het over enkele minuten opnieuw.", "rate-limited");
+  }
+  if (!(await deliverLoginMail(user, null))) {
+    throw new ApiError(502, "De inlogmail kon niet worden verstuurd. Probeer het later opnieuw.", "mail-failed");
+  }
+  await logSecurityEvent({ userId, type: "LOGIN_MAIL_RESENT_BY_MANAGER", actorUserId: auth.user.id, detail: `Ring ${ringId}` });
+  return { ok: true, message: "Er is een inlogmail verstuurd naar het geregistreerde e-mailadres van dit lid." };
 }

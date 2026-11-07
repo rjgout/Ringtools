@@ -196,6 +196,10 @@ export class ApiClient {
   createInvitation(ringId: string, input: { name: string; email: string; role: string; churchFunction?: string; churchFunctionCode?: ChurchFunctionCode; isRingManager: boolean }) {
     return this.request<{ id: string; sent: boolean }>("POST", `/rings/${encodeURIComponent(ringId)}/invitations`, input);
   }
+  /** Beheerder: gewone inlogmail naar het geregistreerde adres van een bestaand lid (geen uitnodiging; code/link blijven verborgen). */
+  sendLoginMail(ringId: string, userId: string) {
+    return this.request<{ ok: boolean; message: string }>("POST", `/rings/${encodeURIComponent(ringId)}/users/${encodeURIComponent(userId)}/login-mail`, {});
+  }
   resendInvitation(id: string) {
     return this.request<InvitationSendResult>("POST", `/invitations/${encodeURIComponent(id)}/resend`, {});
   }

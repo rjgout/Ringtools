@@ -322,3 +322,18 @@ Besluiten eigenaar: verplicht voor alle gebruikers/rollen · koude start altijd 
 **Gevolg en open punt voor de eigenaar (niet zelf ingevuld):** de volgende functies waren alleen in het app-beheergedeelte van de webmin beschikbaar en hebben nu geen ingang meer: een ring **(de)activeren**; wijken/gemeenten, eigen roepingen en catalogus van een willekeurige ring beheren; namens een ring **uitnodigen**; bestaande accounts zoeken om aan een ring te koppelen. De website biedt ring aanmaken, hernoemen, gebruikers rechtstreeks toevoegen/wijzigen en voorstellen verwijderen. Voorkeur: een kleine webmin-actie "ring (de)activeren" in `/ringen/[id]` (zelfde `setRingActive`-functie, zelfde audit) toevoegen zodra de eigenaar dat wil; de rest kan de eerste ringbeheerder van de ring zelf doen.
 
 **Per-gebruiker toegangsstatus (gebruikersbeheer):** `GET /rings/:id/users` geeft per gebruiker additief `activatedAt` en `invitation` (meest recente uitnodiging voor dat adres in deze ring: status, verzenddatum, verloopdatum, `canResend`, `resendAvailableAt`, `resendBlockedReason`); de uitnodigingenlijst kreeg dezelfde velden. Opnieuw versturen gebruikt dezelfde serveractie (recente verificatie, wachttijd van 5 minuten, maximaal 10 verzendingen, audit). Voor een reeds geactiveerd account toont de app uitleg in plaats van een knop: opnieuw uitnodigen lost een ontbrekende inlogcode niet op; de persoon vraagt zelf een code aan op het inlogscherm met het getoonde adres (spammap, limiet van 5 aanvragen per 15 minuten, account actief?).
+
+## Inlogmail voor bestaande accounts zonder uitnodiging (acceptatietests 20/21)
+
+**Bevinding.** Een bestaand, actief hogeraadslid zonder `activatedAt` en zonder uitnodiging ontving geen inlogcode, in de app én op de website. De code-analyse sluit `activatedAt`, de uitnodigingstabel, de verzendlimiet (5 per 15 min per adres) en SMTP-foutafhandeling (een mislukte verzending geeft een zichtbare fout) als oorzaak van een *stille* uitblijvende mail uit. Wat wel een stil, identiek antwoord zonder verzending oplevert is een onvindbaar account: `sendLoginMail` zocht met een exacte `findUnique` op het genormaliseerde (kleine letters) adres, terwijl een ouder account met hoofdletters of spaties in `User.email` daardoor niet werd gevonden (zelfde voor `consumeLoginCode`). De regressietest in `tests/loginMailExisting.test.ts` reproduceert dit. Het productieaccount zelf is niet onderzocht (geen toegang tot productiedatabase of -logs); de oorzaak daar is dus **niet bewezen**.
+
+**Correctie.** `findUserByLoginEmail` (exact, daarna `lower(btrim(email))`, bij meerdere treffers geen account); nieuwe beheerdersactie "Inlogmail opnieuw versturen" in Gebruikersbeheer. SMTP-acceptatie is niet gelijk aan aflevering; aflevering is vanuit de applicatie niet waarneembaar.
+
+**Alleen-lezen diagnose voor de eigenaar** (bijv. via `psql`; wijzigt niets, toont geen geheimen):
+
+```sql
+SELECT id, email, email <> lower(btrim(email)) AS afwijkend_adres, active, role, "activatedAt"
+FROM "User" WHERE lower(btrim(email)) = lower(btrim('<adres van het lid>'));
+```
+
+Een afwijkend adres, `active = false` of meerdere rijen verklaart het uitblijven; bij een nette rij ligt het aan SMTP/aflevering (spam, afwijzing door de ontvangende server): controleer de SMTP-logboeken van de mailprovider.

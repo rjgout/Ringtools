@@ -325,6 +325,7 @@ enum SecurityEventType {
   TRUSTED_DEVICE_LOGIN_ENABLED
   TRUSTED_DEVICE_LOGIN_DISABLED
   TRUSTED_DEVICE_LOGIN
+  LOGIN_MAIL_RESENT_BY_MANAGER
 }
 
 // Beveiligingslogboek: nooit geheimen (codes, secrets, herstelcodes) in

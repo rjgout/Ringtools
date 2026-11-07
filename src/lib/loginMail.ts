@@ -1,6 +1,6 @@
-import { prisma } from "./prisma";
 import { env } from "./env";
-import { createMagicLinkToken } from "./auth";
+import type { User } from "@prisma/client";
+import { createMagicLinkToken, findUserByLoginEmail } from "./auth";
 import { rateLimit } from "./rateLimit";
 import { sendMail, magicLinkEmail } from "./mailer";
 
@@ -22,24 +22,36 @@ export async function sendLoginMail(email: string, redirectTo: string | null): P
     return { ok: false, message: "Te veel aanvragen voor dit e-mailadres. Probeer het later opnieuw." };
   }
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await findUserByLoginEmail(email);
   if (!user || !user.active || user.role === "ADMIN") {
     return generic;
   }
 
-  try {
-    const { rawToken, code } = await createMagicLinkToken(user.id, { withCode: true });
-    const link = redirectTo
-      ? `${env.appBaseUrl}/auth/magic/${rawToken}?redirect=${encodeURIComponent(redirectTo)}`
-      : `${env.appBaseUrl}/auth/magic/${rawToken}`;
-    const { subject, text } = magicLinkEmail(user.name, link, code);
-    await sendMail({ to: user.email, subject, text });
-  } catch (err) {
-    console.error("[auth] Versturen inloglink mislukt:", err);
+  if (!(await deliverLoginMail(user, redirectTo))) {
     return {
       ok: false,
       message: "Er ging iets mis bij het versturen van de inloglink. Probeer het later opnieuw of neem contact op met het ringpresidium.",
     };
   }
   return generic;
+}
+
+/**
+ * Maakt een inlogcode + link en verstuurt die uitsluitend naar het geregistreerde adres van het account. Geeft `false` bij
+ * een mislukte verzending. Logt nooit de code, de link of de mailinhoud: alleen het type fout.
+ */
+export async function deliverLoginMail(user: Pick<User, "id" | "name" | "email">, redirectTo: string | null): Promise<boolean> {
+  try {
+    const { rawToken, code } = await createMagicLinkToken(user.id, { withCode: true });
+    const link = redirectTo
+      ? `${env.appBaseUrl}/auth/magic/${rawToken}?redirect=${encodeURIComponent(redirectTo)}`
+      : `${env.appBaseUrl}/auth/magic/${rawToken}`;
+    const { subject, text } = magicLinkEmail(user.name, link, code);
+    await sendMail({ to: user.email.trim(), subject, text });
+    return true;
+  } catch (err) {
+    const kind = err instanceof Error ? `${err.name}${(err as { code?: string }).code ? ` ${(err as { code?: string }).code}` : ""}` : "onbekend";
+    console.error(`[auth] Versturen inloglink mislukt (${kind}).`);
+    return false;
+  }
 }

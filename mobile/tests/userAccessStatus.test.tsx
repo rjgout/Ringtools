@@ -12,7 +12,7 @@ const users = [
     invitation: { id: "i1", status: "VERSTUURD", sentAt: "2026-11-03T10:00:00Z", expiresAt: "2026-11-10T10:00:00Z", canResend: true, canRevoke: true, resendAvailableAt: null, resendBlockedReason: null } },
   { ...base, membershipId: "m2", userId: "u2", name: "Actief Lid", email: "actief@example.nl", activated: true, activatedAt: "2026-10-01T09:00:00Z",
     invitation: { id: "i2", status: "GEACTIVEERD", sentAt: "2026-09-28T10:00:00Z", expiresAt: "2026-10-05T10:00:00Z", canResend: false, canRevoke: false, resendAvailableAt: null, resendBlockedReason: null } },
-  { ...base, membershipId: "m3", userId: "u3", name: "Zonder Uitnodiging", email: "zonder@example.nl", activated: false, activatedAt: null, invitation: null },
+  { ...base, membershipId: "m3", userId: "u3", name: "Zonder Uitnodiging", email: "zonder@example.nl", activated: false, activatedAt: null, invitation: null, canResendLoginMail: true, loginMailAvailableAt: null },
 ];
 
 function setup(resend = vi.fn(async () => ({ id: "i1", sent: true }))) {
@@ -55,8 +55,28 @@ describe("Gebruikersbeheer: toegangsstatus per gebruiker", () => {
     setup();
     fireEvent.click(await screen.findByLabelText("Wijzig Zonder Uitnodiging"));
     const section = within(await screen.findByLabelText("Toegang en inlogcode"));
-    expect(section.getByText(/nog nooit ingelogd/)).toBeTruthy();
+    expect(section.getByText(/nog nooit is ingelogd/)).toBeTruthy();
     expect(section.queryByRole("button", { name: "Uitnodiging opnieuw versturen" })).toBeNull();
+    expect(section.getByRole("button", { name: "Inlogmail opnieuw versturen" })).toBeTruthy();
+  });
+
+  it("Inlogmail opnieuw versturen: roept de server aan (herverificatie via run), toont alleen het resultaat en nooit een code", async () => {
+    const send = vi.fn(async () => ({ ok: true, message: "Er is een inlogmail verstuurd naar het geregistreerde e-mailadres van dit lid." }));
+    setup();
+    (auth.value.api as Record<string, unknown>).sendLoginMail = send;
+    fireEvent.click(await screen.findByLabelText("Wijzig Zonder Uitnodiging"));
+    fireEvent.click(await screen.findByRole("button", { name: "Inlogmail opnieuw versturen" }));
+    await waitFor(() => expect(send).toHaveBeenCalledWith("r1", "u3"));
+    expect(await screen.findByText(/inlogmail verstuurd/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\b\d{8}\b/);
+  });
+
+  it("geen knop bij een lid met een openstaande uitnodiging; daar blijft Uitnodiging opnieuw versturen", async () => {
+    setup();
+    fireEvent.click(await screen.findByLabelText("Wijzig Nieuw Lid"));
+    const section = within(await screen.findByLabelText("Toegang en inlogcode"));
+    expect(section.queryByRole("button", { name: "Inlogmail opnieuw versturen" })).toBeNull();
+    expect(section.getByRole("button", { name: "Uitnodiging opnieuw versturen" })).toBeTruthy();
   });
 
   it("serverweigering (wachttijd of limiet) blijft als melding zichtbaar en er wordt niets als gelukt getoond", async () => {

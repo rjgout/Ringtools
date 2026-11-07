@@ -85,6 +85,23 @@ export function UserManager({ ringId }: { ringId: string }) {
     }
   }
 
+  /** Gewone inlogmail (geen uitnodiging) naar het geregistreerde adres van een bestaand, actief lid; vereist recente verificatie. */
+  async function sendLoginMail(userId: string) {
+    if (busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await run(() => api.sendLoginMail(ringId, userId));
+      setNotice(res.message);
+      setEditing(null);
+      await reload();
+    } catch (err) {
+      setMessage(err instanceof ApiRequestError && err.code !== "cancelled" ? err.message : err instanceof ApiRequestError ? null : "Er ging iets mis.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /** Uitnodiging opnieuw versturen voor een niet-geactiveerde gebruiker (zelfde serverfunctie als in "Uitnodigingen": recente verificatie, wachttijd, limiet en audit). */
   async function resend(invitationId: string) {
     if (busy) return;
@@ -168,7 +185,7 @@ export function UserManager({ ringId }: { ringId: string }) {
           {editing === "new" && <span className="muted">Een machtiging (aangewezen raadgever of hogeraadslid) kun je vastleggen nadat de persoon zijn account heeft geactiveerd.</span>}
           <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={draft.isRingManager} onChange={(e) => setDraft({ ...draft, isRingManager: e.target.checked })} /> Ringbeheerder (beheert de gebruikers van deze ring)</label>
           {editing !== "new" && <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={draft.active} onChange={(e) => setDraft({ ...draft, active: e.target.checked })} /> Actief in deze ring</label>}
-          {editing !== "new" && <AccessSection user={editing} busy={busy} onResend={resend} />}
+          {editing !== "new" && <AccessSection user={editing} busy={busy} onResend={resend} onLoginMail={sendLoginMail} />}
           {message && <div className="error" role="alert">{message}</div>}
           <div className="row">
             <button type="button" className="btn btn-ghost" onClick={() => setEditing(null)}>Annuleren</button>
@@ -181,7 +198,7 @@ export function UserManager({ ringId }: { ringId: string }) {
 }
 
 /** Toegang en inlogcode van één gebruiker: status, verzenddatum en de juiste vervolgstap (opnieuw uitnodigen of uitleg). */
-function AccessSection({ user, busy, onResend }: { user: ManagedUser; busy: boolean; onResend: (invitationId: string) => void }) {
+function AccessSection({ user, busy, onResend, onLoginMail }: { user: ManagedUser; busy: boolean; onResend: (invitationId: string) => void; onLoginMail: (userId: string) => void }) {
   const info = accessInfo(user);
   return (
     <section className="stack" aria-label="Toegang en inlogcode">
@@ -195,6 +212,12 @@ function AccessSection({ user, busy, onResend }: { user: ManagedUser; busy: bool
         </>
       )}
       {!info.resendInvitationId && info.resendNote && <span className="muted">{info.resendNote}</span>}
+      {info.loginMail.show && (
+        <>
+          <button type="button" className="btn btn-ghost" disabled={busy || !!info.loginMail.note} onClick={() => onLoginMail(user.userId)}>Inlogmail opnieuw versturen</button>
+          <span className="muted">{info.loginMail.note ?? "Dit is een gewone inlogmail naar het geregistreerde adres, geen uitnodiging. Je ziet de code niet; alleen het lid ontvangt die."}</span>
+        </>
+      )}
       {info.guidance && (
         <div className="badge" role="note" style={{ whiteSpace: "normal", borderRadius: 12 }}>
           {info.guidance.map((g) => <div key={g}>{g}</div>)}
