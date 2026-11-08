@@ -30,7 +30,7 @@ async function chooseCalling(name: string) {
 function setup(api: Record<string, unknown>, path = "/voorstellen/nieuw") {
   const full = {
     units: vi.fn(async () => ({ units: [{ id: "w1", kind: "WIJK", name: "Voorbeeld", active: true, responsibleStatus: "OK", responsible: null, defaults: {} }] })),
-    ringMembers: vi.fn(async () => ({ members: [{ id: "u1", name: "Anna", role: "HOGERAAD", churchFunction: "" }] })),
+    ringMembers: vi.fn(async () => ({ members: [{ id: "u1", name: "Anna", role: "HOGERAAD", churchFunction: "" }, { id: "s1", name: "Sara Secretaris", role: "RINGSECRETARIS", churchFunction: "" }, { id: "a1", name: "Adam Administrateur", role: "RINGADMINISTRATEUR", churchFunction: "" }] })),
     catalog: vi.fn(async () => ({ version: "1", categories: ["Ringpresidium"], callings: [
       entry({ code: "ringadministrateur", name: "Ringadministrateur" }),
       entry({ code: "instituutshoofd", name: "Instituutshoofd", category: "Seminarie en instituut", ruleStatus: "TE_BEOORDELEN", requiresProcedureConfirmation: true, warning: "Menselijke controle nodig: x" }),
@@ -92,6 +92,17 @@ describe("Nieuw voorstel in vijf stappen", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Voorgesteld: Hans/ }));
     expect((select as HTMLSelectElement).value).toBe("h1"); // bewust terugzetten kan
     expect(api.suggestions).toHaveBeenCalled();
+  });
+
+  it("secretaris en administrateur staan niet in de keuze voor wie de steunverlening begeleidt; een voorgestelde secretaris wordt niet ingevuld", async () => {
+    setup({ suggestions: vi.fn(async () => ({ suggestions: suggestions({ ondersteunen: { userId: "s1", name: "Sara Secretaris", source: "UNIT_STANDAARD" } }) })) });
+    fireEvent.change(await screen.findByLabelText("Naam"), { target: { value: "Jan Jansen" } });
+    fireEvent.change(screen.getByLabelText("Wijk of gemeente"), { target: { value: "w1" } });
+    await chooseCalling("Ringadministrateur");
+    const select = (await screen.findByLabelText("Wie begeleidt de steunverlening?")) as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual(["Nog niet toegewezen", "Anna"]);
+    await waitFor(() => expect((screen.getByLabelText("Wie stelt de persoon aan?") as HTMLSelectElement).value).toBe("h1")); // andere voorstellen worden nog wel ingevuld
+    expect(select.value).toBe("");
   });
 
   it("slaat een onvolledig concept op zonder in te dienen", async () => {

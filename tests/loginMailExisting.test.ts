@@ -114,7 +114,7 @@ describe("beheerder laat inlogmail opnieuw versturen", () => {
     const ev = await prisma.securityEvent.findMany({ where: { userId: w.member.id } });
     expect(ev).toHaveLength(1);
     expect(ev[0].actorUserId).toBe(w.manager.id);
-    expect(JSON.stringify(ev)).not.toMatch(/\d{8}/);
+    expect(ev[0].detail).toBe(`Ring ${w.ringA.id}`); // alleen de ring; geen code, link of mailinhoud
   });
 
   it("vereist recente MFA", async () => {

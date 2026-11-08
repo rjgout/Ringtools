@@ -176,7 +176,9 @@ export function CallingDetail() {
               <strong>Taken</strong>
               {data.tasks.map((t) => (
                 <TaskRow key={t.task} task={t} busy={busy}
-                  users={t.task === "ONDERSTEUNEN" || !data.eligibleAssignees || data.eligibleAssignees[t.task as "ROEPEN" | "AANSTELLEN"] === null
+                  users={t.task === "ONDERSTEUNEN"
+                    ? data.assignableUsers.filter((u) => u.role !== "RINGSECRETARIS" && u.role !== "RINGADMINISTRATEUR") // zij voeren in, maar begeleiden de steunverlening niet
+                    : !data.eligibleAssignees || data.eligibleAssignees[t.task as "ROEPEN" | "AANSTELLEN"] === null
                     ? data.assignableUsers
                     : data.assignableUsers.filter((u) => data.eligibleAssignees[t.task as "ROEPEN" | "AANSTELLEN"]!.includes(u.id))}
                   restricted={t.task !== "ONDERSTEUNEN" && !!data.eligibleAssignees && data.eligibleAssignees[t.task as "ROEPEN" | "AANSTELLEN"] !== null}

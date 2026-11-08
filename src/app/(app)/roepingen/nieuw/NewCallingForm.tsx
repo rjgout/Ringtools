@@ -35,7 +35,7 @@ export function NewCallingForm({ users }: { users: { id: string; name: string; r
       </p>
 
       <AssigneeSelect name="roepenAssigneeId" label="Verantwoordelijke voor het roepen" users={users} />
-      <AssigneeSelect name="ondersteunenAssigneeId" label="Verantwoordelijke voor het ondersteunen" users={users} />
+      <AssigneeSelect name="ondersteunenAssigneeId" label="Verantwoordelijke voor het ondersteunen" users={users.filter((u) => u.role !== "RINGSECRETARIS" && u.role !== "RINGADMINISTRATEUR")} />
       <AssigneeSelect name="aanstellenAssigneeId" label="Verantwoordelijke voor het aanstellen" users={users} />
 
       {state.message && <p className="text-sm text-[var(--danger)]">{state.message}</p>}

@@ -3,7 +3,7 @@ import { prisma } from "./prisma";
 import { STAFF_ROLES } from "./rbac";
 import { getCatalogEntry, requiresProcedureConfirmation, isOutsideRingtoolsFunctionName, OUTSIDE_RINGTOOLS, CATALOG_VERSION, type CatalogEntry } from "./catalog/callings";
 import { eligibleAppointers, eligibleForRule, explainAuthorityGap, listUnits } from "./ringSetup";
-import { WorkflowError, AuthorizationError, assignTask, createCallingInTx, deliverCreationNotifications } from "./workflow";
+import { WorkflowError, AuthorizationError, assertNotSecretariat, assignTask, createCallingInTx, deliverCreationNotifications } from "./workflow";
 
 /**
  * Roepingsvoorstellen via concepten (Fase C3). Een concept mag onvolledig zijn, is alleen zichtbaar voor ringstaf van de eigen ring,
@@ -122,6 +122,7 @@ async function validateAssignees(ringId: string, fn: ResolvedFunction | null, a:
   roepenExternalName: string | null; aanstellenExternalName: string | null;
 }) {
   await assertMembers(ringId, [a.roepenAssigneeId, a.ondersteunenAssigneeId, a.aanstellenAssigneeId]);
+  if (a.ondersteunenAssigneeId) await assertNotSecretariat(ringId, a.ondersteunenAssigneeId);
   for (const [label, internal, external] of [["roepen", a.roepenAssigneeId, a.roepenExternalName], ["aanstellen", a.aanstellenAssigneeId, a.aanstellenExternalName]] as const) {
     if (internal && external) throw new WorkflowError(`Kies voor ${label} óf een persoon uit de ring óf een externe persoon, niet beide.`);
   }

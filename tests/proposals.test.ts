@@ -110,6 +110,16 @@ describe("Concepten", () => {
     expect((await call("GET", `/drafts/${d.body.id}`, { token: await login(a.president.id) })).status).toBe(200);
   });
 
+  it("bij het indienen is de ringsecretaris niet te kiezen om de steunverlening te begeleiden; een ander lid wel", async () => {
+    const a = await setup();
+    const withSecretary = await draft(a, base(a, { ondersteunenAssigneeId: a.manager.id })); // a.manager is ringsecretaris
+    const refused = await submit(withSecretary.body.id, a.token);
+    expect(refused.status).toBe(400);
+    expect(String(refused.body.error)).toMatch(/steunverlening niet/);
+    const ok = await draft(a, base(a, { ondersteunenAssigneeId: a.ha1.id }));
+    expect((await submit(ok.body.id, a.token)).status).toBe(200);
+  });
+
   it("verwijzingen in een concept moeten bij de gekozen actieve ring horen (unit, eigen roeping, verantwoordelijken)", async () => {
     const a = await setup();
     const b = await setup();
