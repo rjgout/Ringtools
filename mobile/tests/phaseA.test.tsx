@@ -75,6 +75,16 @@ describe("Fase A: staf-acties vanuit de app (iOS en Android gebruiken dezelfde c
     expect(await screen.findByText("lijst")).toBeTruthy();
   });
 
+  it("secretaris en administrateur staan niet in de keuze voor wie de steunverlening begeleidt (wel bij roepen)", async () => {
+    renderDetail({}, detail({ assignableUsers: [
+      { id: "u1", name: "Anna", role: "HOGERAAD" }, { id: "s1", name: "Sara Secretaris", role: "RINGSECRETARIS" }, { id: "a1", name: "Adam Administrateur", role: "RINGADMINISTRATEUR" },
+    ] }));
+    const ondersteunen = await screen.findByLabelText("Verantwoordelijke", { selector: "#as-ONDERSTEUNEN" }) as HTMLSelectElement;
+    expect([...ondersteunen.options].map((o) => o.textContent)).toEqual(["Niet toegewezen", "Anna"]);
+    const roepen = screen.getByLabelText("Verantwoordelijke", { selector: "#as-ROEPEN" }) as HTMLSelectElement;
+    expect([...roepen.options].map((o) => o.textContent)).toEqual(["Niet toegewezen", "Anna", "Sara Secretaris", "Adam Administrateur"]);
+  });
+
   it("toont een gewone deelnemer geen beheeracties", async () => {
     renderDetail({}, detail({ me: { role: "HOGERAAD", isStaff: false }, tasks: [], readyToProcess: false, canDelete: false }));
     await screen.findByText("Jan");

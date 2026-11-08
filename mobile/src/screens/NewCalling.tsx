@@ -77,6 +77,8 @@ export function NewCalling() {
   }, [api, ring, unitId, picked?.code, picked?.source]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sug = view?.suggestions ?? null;
+  // Secretaris en administrateur voeren in maar begeleiden de steunverlening niet: zij staan niet in die lijst.
+  const supportCandidates = (members.data?.members ?? []).filter((m) => m.role !== "RINGSECRETARIS" && m.role !== "RINGADMINISTRATEUR");
   // De voorgestelde persoon wordt direct ingevuld, zolang er nog niets is gekozen; een eigen keuze wordt nooit overschreven.
   const touched = useRef<Record<TaskKey, boolean>>({ roepen: false, ondersteunen: false, aanstellen: false });
   useEffect(() => {
@@ -86,11 +88,12 @@ export function NewCalling() {
       let changed = false;
       for (const t of ["roepen", "ondersteunen", "aanstellen"] as TaskKey[]) {
         const s = sug[t];
+        if (t === "ondersteunen" && s && !supportCandidates.some((m) => m.id === s.userId)) continue;
         if (s && !a[t] && !touched.current[t]) { next[t] = s.userId; changed = true; }
       }
       return changed ? next : a;
     });
-  }, [sug]);
+  }, [sug, members.data]); // eslint-disable-line react-hooks/exhaustive-deps
   function applySuggestion(task: TaskKey) {
     const s = sug?.[task];
     if (s) { touched.current[task] = false; setAssignees((a) => ({ ...a, [task]: s.userId })); }
@@ -128,7 +131,7 @@ export function NewCalling() {
 
   const taskSelect = (task: TaskKey, label: string, restricted: boolean) => {
     const eligible = task === "roepen" ? sug?.eligible.roepen : task === "aanstellen" ? sug?.eligible.aanstellen : undefined;
-    const options = restricted ? (eligible ?? []).map((u) => ({ id: u.id, name: u.name })) : (members.data?.members ?? []).map((m) => ({ id: m.id, name: m.name }));
+    const options = restricted ? (eligible ?? []).map((u) => ({ id: u.id, name: u.name })) : supportCandidates.map((m) => ({ id: m.id, name: m.name }));
     const note = task === "roepen" || task === "aanstellen" ? sug?.notes[task] : null;
     return (
       <div key={task}>

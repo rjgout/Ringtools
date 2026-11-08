@@ -205,7 +205,7 @@ describe("Uitvoering en verwerken", () => {
   it("taken toewijzen werkt onafhankelijk van elkaar aan verschillende personen", async () => {
     const presidium1 = await createTestUser("RINGPRESIDIUM", "President Een");
     const persoonA = await createTestUser("RINGPRESIDIUM", "Persoon A");
-    const persoonB = await createTestUser("RINGSECRETARIS", "Persoon B");
+    const persoonB = await createTestUser("HOGERAAD", "Persoon B");
     const persoonC = await createTestUser("RINGADMINISTRATEUR", "Persoon C");
     const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium1.id });
 
@@ -216,6 +216,21 @@ describe("Uitvoering en verwerken", () => {
     expect(current.roepenAssigneeId).toBe(persoonA.id);
     expect(current.ondersteunenAssigneeId).toBe(persoonB.id);
     expect(current.aanstellenAssigneeId).toBe(persoonC.id);
+  });
+
+  it("de ringsecretaris en ringadministrateur begeleiden de steunverlening niet, maar mogen wel roepen of aanstellen worden toegewezen waar de regels dat toestaan", async () => {
+    const president = await createTestUser("RINGPRESIDIUM", "President");
+    const secretaris = await createTestUser("RINGSECRETARIS", "Secretaris");
+    const administrateur = await createTestUser("RINGADMINISTRATEUR", "Administrateur");
+    const lid = await createTestUser("HOGERAAD", "Lid");
+    const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: president.id });
+
+    await expect(assignTask({ callingId: calling.id, task: "ONDERSTEUNEN", assigneeId: secretaris.id })).rejects.toThrow(/steunverlening niet/);
+    await expect(assignTask({ callingId: calling.id, task: "ONDERSTEUNEN", assigneeId: administrateur.id })).rejects.toThrow(/steunverlening niet/);
+    expect((await prisma.calling.findUniqueOrThrow({ where: { id: calling.id } })).ondersteunenAssigneeId).toBeNull();
+    // een ander lid kan wel; de regel geldt alleen voor de steunverlening
+    expect((await assignTask({ callingId: calling.id, task: "ONDERSTEUNEN", assigneeId: lid.id })).ondersteunenAssigneeId).toBe(lid.id);
+    expect((await assignTask({ callingId: calling.id, task: "AANSTELLEN", assigneeId: secretaris.id })).aanstellenAssigneeId).toBe(secretaris.id);
   });
 });
 

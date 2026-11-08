@@ -254,7 +254,7 @@ export default async function CallingDetailPage({
             canApproved={calling.status === "APPROVED"}
             canAssign={staff}
             canComplete={staff || calling.ondersteunenAssigneeId === user.id}
-            users={users}
+            users={users.filter((u) => u.role !== "RINGSECRETARIS" && u.role !== "RINGADMINISTRATEUR")} // zij voeren in, maar begeleiden de steunverlening niet
           />
           <TaskRow
             callingId={calling.id}

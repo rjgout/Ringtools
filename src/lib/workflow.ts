@@ -873,6 +873,12 @@ export async function deleteCalling(input: { callingId: string; actorId: string;
   });
 }
 
+/** De ringsecretaris en ringadministrateur voeren voorstellen in maar begeleiden de steunverlening niet: zij zijn daarvoor niet te kiezen. */
+export async function assertNotSecretariat(ringId: string, userId: string): Promise<void> {
+  const m = await prisma.ringMembership.findFirst({ where: { ringId, userId, active: true, role: { in: ["RINGSECRETARIS", "RINGADMINISTRATEUR"] } }, select: { id: true } });
+  if (m) throw new WorkflowError("De ringsecretaris en ringadministrateur begeleiden de steunverlening niet. Kies een ander lid.");
+}
+
 export async function assignTask(input: { callingId: string; task: TaskKey; assigneeId: string | null }): Promise<Calling> {
   const calling = await prisma.calling.findUniqueOrThrow({ where: { id: input.callingId } });
   if (calling.status === "PROCESSED") {
@@ -880,6 +886,7 @@ export async function assignTask(input: { callingId: string; task: TaskKey; assi
   }
   if (input.assigneeId) {
     await assertActiveRingMembers(prisma, calling.ringId, [input.assigneeId]);
+    if (input.task === "ONDERSTEUNEN") await assertNotSecretariat(calling.ringId, input.assigneeId);
   }
   const dbField = `${TASK_FIELD_PREFIX[input.task]}AssigneeId`;
 
