@@ -153,7 +153,7 @@ link in de webapp. Het token wordt alleen naar de eigen backend gestuurd en nooi
   - **production:** **TestFlight- én App Store-builds**. Bij archiveren/exporteren voor App Store Connect zet Xcode de entitlement op `production` (distributie-provisioningprofiel). Een TestFlight-build gebruikt dus de **productie**-APNs, niet de sandbox.
 - Server: `APNS_PRODUCTION=true` (standaard) → `api.push.apple.com`; `false` → `api.sandbox.push.apple.com`. Voor TestFlight en de store dus **true**. De server waarschuwt in de log als `false` is ingesteld. Eén server kan niet tegelijk tokens van beide omgevingen bedienen: test sandbox-builds met een aparte (test)omgeving.
 - Controle van een gebouwde IPA: `unzip -q App.ipa -d x && codesign -d --entitlements :- x/Payload/App.app` moet `aps-environment` = `production` tonen (de handmatige release-workflow controleert dit automatisch en faalt anders).
-- **Sleutels staan nooit in GitHub:** de APNs-`.p8` en de FCM-service-account-JSON horen alleen op de server (Portainer-omgevingsvariabelen, of als bestand gemount en via `APNS_KEY_P8_FILE` / `FCM_SERVICE_ACCOUNT_FILE` aangewezen). De GitHub-workflows hebben ze niet nodig; alleen `mobile-release.yml` gebruikt signing-secrets (certificaat/profiel), niet de pushsleutels.
+- **Sleutels staan nooit in GitHub:** de APNs-`.p8` en de FCM-service-account-JSON horen alleen op de server (Portainer-omgevingsvariabelen, of als bestand gemount en via `APNS_KEY_P8_FILE` / `FCM_SERVICE_ACCOUNT_FILE` aangewezen). De GitHub-workflows hebben ze niet nodig; de iOS-workflow gebruikt alleen een App Store Connect API-sleutel voor signing/upload (zie `docs/IOS-TESTFLIGHT.md`), niet de pushsleutels.
 - Valideer APNs-sandbox en APNs-production en TestFlight afzonderlijk op een echt toestel; ze zijn verschillende configuraties.
 
 - **Geen dubbele meldingen:** een webabonnement van hetzelfde mobiele platform als een actief native toestel wordt overgeslagen (`webSubscriptionCoveredByNative`). Gebruikers kunnen per toestel meldingen uitzetten (`/devices/:id/active`).
@@ -176,7 +176,8 @@ Eigenaar doet handmatig, **vóór** de eerste upload:
 ### CI
 - `.github/workflows/docker-publish.yml` – web/Docker naar GHCR (ongewijzigd, alleen `main` publiceert).
 - `.github/workflows/mobile-ci.yml` – draait bij wijzigingen in `mobile/`, `shared/`, de mobiele backend (`src/lib/api/`, `auth.ts`, `nativePush.ts`, `push.ts`, `openLinks.ts`, `src/app/api/mobile/`, `src/app/.well-known/`, `prisma/`, de bijbehorende tests), `AGENTS.md` en `docs/MOBILE.md`: backend-regressietests met Postgres, client-typecheck/tests/build, `check:native-config`, Android **debug**-build (ubuntu) en iOS **simulator**-build (macOS-runner). Geen secrets, geen publicatie.
-- `.github/workflows/mobile-release.yml` – **handmatig**; bouwt een ondertekende AAB / iOS-archive als de signing-secrets zijn ingesteld en uploadt ze alleen als artifact. Publiceert nooit naar de stores.
+- `.github/workflows/mobile-release.yml` – **handmatig**; bouwt een ondertekende Android-AAB (artifact). Publiceert nooit naar Play.
+- `.github/workflows/ios-testflight.yml` – **handmatig** (omgeving `testflight`); Release-archive met automatische signing via een App Store Connect API-sleutel, controle van de IPA en upload naar **TestFlight**. Geen publieke App Store-release. Zie `docs/IOS-TESTFLIGHT.md`.
 
 ## Wat u zelf live moet testen
 Zie de lijst onderaan `docs/STORE-PRIVACY.md` ("Handmatige acceptatietests").

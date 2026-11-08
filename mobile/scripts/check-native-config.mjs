@@ -89,6 +89,35 @@ const forbidden = /\.(jks|keystore|p8|p12|mobileprovision|pem|key)$|^google-serv
 ok(existsSync(join(root, "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png")), "Android-app-icoon ontbreekt (npm run assets).");
 ok(existsSync(join(root, "ios/App/App/Assets.xcassets/AppIcon.appiconset")), "iOS-app-icoon ontbreekt (npm run assets).");
 
+// 7. App Store Connect-eisen (TestFlight): iconen, privacymanifest, versie.
+{
+  const iconPath = join(root, "ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png");
+  if (existsSync(iconPath)) {
+    const png = readFileSync(iconPath);
+    const isPng = png.length > 33 && png.subarray(1, 4).toString() === "PNG";
+    ok(isPng, "iOS-appicoon is geen geldige PNG.");
+    if (isPng) {
+      const [w, h, colorType] = [png.readUInt32BE(16), png.readUInt32BE(20), png[25]];
+      ok(w === 1024 && h === 1024, `iOS-appicoon moet 1024 × 1024 zijn (nu ${w} × ${h}).`);
+      ok(colorType !== 4 && colorType !== 6, "iOS-appicoon mag geen alfakanaal (transparantie) hebben; App Store Connect weigert dat.");
+      ok(!png.includes(Buffer.from("tRNS")), "iOS-appicoon mag geen transparantie-informatie (tRNS) bevatten.");
+    }
+  }
+  ok(existsSync(join(root, "ios/App/App/PrivacyInfo.xcprivacy")), "ios/App/App/PrivacyInfo.xcprivacy ontbreekt (privacymanifest, vereist door App Store Connect).");
+  ok(/PrivacyInfo\.xcprivacy in Resources/.test(pbx), "PrivacyInfo.xcprivacy zit niet in de Resources-fase van het Xcode-project.");
+  const manifest = existsSync(join(root, "ios/App/App/PrivacyInfo.xcprivacy")) ? read("ios/App/App/PrivacyInfo.xcprivacy") : "";
+  ok(/<key>NSPrivacyTracking<\/key>\s*<false\/>/.test(manifest), "Privacymanifest: NSPrivacyTracking moet false zijn (Ringtools volgt gebruikers niet).");
+  ok(/MARKETING_VERSION = \d+\.\d+(\.\d+)?;/.test(pbx) && /CURRENT_PROJECT_VERSION = \d+;/.test(pbx), "Xcode-project: MARKETING_VERSION of CURRENT_PROJECT_VERSION ontbreekt of is ongeldig.");
+  const appDelegate = read("ios/App/App/AppDelegate.swift");
+  ok(/didRegisterForRemoteNotificationsWithDeviceToken[\s\S]*capacitorDidRegisterForRemoteNotifications/.test(appDelegate) && /didFailToRegisterForRemoteNotificationsWithError[\s\S]*capacitorDidFailToRegisterForRemoteNotifications/.test(appDelegate),
+    "AppDelegate.swift: de APNs-doorgeefluiken (didRegister…/didFailToRegister… → Capacitor-notificaties) ontbreken; zonder die krijgt de app nooit een pushtoken.");
+  const tf = existsSync(join(root, "../.github/workflows/ios-testflight.yml")) ? readFileSync(join(root, "../.github/workflows/ios-testflight.yml"), "utf8") : "";
+  ok(tf.length > 0, ".github/workflows/ios-testflight.yml ontbreekt.");
+  ok(!/-----BEGIN|AuthKey_[A-Z0-9]{10}\.p8/.test(tf.replace(/AuthKey_\$\{ASC_KEY_ID\}\.p8/g, "")), "ios-testflight.yml bevat een sleutel of vaste sleutelnaam.");
+  ok(!/echo\s+"?\$\{?(ASC_API_KEY_P8_BASE64|ASC_KEY_ID|ASC_ISSUER_ID)[^|>]*$/m.test(tf), "ios-testflight.yml mag secrets niet printen.");
+  ok(/environment:\s*testflight/.test(tf) && /workflow_dispatch:/.test(tf) && !/\n\s*(push|pull_request|schedule):/.test(tf), "ios-testflight.yml moet handmatig (workflow_dispatch) draaien met de omgeving 'testflight'.");
+}
+
 if (errors.length) {
   console.error("Native configuratie: FOUT\n- " + errors.join("\n- "));
   process.exit(1);

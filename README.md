@@ -552,7 +552,7 @@ Aan de serverkant:
   op een toestel met de app direct de app; zonder app of zonder deze variabelen blijft alles in de browser werken.
 - Migraties `20261103090000_native_app_push_tokens` en `20261105090000_native_push_devices` zijn additief/veilig.
 - CI: `docker-publish.yml` (web/Docker → GHCR), `mobile-ci.yml` (client, native configuratie, Android debug-build,
-  iOS simulator-build, zonder signing) en het handmatige `mobile-release.yml` (ondertekende AAB/IPA als artifact; publiceert
+  iOS simulator-build, zonder signing) en het handmatige `mobile-release.yml` (ondertekende Android-AAB als artifact) en `ios-testflight.yml` (TestFlight-upload via de App Store Connect API; publiceert
   nooit naar de stores). De Docker-image bevat de mobiele app niet.
 
 ## Meerdere ringen en ondersteuningsrondes

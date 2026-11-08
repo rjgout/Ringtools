@@ -1,0 +1,166 @@
+name: iOS TestFlight (handmatig)
+
+# EXPLICIET HANDMATIG. Bouwt een officiële Release-archive van Ringtools met automatische signing (App Store Connect API-sleutel),
+# controleert de IPA (productie-APNs, Associated Domains, bundle-ID, buildnummer) en uploadt hem naar TESTFLIGHT.
+# Dit is GEEN App Store-release: publiceren naar de App Store gebeurt uitsluitend handmatig in App Store Connect.
+# Vereist de secrets van de omgeving "testflight" (zie docs/IOS-TESTFLIGHT.md). Er staan geen certificaten of sleutels in Git;
+# de API-sleutel wordt alleen tijdelijk op de runner neergezet en nooit geprint.
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: https-URL van de backend (VITE_API_URL)
+        type: string
+        default: https://ringapeldoorn.nl
+      marketing_version:
+        description: Versie voor gebruikers (CFBundleShortVersionString), bijv. 1.0.0
+        type: string
+        default: "1.0.0"
+      build_number:
+        description: Buildnummer (leeg = het nummer van deze workflow-run). Moet per versie oplopen.
+        type: string
+        default: ""
+      upload:
+        description: Uploaden naar TestFlight (uit = alleen archiveren en controleren)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    name: Archiveren, controleren en naar TestFlight
+    runs-on: macos-latest
+    environment: testflight
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      VITE_API_URL: ${{ inputs.api_url }}
+      MARKETING_VERSION: ${{ inputs.marketing_version }}
+      BUILD_NUMBER: ${{ inputs.build_number != '' && inputs.build_number || github.run_number }}
+      BUNDLE_ID: nl.ringapeldoorn.ringtools
+    steps:
+      - name: Secrets aanwezig? (alleen de namen worden gecontroleerd)
+        working-directory: .
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          for v in ASC_KEY_ID ASC_ISSUER_ID ASC_API_KEY_P8_BASE64 IOS_TEAM_ID; do
+            [ -n "${!v}" ] || { echo "::error::Secret $v ontbreekt in de omgeving 'testflight' (zie docs/IOS-TESTFLIGHT.md)."; exit 1; }
+          done
+          [[ "$MARKETING_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::Ongeldige versie '$MARKETING_VERSION'."; exit 1; }
+          [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "::error::Ongeldig buildnummer '$BUILD_NUMBER'."; exit 1; }
+          [[ "$VITE_API_URL" =~ ^https:// ]] || { echo "::error::api_url moet met https:// beginnen."; exit 1; }
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run check:native-config
+      - run: npx cap sync ios
+      - name: API-sleutel tijdelijk neerzetten (wordt nooit geprint, gecommit of geüpload)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+        run: |
+          set +x
+          mkdir -p "$HOME/private_keys"
+          echo "$ASC_API_KEY_P8_BASE64" | base64 -d > "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+      - name: Archiveren (Release, automatische signing)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Ringtools.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$IOS_TEAM_ID" MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            archive
+      - name: Exporteren (IPA voor App Store Connect)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>teamID</key><string>$IOS_TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Ringtools.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          ls "$RUNNER_TEMP/export"/*.ipa
+      - name: IPA controleren (productie-APNs, Associated Domains, bundle-ID, versie)
+        run: |
+          set -euo pipefail
+          IPA="$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)"
+          rm -rf "$RUNNER_TEMP/ipa" && mkdir -p "$RUNNER_TEMP/ipa" && unzip -q "$IPA" -d "$RUNNER_TEMP/ipa"
+          APP="$(ls -d "$RUNNER_TEMP"/ipa/Payload/*.app | head -1)"
+          ENT="$(codesign -d --entitlements :- "$APP" 2>/dev/null)"
+          PB=/usr/libexec/PlistBuddy
+          grep -A1 "aps-environment" <<<"$ENT" | grep -q "<string>production</string>" || { echo "::error::aps-environment is niet 'production' in de IPA (TestFlight/App Store gebruiken productie-APNs)."; exit 1; }
+          grep -q "applinks:ringapeldoorn.nl" <<<"$ENT" || { echo "::error::Associated Domains (applinks) ontbreken in de IPA."; exit 1; }
+          grep -q "webcredentials:ringapeldoorn.nl" <<<"$ENT" || { echo "::error::webcredentials ontbreekt in de IPA."; exit 1; }
+          if grep -A1 "get-task-allow" <<<"$ENT" | grep -q "<true/>"; then echo "::error::get-task-allow staat aan: dit is geen distributiebuild."; exit 1; fi
+          [ "$($PB -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = "$BUNDLE_ID" ] || { echo "::error::Onverwachte bundle-ID."; exit 1; }
+          [ "$($PB -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")" = "$MARKETING_VERSION" ] || { echo "::error::Versie in de IPA wijkt af."; exit 1; }
+          [ "$($PB -c 'Print :CFBundleVersion' "$APP/Info.plist")" = "$BUILD_NUMBER" ] || { echo "::error::Buildnummer in de IPA wijkt af."; exit 1; }
+          test -f "$APP/PrivacyInfo.xcprivacy" || { echo "::error::PrivacyInfo.xcprivacy ontbreekt."; exit 1; }
+          {
+            echo "### Ringtools iOS"
+            echo "- Bundle-ID: \`$BUNDLE_ID\`"
+            echo "- Versie: \`$MARKETING_VERSION\` (build \`$BUILD_NUMBER\`)"
+            echo "- APNs-omgeving in de IPA: **production**"
+            echo "- Controles: productie-APNs, Associated Domains, webcredentials, bundle-ID, versie en buildnummer geslaagd"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Uploaden naar TestFlight
+        if: ${{ inputs.upload }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          IPA="$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)"
+          xcrun altool --upload-app --type ios -f "$IPA" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+          echo "- Upload naar TestFlight: **gestart** (verwerking in App Store Connect duurt enkele minuten)" >> "$GITHUB_STEP_SUMMARY"
+      - name: IPA bewaren als artifact (alleen bij uitgeschakelde upload)
+        if: ${{ !inputs.upload }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ringtools-ios-ipa
+          path: ${{ runner.temp }}/export/*.ipa
+          retention-days: 3
+      - name: API-sleutel verwijderen
+        if: always()
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: rm -f "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"

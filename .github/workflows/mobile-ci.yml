@@ -219,3 +219,19 @@ jobs:
             CODE_SIGNING_ALLOWED=NO build
       - name: iOS-configuraties controleren (productie-entitlements én Personal Team-testconfiguratie)
         run: ./scripts/verify-ios-configs.sh
+      # Release-archive voor een echt toestel, zonder signing: vangt fouten die alleen in Release/device optreden vóór een TestFlight-upload.
+      - name: Release-archive (device, zonder signing) en controle van de app-bundel
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/ci.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO archive
+          APP="$RUNNER_TEMP/ci.xcarchive/Products/Applications/App.app"
+          test -d "$APP" || { echo "::error::App.app ontbreekt in de archive."; exit 1; }
+          test -f "$APP/PrivacyInfo.xcprivacy" || { echo "::error::PrivacyInfo.xcprivacy ontbreekt in de app-bundel (vereist door App Store Connect)."; exit 1; }
+          test -f "$APP/Assets.car" || { echo "::error::Assets.car (appicoon) ontbreekt."; exit 1; }
+          PB=/usr/libexec/PlistBuddy
+          [ "$($PB -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = "nl.ringapeldoorn.ringtools" ] || { echo "::error::Onverwachte bundle-ID."; exit 1; }
+          [ "$($PB -c 'Print :ITSAppUsesNonExemptEncryption' "$APP/Info.plist")" = "false" ] || { echo "::error::ITSAppUsesNonExemptEncryption moet false zijn."; exit 1; }
+          [ "$($PB -c 'Print :MinimumOSVersion' "$APP/Info.plist")" = "18.0" ] || { echo "::error::Onverwachte MinimumOSVersion."; exit 1; }
+          $PB -c 'Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName' "$APP/Info.plist" >/dev/null || { echo "::error::CFBundleIconName ontbreekt (appicoon niet gekoppeld)."; exit 1; }
+          echo "Release-archive OK: versie $($PB -c 'Print :CFBundleShortVersionString' "$APP/Info.plist") ($($PB -c 'Print :CFBundleVersion' "$APP/Info.plist"))"

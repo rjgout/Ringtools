@@ -1,16 +1,16 @@
 name: Mobiele app (release-build, handmatig)
 
-# EXPLICIET HANDMATIG. Bouwt een ondertekende Android App Bundle (AAB) en/of iOS-archive (IPA) als artifact.
-# Dit workflow PUBLICEERT NIETS naar de App Store of Play Store: uploaden doet de eigenaar zelf
-# (Play Console / Xcode Organizer of Transporter). Vereist signing-secrets die NIET in de repository staan;
-# zie docs/MOBILE.md. Zonder die secrets stopt de job met een duidelijke melding.
+# EXPLICIET HANDMATIG. Bouwt een ondertekende Android App Bundle (AAB) als artifact. iOS (TestFlight) loopt via
+# .github/workflows/ios-testflight.yml (App Store Connect API-sleutel, automatische signing).
+# Dit workflow PUBLICEERT NIETS naar de Play Store: uploaden doet de eigenaar zelf (Play Console). Vereist signing-secrets die
+# NIET in de repository staan; zie docs/MOBILE.md. Zonder die secrets stopt de job met een duidelijke melding.
 on:
   workflow_dispatch:
     inputs:
       platform:
         description: Platform
         type: choice
-        options: [android, ios]
+        options: [android]
         default: android
       api_url:
         description: https-URL van de backend (VITE_API_URL)
@@ -80,86 +80,4 @@ jobs:
         with:
           name: ringtools-android-aab
           path: mobile/android/app/build/outputs/bundle/release/app-release.aab
-          retention-days: 7
-
-  ios:
-    if: ${{ inputs.platform == 'ios' }}
-    runs-on: macos-latest
-    environment: mobile-release
-    defaults:
-      run:
-        working-directory: mobile
-    env:
-      VITE_API_URL: ${{ inputs.api_url }}
-    steps:
-      - name: Signing-secrets aanwezig?
-        working-directory: .
-        run: |
-          for v in IOS_CERTIFICATE_P12_BASE64 IOS_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE_BASE64 IOS_TEAM_ID; do
-            [ -n "${!v}" ] || { echo "::error::Secret $v ontbreekt (zie docs/MOBILE.md)."; exit 1; }
-          done
-        env:
-          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
-          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
-          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: mobile/package-lock.json
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: latest-stable
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
-      - run: npm run check:native-config
-      - run: npx cap sync ios
-      - name: Certificaat en provisioning profile installeren (tijdelijke keychain)
-        env:
-          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
-          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
-          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-        run: |
-          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"; KEYCHAIN_PW="$(uuidgen)"
-          security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
-          security set-keychain-settings -lut 3600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
-          echo "$IOS_CERTIFICATE_P12_BASE64" | base64 -d > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PW" "$KEYCHAIN"
-          security list-keychains -d user -s "$KEYCHAIN" login.keychain
-          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 -d > "$HOME/Library/MobileDevice/Provisioning Profiles/ringtools.mobileprovision"
-      - name: Archiveren en exporteren (IPA)
-        env:
-          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-        run: |
-          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
-            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Ringtools.xcarchive" \
-            DEVELOPMENT_TEAM="$IOS_TEAM_ID" archive
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>app-store-connect</string>
-            <key>teamID</key><string>$IOS_TEAM_ID</string>
-          </dict></plist>
-          PLIST
-          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Ringtools.xcarchive" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export"
-          mkdir -p "$GITHUB_WORKSPACE/out" && cp "$RUNNER_TEMP"/export/*.ipa "$GITHUB_WORKSPACE/out/"
-      - name: Controleren of de IPA productie-APNs gebruikt (TestFlight/App Store)
-        run: |
-          rm -rf "$RUNNER_TEMP/ipa" && mkdir -p "$RUNNER_TEMP/ipa"
-          unzip -q "$GITHUB_WORKSPACE"/out/*.ipa -d "$RUNNER_TEMP/ipa"
-          ENT="$(codesign -d --entitlements :- "$RUNNER_TEMP"/ipa/Payload/*.app 2>/dev/null)"
-          echo "$ENT" | grep -A1 "aps-environment" | grep -q "<string>production</string>" || { echo "::error::aps-environment is niet 'production' in de IPA."; exit 1; }
-          echo "$ENT" | grep -q "applinks:" || { echo "::error::Associated Domains (applinks) ontbreken in de IPA."; exit 1; }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ringtools-ios-ipa
-          path: out/*.ipa
           retention-days: 7

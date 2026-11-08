@@ -223,7 +223,9 @@ gebruikers, ringbeheerders en `webmin` voor hun werk nodig hebben, moet in de ap
 - **Eén omgeving:** er is geen aparte testserver; `main` op de Synology NAS (Watchtower) is de enige gedeployde omgeving. Nieuwe functievlaggen staan standaard uit en worden door de eigenaar gecontroleerd geactiveerd, na een vooraf gecontroleerde databaseback-up (`docs/BACKUP-HERSTEL.md`); nooit automatische tests op de productiedatabase.
 
 - Mobiele builds publiceren nooit automatisch naar App Store of Play Store. Publicatie loopt via een aparte, expliciet
-  gestarte procedure (`.github/workflows/mobile-release.yml`, handmatig) door de eigenaar.
+  gestarte procedure door de eigenaar: Android `.github/workflows/mobile-release.yml` (handmatig, alleen artifact), iOS
+  `.github/workflows/ios-testflight.yml` (handmatig, omgeving `testflight`, upload naar TestFlight; geen publieke App Store-release). Zie `docs/IOS-TESTFLIGHT.md`.
+  Credentials (App Store Connect API-sleutel, APNs-sleutel) staan nooit in Git; de APNs-sleutel alleen op de server.
 - Definitieve app-ID's (`RINGTOOLS_APP_ID`: nu voorlopig `nl.ringapeldoorn.ringtools`), Team-ID's, signing-vingerafdrukken
   en pushsleutels verzin je nooit; ze komen van de eigenaar en staan alleen in secrets/omgevingsvariabelen.
 
