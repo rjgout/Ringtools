@@ -224,3 +224,7 @@ Alle routes onder `/api/mobile/v1`, bearer-sessie met MFA-gate; webmin krijgt ov
 ## Ontwerpstandaard
 
 Uniforme bediening (contextmenu, bevestigingsdialoog, sheet, statuslabels, 48 px-doelen): zie [`docs/ONTWERPSTANDAARD.md`](ONTWERPSTANDAARD.md).
+
+## App-icoon
+
+Bron: `mobile/resources/icon.png` (1024 × 1024, zonder transparantie; iOS en Android-icoon zonder adaptieve vorm), `icon-background.png` (verloop in dezelfde kleuren) en `icon-foreground.png` (logo met zachte rand, binnen de veilige zone van het adaptieve Android-icoon). Genereren: `cd mobile && npm run assets`. Let op: dat commando maakt ook de splashschermen en PWA-bestanden opnieuw; neem alleen de iconen (`AppIcon-512@2x.png`, `mipmap-*`) over en laat de rest ongewijzigd.
