@@ -7,6 +7,7 @@ import { parseTarget, routeFor } from "../src/lib/links";
 const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../src/lib/auth", () => ({ useAuth: () => auth.value }));
 
+import { answerDialog, pickMenuItem, renderUi } from "./ui";
 const { OntheffingForm } = await import("../src/screens/OntheffingForm");
 const { OntheffingDetail } = await import("../src/screens/OntheffingDetail");
 const { Ontheffingen } = await import("../src/screens/Ontheffingen");
@@ -58,7 +59,7 @@ function renderForm(api: Record<string, unknown>, path = "/ontheffingen/nieuw") 
     ...api,
   };
   auth.value = { api: full, ring: { id: "r1", name: "Ring", role: "RINGSECRETARIS" } };
-  render(<MemoryRouter initialEntries={[path]}><Routes>
+  renderUi(<MemoryRouter initialEntries={[path]}><Routes>
     <Route path="/ontheffingen/nieuw" element={<OntheffingForm />} /><Route path="/ontheffingen/concept/:id" element={<OntheffingForm />} />
     <Route path="/ontheffingen/:id" element={<div>detail</div>} /><Route path="/ontheffingen" element={<div>lijst</div>} />
   </Routes></MemoryRouter>);
@@ -131,7 +132,7 @@ function renderDetail(api: Record<string, unknown>, role = "RINGSECRETARIS") {
     ...api,
   };
   auth.value = { api: full, ring: { id: "r1", name: "Ring", role } };
-  render(<MemoryRouter initialEntries={["/ontheffingen/o1"]}><Routes><Route path="/ontheffingen/:id" element={<OntheffingDetail />} /><Route path="/ontheffingen" element={<div>lijst</div>} /></Routes></MemoryRouter>);
+  renderUi(<MemoryRouter initialEntries={["/ontheffingen/o1"]}><Routes><Route path="/ontheffingen/:id" element={<OntheffingDetail />} /><Route path="/ontheffingen" element={<div>lijst</div>} /></Routes></MemoryRouter>);
   return full as Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -199,7 +200,7 @@ describe("Ontheffing: uitvoering per persoon", () => {
 describe("Ontheffingen: lijst", () => {
   it("toont de lijst en de knop voor een nieuwe ontheffing alleen aan ringstaf", async () => {
     auth.value = { api: { ontheffingen: vi.fn(async () => ({ ontheffingen: [{ id: "o1", status: "PRESIDIUM_VOTING", statusLabel: "Behandeling door het ringpresidium", personName: "Anna", functionName: "Ringadministrateur", unitName: "Voorbeeld", joint: false, needsMyVote: true, needsReview: false, updatedAt: "2026-11-01T10:00:00Z" }] })) }, ring: { id: "r1", name: "Ring", role: "HOGERAAD" } };
-    render(<MemoryRouter><Ontheffingen /></MemoryRouter>);
+    renderUi(<MemoryRouter><Ontheffingen /></MemoryRouter>);
     expect(await screen.findByText("Anna")).toBeTruthy();
     expect(screen.queryByText("Nieuwe ontheffing")).toBeNull();
     expect(screen.getByLabelText("Wacht op jouw reactie")).toBeTruthy();

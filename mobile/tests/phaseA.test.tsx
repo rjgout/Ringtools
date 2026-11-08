@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../src/lib/auth", () => ({ useAuth: () => auth.value }));
 
+import { answerDialog, pickMenuItem, renderUi } from "./ui";
 const { CallingDetail } = await import("../src/screens/CallingDetail");
 const { NewCalling } = await import("../src/screens/NewCalling");
 
@@ -24,7 +25,7 @@ const detail = (over: Record<string, unknown> = {}) => ({
 function renderDetail(api: Record<string, unknown>, d = detail()) {
   const full = { calling: vi.fn(async () => d), ...api };
   auth.value = { api: full, ring: { id: "r1" }, selectRing: vi.fn() };
-  render(<MemoryRouter initialEntries={["/roepingen/c1"]}><Routes>
+  renderUi(<MemoryRouter initialEntries={["/roepingen/c1"]}><Routes>
     <Route path="/roepingen/:id" element={<CallingDetail />} /><Route path="/voorstellen" element={<div>lijst</div>} />
   </Routes></MemoryRouter>);
   return full;
@@ -39,11 +40,14 @@ describe("Fase A: staf-acties vanuit de app (iOS en Android gebruiken dezelfde c
     fireEvent.click(await screen.findByText(/Iedereen herinneren/));
     await waitFor(() => expect(api.remind).toHaveBeenCalledWith("c1"));
     expect(await screen.findByText(/2 herinnering\(en\) verstuurd, 1 recent al herinnerd/)).toBeTruthy();
-    fireEvent.click(screen.getByLabelText("Herinner Anna"));
+    pickMenuItem("Acties voor Anna", "Herinner");
     await waitFor(() => expect(api.remind).toHaveBeenCalledWith("c1", "u1"));
-    fireEvent.click(screen.getByLabelText("Vraag Bert opnieuw"));
+    pickMenuItem("Acties voor Bert", "Opnieuw vragen");
     await waitFor(() => expect(api.reinvite).toHaveBeenCalledWith("c1", "u2"));
-    fireEvent.click(screen.getByLabelText("Verwijder Anna uit de ronde"));
+    pickMenuItem("Acties voor Anna", /Uit ronde halen/);
+    await screen.findByRole("alertdialog");
+    expect(api.removeParticipant).not.toHaveBeenCalled(); // eerst bevestigen
+    answerDialog("Uit ronde halen");
     await waitFor(() => expect(api.removeParticipant).toHaveBeenCalledWith("c1", "u1"));
   });
 
@@ -63,9 +67,10 @@ describe("Fase A: staf-acties vanuit de app (iOS en Android gebruiken dezelfde c
     const api = renderDetail({ markProcessed: vi.fn(async () => ({ ok: true })), deleteCalling: vi.fn(async () => ({ ok: true })) }) as Record<string, ReturnType<typeof vi.fn>>;
     fireEvent.click(await screen.findByText("Administratief verwerkt"));
     await waitFor(() => expect(api.markProcessed).toHaveBeenCalledWith("c1"));
-    fireEvent.click(screen.getByText(/definitief verwijderen…/));
+    pickMenuItem("Acties voor dit voorstel", /Voorstel verwijderen/);
+    await screen.findByRole("alertdialog");
     expect(api.deleteCalling).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Definitief verwijderen" }));
+    answerDialog("Verwijderen");
     await waitFor(() => expect(api.deleteCalling).toHaveBeenCalledWith("c1", true));
     expect(await screen.findByText("lijst")).toBeTruthy();
   });

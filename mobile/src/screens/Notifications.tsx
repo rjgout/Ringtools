@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
-import { ErrorState, Spinner } from "../components/ui";
+import { ErrorState, PageHead, Spinner } from "../components/ui";
 
 export function Notifications({ onChanged }: { onChanged: () => void }) {
   const { api, ring } = useAuth();
@@ -15,10 +15,7 @@ export function Notifications({ onChanged }: { onChanged: () => void }) {
 
   return (
     <div className="stack">
-      <div className="row between">
-        <h1>Meldingen</h1>
-        {data && data.unreadCount > 0 && <button className="btn btn-ghost" onClick={readAll}>Alles gelezen</button>}
-      </div>
+      <PageHead title="Meldingen" action={data && data.unreadCount > 0 ? <button className="btn btn-ghost" onClick={readAll}>Alles gelezen</button> : undefined} />
       {loading && !data && <Spinner />}
       {error && <ErrorState error={error} onRetry={reload} />}
       {data?.notifications.length === 0 && <p className="muted">Geen meldingen.</p>}

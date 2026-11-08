@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
-import { ErrorState, Spinner } from "../components/ui";
+import { ErrorState, PageHead, Spinner } from "../components/ui";
 
 const STAFF = ["RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR"];
 
@@ -16,11 +16,7 @@ export function Ontheffingen() {
 
   return (
     <div className="stack">
-      <div className="row between">
-        <h1>Ontheffingen</h1>
-        {staff && <Link to="/ontheffingen/nieuw" className="btn btn-primary">Nieuwe ontheffing</Link>}
-      </div>
-      <span className="muted">Vertrouwelijk. Meldingen bevatten bewust geen namen of functies.</span>
+      <PageHead title="Ontheffingen" subtitle="Vertrouwelijk. Meldingen bevatten bewust geen namen of functies." action={staff ? <Link to="/ontheffingen/nieuw" className="btn btn-primary">Nieuwe ontheffing</Link> : undefined} />
       {loading && !data && <Spinner />}
       {error && <ErrorState error={error} onRetry={reload} />}
       {data?.ontheffingen.length === 0 && <p className="muted">Er staan geen ontheffingen voor je klaar.</p>}

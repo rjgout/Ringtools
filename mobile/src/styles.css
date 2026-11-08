@@ -27,6 +27,7 @@
   --scrim: 0 0 0;
   --scrim-alpha: 0.4;
   --segment-on: #ffffff;            /* geselecteerd segment */
+  --switch-knob: #ffffff;           /* knop van de schakelaar: altijd wit, ook in donkere modus */
   --shadow: 0 0 0 / 0.08;           /* schaduwkleur: RGB-kanalen / alpha */
   /* Materialen (glas): tint + vervaging; zonder transparantie vallen ze terug op --bg-elevated */
   --material: 255 255 255;
@@ -265,7 +266,7 @@ input[type="checkbox"] {
   border: 0 !important; border-radius: 999px !important; background: rgb(var(--fill) / 0.32) !important; transition: background 0.2s;
 }
 input[type="checkbox"]::after {
-  content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: var(--on-success-fill);
+  content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: var(--switch-knob);
   box-shadow: 0 2px 4px rgb(var(--shadow)); transition: transform 0.2s;
 }
 input[type="checkbox"]:checked { background: var(--success-fill) !important; }
@@ -277,3 +278,45 @@ input[type="checkbox"]:focus-visible { outline: 3px solid var(--tint); outline-o
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 fieldset > legend { padding: 0; margin-bottom: 8px; font-size: 0.9375rem; font-weight: 600; }
 input[type="date"], input[type="datetime-local"], input[type="time"] { display: block; min-width: 0; max-width: 100%; -webkit-appearance: none; appearance: none; text-align: left; }
+
+/* ---- Uniforme bediening (Figma "Ringtools UI Kit"): icoonknop, contextmenu, bevestigingsdialoog, kaartrij, statuslabel ---- */
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; width: var(--touch); height: var(--touch); min-width: var(--touch);
+  padding: 0; border: 0; border-radius: var(--radius-m); background: rgb(var(--fill) / var(--fill-alpha)); color: var(--tint); cursor: pointer;
+}
+.icon-btn:active { opacity: 0.7; }
+.icon-btn:disabled { opacity: 0.5; pointer-events: none; }
+.menu-backdrop { position: fixed; inset: 0; z-index: 30; background: transparent; }
+.menu {
+  position: fixed; z-index: 31; min-width: 220px; max-width: calc(100% - 16px); max-height: calc(100% - 16px); overflow-y: auto; padding: var(--space-1) 0;
+  border-radius: var(--radius-l); border: 1px solid rgb(var(--separator) / var(--separator-alpha)); box-shadow: 0 8px 24px rgb(var(--shadow));
+}
+.menu.measuring { visibility: hidden; }
+.menu-item {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: var(--touch); padding: 0 var(--space-4); border: 0; background: transparent;
+  color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.menu-item + .menu-item { border-top: 1px solid rgb(var(--separator) / var(--separator-alpha)); }
+.menu-item:active, .menu-item:focus-visible { background: rgb(var(--fill) / var(--fill-alpha)); }
+.menu-item.danger { color: var(--danger); }
+.menu-item:disabled { opacity: 0.5; }
+.dialog-backdrop {
+  position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+  padding: max(var(--sat), var(--space-4)) max(var(--sar), var(--space-4)) max(var(--sab), var(--space-4)) max(var(--sal), var(--space-4));
+  background: rgb(var(--scrim) / var(--scrim-alpha));
+}
+.dialog { width: 100%; max-width: 420px; max-height: 100%; overflow-y: auto; }
+.dialog-title { margin: 0; font-size: 1.25rem; }
+.dialog-actions > .btn { flex: 1; }
+/* Kaartrij: tikbaar hoofdgedeelte + ⋯ direct rechts, nooit een knop in een knop. */
+.item-row { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-radius: var(--radius-l); }
+.item-main { flex: 1; min-width: 0; padding: var(--space-2) 0; min-height: var(--touch); border: 0; background: transparent; color: inherit; text-align: left; font: inherit; text-decoration: none; display: block; cursor: pointer; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.page-head > .icon-btn, .page-head > .btn { margin-top: var(--space-1); }
+/* Statuslabel: één vorm voor alle statussen. */
+.status { display: inline-flex; align-items: center; min-height: 28px; border-radius: 999px; padding: 0 var(--space-3); font-size: 0.8125rem; font-weight: 600; background: rgb(var(--fill) / var(--fill-alpha)); color: var(--text-muted); white-space: nowrap; }
+.status.ok { background: var(--success-bg); color: var(--success); }
+.status.warn { background: var(--warning-bg); color: var(--warning-ink); }
+.status.bad { background: var(--danger-bg); color: var(--danger); }
+@media (prefers-reduced-motion: no-preference) { .menu { animation: menu-in 0.12s ease-out; } }
+@keyframes menu-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: none; } }

@@ -1,0 +1,26 @@
+/**
+ * Stapel van geopende overlays (contextmenu, dialoog, sheet). De Android-terugknop sluit eerst de bovenste overlay en navigeert pas
+ * daarna (zie App.tsx). Een overlay meldt zich aan bij het openen en af bij het sluiten; alleen de eigen registratie wordt verwijderd.
+ */
+type Entry = { id: number; close: () => void };
+const stack: Entry[] = [];
+let next = 1;
+
+export function registerOverlay(close: () => void): () => void {
+  const entry = { id: next++, close };
+  stack.push(entry);
+  return () => {
+    const i = stack.findIndex((e) => e.id === entry.id);
+    if (i >= 0) stack.splice(i, 1);
+  };
+}
+
+/** Sluit de bovenste overlay. Geeft true als er iets gesloten is (de terugactie is dan afgehandeld). */
+export function closeTopOverlay(): boolean {
+  const top = stack[stack.length - 1];
+  if (!top) return false;
+  top.close();
+  return true;
+}
+
+export const hasOverlay = () => stack.length > 0;

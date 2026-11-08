@@ -6,6 +6,7 @@ import { ApiClient, ApiRequestError } from "../src/lib/api";
 const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../src/lib/auth", () => ({ useAuth: () => auth.value }));
 
+import { answerDialog, pickMenuItem, renderUi } from "./ui";
 const { NewCalling } = await import("../src/screens/NewCalling");
 
 afterEach(cleanup);
@@ -35,7 +36,7 @@ function setup(api: Record<string, unknown>, path = "/voorstellen/nieuw") {
     ...api,
   };
   auth.value = { api: full, ring: { id: "r1", name: "Ring" } };
-  render(<MemoryRouter initialEntries={[path]}><Routes>
+  renderUi(<MemoryRouter initialEntries={[path]}><Routes>
     <Route path="/voorstellen/nieuw" element={<NewCalling />} /><Route path="/voorstellen/concept/:id" element={<NewCalling />} />
     <Route path="/roepingen/:id" element={<div>detail</div>} /><Route path="/voorstellen" element={<div>lijst</div>} />
   </Routes></MemoryRouter>);
@@ -127,7 +128,10 @@ describe("Nieuw voorstel in vijf stappen", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/wijk of gemeente van herkomst/);
     expect(api.updateDraft).toHaveBeenCalledWith("d9", expect.objectContaining({ personName: "Bewaarde Naam" })); // bestaand concept wordt bijgewerkt, niet opnieuw aangemaakt
     expect(api.createDraft).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Concept verwijderen" }));
+    pickMenuItem("Acties voor dit concept", /Concept verwijderen/);
+    await screen.findByRole("alertdialog");
+    expect(api.deleteDraft).not.toHaveBeenCalled(); // eerst bevestigen
+    answerDialog("Verwijderen");
     await waitFor(() => expect(api.deleteDraft).toHaveBeenCalledWith("d9"));
   });
 });

@@ -111,8 +111,26 @@ export function CallingLink({ id, name, title, status, mine }: { id: string; nam
           <strong>{name}</strong>
           <div className="muted">{title}</div>
         </div>
-        {mine ? <span className="badge">Jouw reactie</span> : <span className="badge ok">{status}</span>}
+        {mine ? <StatusLabel tone="warn">Jouw reactie</StatusLabel> : <StatusLabel tone="ok">{status}</StatusLabel>}
       </div>
     </Link>
+  );
+}
+
+/** Eén statuslabel voor alle statussen (neutraal, ok, waarschuwing of fout). Kleur is nooit het enige signaal: de tekst zegt altijd de status. */
+export function StatusLabel({ tone = "neutral", children }: { tone?: "neutral" | "ok" | "warn" | "bad"; children: React.ReactNode }) {
+  return <span className={`status${tone === "neutral" ? "" : ` ${tone}`}`}>{children}</span>;
+}
+
+/** Paginakop: titel (en ondertitel) links, directe actie rechts (⋯ of een hoofdknop). Zo staan acties nooit onderaan een lange pagina. */
+export function PageHead({ title, subtitle, action }: { title: string; subtitle?: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div className="page-head">
+      <div className="grow">
+        <h1>{title}</h1>
+        {subtitle && <span className="muted">{subtitle}</span>}
+      </div>
+      {action}
+    </div>
   );
 }

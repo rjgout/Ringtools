@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../src/lib/auth", () => ({ useAuth: () => auth.value }));
+import { renderUi } from "./ui";
 const { UserManager } = await import("../src/screens/UserManager");
 afterEach(cleanup);
 
@@ -17,7 +18,7 @@ const users = [
 
 function setup(resend = vi.fn(async () => ({ id: "i1", sent: true }))) {
   auth.value = { api: { ringUsers: vi.fn(async () => ({ users })), ringInvitations: vi.fn(async () => ({ invitations: [] })), resendInvitation: resend }, reauth: vi.fn(), requestReauthCode: vi.fn() };
-  render(<UserManager ringId="r1" />);
+  renderUi(<UserManager ringId="r1" />);
   return resend;
 }
 
@@ -95,7 +96,7 @@ describe("Inlogscherm: hulp bij een ontbrekende code (voor iedereen gelijk, geen
     const api = { requestCode: vi.fn(async () => ({ ok: true, message: "Als dit e-mailadres bekend is bij Ringtools, is er een inlogcode verstuurd." })), meta: vi.fn(async () => ({ apiVersion: 1, minAppVersion: "1.0.0" })) };
     auth.value = { api, signIn: vi.fn(), finishMfa: vi.fn(), finishMfaTotp: vi.fn(), signInWithDevice: vi.fn(), cancelMfa: vi.fn() };
     const { Login } = await import("../src/screens/Login");
-    render(<Login onHaveInvitation={() => {}} />);
+    renderUi(<Login onHaveInvitation={() => {}} />);
     fireEvent.change(await screen.findByLabelText("E-mailadres"), { target: { value: "lid@example.nl" } });
     fireEvent.click(screen.getByRole("button", { name: "Stuur code" }));
     expect(await screen.findByText(/Geen code ontvangen\? Controleer de spammap/)).toBeTruthy();

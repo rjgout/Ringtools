@@ -4,7 +4,9 @@ import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
 import type { CallingDetail as Detail, TaskKey, TaskView } from "@shared/api-types";
-import { ErrorState, Spinner } from "../components/ui";
+import { ErrorState, PageHead, Spinner, StatusLabel } from "../components/ui";
+import { ActionMenu, MENU_ICONS } from "../components/Menu";
+import { Sheet, useConfirm } from "../components/Dialog";
 
 export function CallingDetail() {
   const { id = "" } = useParams();
@@ -23,7 +25,7 @@ export function CallingDetail() {
     if (ringId && ringId !== activeRingId) void selectRing(ringId);
   }, [ringId, activeRingId, selectRing]);
 
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const confirm = useConfirm();
 
   /** Voert een beheeractie uit, ververst het voorstel en toont de uitkomst. De server beslist over de bevoegdheid. */
   async function act<T>(run: () => Promise<T>, done: string | ((result: T) => string)) {
@@ -60,16 +62,46 @@ export function CallingDetail() {
     }
   }
 
+  async function deleteCalling() {
+    const ok = await confirm({
+      title: "Voorstel verwijderen?",
+      message: "Dit verwijdert het voorstel en alle bijbehorende gegevens definitief.",
+      detail: "Deze actie kan niet ongedaan worden gemaakt.",
+      confirmLabel: "Verwijderen",
+      danger: true,
+    });
+    if (!ok || inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    try { await api.deleteCalling(id, true); navigate("/voorstellen", { replace: true }); }
+    catch (err) { setMessage(err instanceof ApiRequestError ? err.message : "Er ging iets mis."); inFlight.current = false; setBusy(false); }
+  }
+
+  async function removeFromRound(userId: string, name: string) {
+    const ok = await confirm({
+      title: `${name} uit de ronde halen?`,
+      message: `${name} hoeft niet meer te reageren en telt niet meer mee in deze ronde. Een eerdere reactie blijft bewaard.`,
+      confirmLabel: "Uit ronde halen",
+      danger: true,
+    });
+    if (ok) await act(() => api.removeParticipant(id, userId), `${name} is uit de ronde gehaald.`);
+  }
+
   return (
     <div className="stack">
       {loading && !data && <Spinner />}
       {error && <ErrorState error={error} onRetry={reload} />}
       {data && (
         <>
+          <PageHead
+            title={data.personName}
+            subtitle={`${data.functionTitle} · ${data.ring.name}`}
+            action={data.me.isStaff && data.canDelete ? (
+              <ActionMenu label="Acties voor dit voorstel" items={[{ id: "delete", label: "Voorstel verwijderen…", icon: MENU_ICONS.trash, danger: true, onSelect: () => void deleteCalling() }]} disabled={busy} />
+            ) : undefined}
+          />
           <div>
-            <h1>{data.personName}</h1>
-            <span className="muted">{data.functionTitle} · {data.ring.name}</span>
-            <div><span className="badge ok">{data.phase}</span></div>
+            <div><StatusLabel tone="ok">{data.phase}</StatusLabel></div>
             {data.unit && <div className="muted">{data.unit.kind === "GEMEENTE" ? "Gemeente" : "Wijk"} {data.unit.name}</div>}
             {data.function?.needsReview && (
               <div className="badge bad" role="note" style={{ whiteSpace: "normal", borderRadius: 12, marginTop: 6 }}>
@@ -77,9 +109,13 @@ export function CallingDetail() {
               </div>
             )}
           </div>
+          {message && <div role="status" className="glass panel">{message}</div>}
+          {data.me.isStaff && data.readyToProcess && (
+            <button className="btn btn-primary" disabled={busy} onClick={() => act(() => api.markProcessed(id), "Het voorstel is administratief verwerkt.")}>Administratief verwerkt</button>
+          )}
           {data.rounds.map((r) => (
             <section key={r.stage} className="glass card stack" aria-label={r.title}>
-              <div className="row between"><strong>{r.title}</strong><span className="badge">{r.state === "open" ? "Open" : r.state === "paused" ? "Gepauzeerd" : r.state === "done" ? "Afgerond" : "Nog niet gestart"}</span></div>
+              <div className="row between"><strong>{r.title}</strong><StatusLabel tone={r.state === "done" ? "ok" : r.state === "paused" ? "warn" : "neutral"}>{r.state === "open" ? "Open" : r.state === "paused" ? "Gepauzeerd" : r.state === "done" ? "Afgerond" : "Nog niet gestart"}</StatusLabel></div>
               {r.canRespond && (
                 <>
                   <span className="muted">{r.myResponse === null ? "Ondersteun je dit voorstel?" : r.myResponse ? "Je ondersteunt dit voorstel." : "Je ondersteunt dit voorstel niet."}</span>
@@ -92,19 +128,23 @@ export function CallingDetail() {
               {data.me.isStaff && r.state !== "upcoming" && r.participants.some((p) => p.support === null && !p.meeting && p.stillInvolved) && (
                 <button className="btn btn-ghost" disabled={busy} onClick={() => act(() => api.remind(id), (res) => `${res.sent} herinnering(en) verstuurd${res.skippedRecent ? `, ${res.skippedRecent} recent al herinnerd` : ""}.`)}>Iedereen herinneren die nog niet heeft gereageerd</button>
               )}
+              {data.me.isStaff && data.canRegisterGroupDecision?.[r.stage] && (
+                <GroupDecisionForm stage={r.stage} detail={data} busy={busy}
+                  onSubmit={(input) => act(() => api.groupDecision(id, { stage: r.stage, ...input }), "Het gezamenlijke besluit is vastgelegd.")} />
+              )}
               {data.me.isStaff && r.participants.map((p) => (
                 <div key={p.userId} className="stack">
                   <div className="row between">
-                    <span>{p.name}{!p.stillInvolved ? " (niet meer betrokken)" : ""}</span>
-                    <span className={`badge ${p.support === true || (p.support === null && p.meeting === "AKKOORD") ? "ok" : p.support === false ? "bad" : ""}`}>{participantLabel(p)}</span>
+                    <div className="grow">{p.name}{!p.stillInvolved ? " (niet meer betrokken)" : ""}</div>
+                    <StatusLabel tone={p.support === true || (p.support === null && p.meeting === "AKKOORD") ? "ok" : p.support === false ? "bad" : "neutral"}>{participantLabel(p)}</StatusLabel>
+                    {p.stillInvolved && r.state !== "done" && r.state !== "upcoming" && (
+                      <ActionMenu label={`Acties voor ${p.name}`} disabled={busy} items={[
+                        { id: "remind", label: "Herinner", icon: MENU_ICONS.remind, hidden: !(p.support === null && !p.meeting), onSelect: () => void act(() => api.remind(id, p.userId), `${p.name} is herinnerd.`) },
+                        { id: "reinvite", label: "Opnieuw vragen", icon: MENU_ICONS.undo, hidden: p.support !== false, onSelect: () => void act(() => api.reinvite(id, p.userId), `${p.name} is opnieuw om ondersteuning gevraagd.`) },
+                        { id: "remove", label: "Uit ronde halen…", icon: MENU_ICONS.ban, danger: true, onSelect: () => void removeFromRound(p.userId, p.name) },
+                      ]} />
+                    )}
                   </div>
-                  {p.stillInvolved && r.state !== "done" && r.state !== "upcoming" && (
-                    <div className="row">
-                      {p.support === null && !p.meeting && <button className="btn btn-ghost btn-small" disabled={busy} aria-label={`Herinner ${p.name}`} onClick={() => act(() => api.remind(id, p.userId), `${p.name} is herinnerd.`)}>Herinner</button>}
-                      {p.support === false && <button className="btn btn-ghost btn-small" disabled={busy} aria-label={`Vraag ${p.name} opnieuw`} onClick={() => act(() => api.reinvite(id, p.userId), `${p.name} is opnieuw om ondersteuning gevraagd.`)}>Opnieuw vragen</button>}
-                      <button className="btn btn-ghost btn-small" disabled={busy} aria-label={`Verwijder ${p.name} uit de ronde`} onClick={() => act(() => api.removeParticipant(id, p.userId), `${p.name} is uit de ronde gehaald.`)}>Uit ronde</button>
-                    </div>
-                  )}
                 </div>
               ))}
             </section>
@@ -120,10 +160,6 @@ export function CallingDetail() {
               )}
             </section>
           )}
-          {data.me.isStaff && (["PRESIDIUM", "HOGERAAD"] as const).filter((st) => data.canRegisterGroupDecision?.[st]).map((st) => (
-            <GroupDecisionForm key={st} stage={st} detail={data} busy={busy}
-              onSubmit={(input) => act(() => api.groupDecision(id, { stage: st, ...input }), "Het gezamenlijke besluit is vastgelegd.")} />
-          ))}
           {(data.groupDecisions ?? []).map((d) => (
             <section key={d.stage} className="glass card stack" aria-label={`Gezamenlijk besluit ${d.stage === "PRESIDIUM" ? "presidium" : "hoge raad"}`}>
               <strong>Gezamenlijk besluit {d.stage === "PRESIDIUM" ? "ringpresidium" : "hoge raad"} (vergadering)</strong>
@@ -150,26 +186,6 @@ export function CallingDetail() {
               ))}
             </section>
           )}
-          {data.me.isStaff && (data.readyToProcess || data.canDelete) && (
-            <section className="glass card stack" aria-label="Beheer">
-              {data.readyToProcess && <button className="btn btn-primary" disabled={busy} onClick={() => act(() => api.markProcessed(id), "Het voorstel is administratief verwerkt.")}>Administratief verwerkt</button>}
-              {data.canDelete && !confirmDelete && <button className="btn btn-ghost" disabled={busy} onClick={() => setConfirmDelete(true)}>Voorstel definitief verwijderen…</button>}
-              {data.canDelete && confirmDelete && (
-                <div className="stack" role="alertdialog" aria-label="Bevestig verwijderen">
-                  <span>Dit verwijdert het voorstel en alle bijbehorende gegevens definitief. Dit kan niet ongedaan worden gemaakt.</span>
-                  <div className="row">
-                    <button className="btn btn-ghost" onClick={() => setConfirmDelete(false)}>Annuleren</button>
-                    <button className="btn btn-danger" disabled={busy} onClick={async () => {
-                      setBusy(true);
-                      try { await api.deleteCalling(id, true); navigate("/voorstellen", { replace: true }); }
-                      catch (err) { setMessage(err instanceof ApiRequestError ? err.message : "Er ging iets mis."); setBusy(false); }
-                    }}>Definitief verwijderen</button>
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
-          {message && <div role="status" className="glass panel">{message}</div>}
         </>
       )}
     </div>
@@ -192,7 +208,7 @@ function TaskRow({ task, users, busy, restricted = false, onAssign, onExternal, 
     <div className="stack">
       <div className="row between">
         <strong>{task.label}</strong>
-        <span className={`badge ${task.doneAt ? "ok" : ""}`}>{task.doneAt ? `Gedaan${task.doneBy ? ` door ${task.doneBy}` : ""}` : "Open"}</span>
+        <StatusLabel tone={task.doneAt ? "ok" : "neutral"}>{task.doneAt ? `Gedaan${task.doneBy ? ` door ${task.doneBy}` : ""}` : "Open"}</StatusLabel>
       </div>
       {task.canAssign && !task.doneAt ? (
         <div>
@@ -253,16 +269,18 @@ function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
 
   if (!open) return <button className="btn btn-ghost" onClick={() => setOpen(true)}>Gezamenlijk akkoord {label} registreren (vergadering)</button>;
   const members = round?.participants ?? [];
+  const close = () => setOpen(false);
   const valid = agreed && decidedOn && (!hasNegative || (resolveNegative && resolutionNote.trim().length >= 10)) && present.length > 0 && (stage === "PRESIDIUM" || !!presiding);
   return (
-    <form className="glass card stack" aria-label={`Gezamenlijk akkoord ${label}`} onSubmit={(e) => {
+    <Sheet title={`Gezamenlijk akkoord ${label}`} onClose={close}>
+    <form className="stack" aria-label={`Gezamenlijk akkoord ${label}`} onSubmit={(e) => {
       e.preventDefault();
+      close(); // de uitkomst (of fout) verschijnt bovenaan de pagina; de ingevulde gegevens blijven bewaard
       onSubmit({
         decidedOn, agreed, note: note || undefined, resolveNegative: hasNegative ? resolveNegative : undefined, resolutionNote: hasNegative ? resolutionNote : undefined,
         ...(stage === "HOGERAAD" ? { presidingUserId: presiding, presentUserIds: present, absentUserIds: absent } : { presentUserIds: present }),
       });
     }}>
-      <strong>Gezamenlijk akkoord {label}</strong>
       <span className="muted">Registreer alleen een besluit dat daadwerkelijk in een vergadering is genomen. Er worden geen reacties namens anderen vastgelegd; afwezigheid geldt nooit als ondersteuning.</span>
       <div><label htmlFor={`gd-date-${stage}`}>Datum van het besluit</label><input id={`gd-date-${stage}`} type="date" value={decidedOn} onChange={(e) => setDecidedOn(e.target.value)} required /></div>
       {stage === "PRESIDIUM" && (
@@ -297,8 +315,9 @@ function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
       )}
       <label className="row"><input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /> Het {label} heeft dit voorstel in de vergadering akkoord bevonden</label>
       {stage === "PRESIDIUM" && <span className="muted">Na het vastleggen wacht het voorstel op een aparte, expliciete vrijgave aan de hoge raad.</span>}
-      <div className="row"><button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>Annuleren</button><button className="btn btn-primary" disabled={busy || !valid}>Besluit vastleggen</button></div>
+      <div className="row"><button type="button" className="btn btn-ghost" onClick={close}>Annuleren</button><button className="btn btn-primary" disabled={busy || !valid}>Besluit vastleggen</button></div>
     </form>
+    </Sheet>
   );
 }
 

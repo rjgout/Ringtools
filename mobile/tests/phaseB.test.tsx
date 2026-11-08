@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { ApiClient, ApiRequestError } from "../src/lib/api";
 
 const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../src/lib/auth", () => ({ useAuth: () => auth.value }));
 
+import { renderUi } from "./ui";
 const { UserManager } = await import("../src/screens/UserManager");
 
 afterEach(cleanup);
@@ -37,7 +38,7 @@ describe("Gebruikersbeheer in de app", () => {
     });
     const reauth = vi.fn(async () => {});
     auth.value = { api: { ringUsers: vi.fn(async () => ({ users })), updateRingUser }, reauth, requestReauthCode: vi.fn(async () => {}) };
-    render(<UserManager ringId="r1" />);
+    renderUi(<UserManager ringId="r1" />);
     fireEvent.click(await screen.findByLabelText("Wijzig Anna"));
     fireEvent.click(screen.getByLabelText(/Ringbeheerder/));
     fireEvent.click(screen.getByRole("button", { name: "Opslaan" }));
@@ -54,7 +55,7 @@ describe("Gebruikersbeheer in de app", () => {
       api: { ringUsers: vi.fn(async () => ({ users })), updateRingUser: vi.fn(async () => { throw new ApiRequestError(400, "Een ring moet altijd minstens één actieve ringbeheerder hebben.", "ring"); }) },
       reauth: vi.fn(), requestReauthCode: vi.fn(),
     };
-    render(<UserManager ringId="r1" />);
+    renderUi(<UserManager ringId="r1" />);
     fireEvent.click(await screen.findByLabelText("Wijzig Anna"));
     fireEvent.click(screen.getByRole("button", { name: "Opslaan" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/minstens één actieve ringbeheerder/);

@@ -15,6 +15,8 @@ import { AppLockGate, useAppLock } from "./components/AppLock";
 import { appLock, nativeLockSources } from "./lib/appLockSources";
 import { nativeCapabilities } from "./lib/buildProfile";
 import { ErrorState, NavBar, Spinner, TabBar } from "./components/ui";
+import { ConfirmProvider } from "./components/Dialog";
+import { closeTopOverlay } from "./lib/overlays";
 import { backAction, isTabRoot, navTitle, parentPath, titleOf } from "./lib/navigation";
 import { Beheer } from "./screens/Beheer";
 import { Login } from "./screens/Login";
@@ -79,6 +81,8 @@ function Shell() {
   /** Eén terugactie voor de navigatiebalk én de Android-terugknop: een stap terug in de app, of naar het bovenliggende scherm als er geen eerdere stap is. */
   const hasHistory = location.key !== "default";
   const goBack = useCallback((): boolean => {
+    // Een open menu, dialoog of sheet sluit eerst; pas daarna navigeert de terugactie.
+    if (closeTopOverlay()) return true;
     const action = backAction(location.pathname, hasHistory);
     if (!action) return false;
     if (action.kind === "history") navigate(-1);
@@ -197,7 +201,9 @@ export default function App() {
       <AppLockGate controller={appLock} sources={nativeLockSources}>
         <HashRouter>
           <AuthProvider>
-            <Shell />
+            <ConfirmProvider>
+              <Shell />
+            </ConfirmProvider>
           </AuthProvider>
         </HashRouter>
       </AppLockGate>

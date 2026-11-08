@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../src/lib/auth", () => ({ useAuth: () => auth.value }));
 vi.mock("../src/components/Reauth", () => ({ useReauth: () => ({ run: (fn: () => Promise<unknown>) => fn(), dialog: null }) }));
 
+import { renderUi } from "./ui";
 const { CatalogOverview, procedureKind } = await import("../src/screens/CatalogOverview");
 const { UserManager } = await import("../src/screens/UserManager");
 
@@ -36,7 +37,7 @@ describe("Catalogusoverzicht onder Inrichting", () => {
   it("toont per organisatie de functies met procedure, bevoegdheden, steunverlening, aanstellingsplicht, handboek en controlepunten; alleen lezen", async () => {
     const catalog = vi.fn(async () => CATALOG);
     auth.value = { api: { catalog }, ring: { id: "r1" } };
-    render(<MemoryRouter><CatalogOverview ringId="r1" /></MemoryRouter>);
+    renderUi(<MemoryRouter><CatalogOverview ringId="r1" /></MemoryRouter>);
     expect(await screen.findByText("Ringadministrateur")).toBeTruthy();
     expect(screen.getByText(/Alleen lezen/)).toBeTruthy();
     expect(screen.getByText(/een bestaand dossier behoudt de procedure die bij indienen is vastgelegd/)).toBeTruthy();
@@ -67,7 +68,7 @@ describe("Catalogusoverzicht onder Inrichting", () => {
   it("zoekt, filtert op organisatie (server) en soort regel (client)", async () => {
     const catalog = vi.fn(async () => CATALOG);
     auth.value = { api: { catalog }, ring: { id: "r1" } };
-    render(<MemoryRouter><CatalogOverview ringId="r1" /></MemoryRouter>);
+    renderUi(<MemoryRouter><CatalogOverview ringId="r1" /></MemoryRouter>);
     await screen.findByText("Ringadministrateur");
     fireEvent.change(screen.getByLabelText("Soort regel"), { target: { value: "BUITEN" } });
     expect(screen.queryByText("Ringadministrateur")).toBeNull();
@@ -87,7 +88,7 @@ describe("Gebruikersbeheer: gestructureerde kerkelijke functie", () => {
   function setup(users: unknown[]) {
     const api = { ringUsers: vi.fn(async () => ({ users })), addRingUser: vi.fn(async () => ({ userId: "n", name: "N", joinedRounds: 0 })), updateRingUser: vi.fn(async () => ({ ok: true, joinedRounds: 0 })) };
     auth.value = { api, ring: { id: "r1" } };
-    render(<MemoryRouter><UserManager ringId="r1" /></MemoryRouter>);
+    renderUi(<MemoryRouter><UserManager ringId="r1" /></MemoryRouter>);
     return api;
   }
 

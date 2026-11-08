@@ -174,7 +174,7 @@ bijwerken van deze tabel en van `docs/MOBILE.md`.
 
 ## Design
 
-Aan/uit-keuzes zijn overal schakelaars (iOS-stijl), geen vinkjes: `input[type="checkbox"]` wordt globaal als schakelaar getekend (`mobile/src/styles.css`, `src/app/globals.css`).
+**Ontwerpstandaard (Figma "Ringtools UI Kit"; `docs/ONTWERPSTANDAARD.md`):** secundaire acties staan in een contextmenu (`ActionMenu`) bij de rij of kaart, nooit als knoppen onderaan een lange pagina; verwijderen/deactiveren/intrekken/uitloggen gaan via de ene app-eigen bevestigingsdialoog (`useConfirm`, geen `window.confirm`); formulieren bij een rij openen als `Sheet`; statussen als `StatusLabel`; aanraakdoel ≥ 48 px. Nieuwe schermen gebruiken deze componenten (`mobile/src/components/Menu.tsx`, `Dialog.tsx`, `ui.tsx`). Aan/uit-keuzes zijn overal schakelaars (iOS-stijl), geen vinkjes: `input[type="checkbox"]` wordt globaal als schakelaar getekend (`mobile/src/styles.css`, `src/app/globals.css`).
 
 Mobile-first; Liquid Glass-stijl behouden (tokens in `src/app/globals.css` en `mobile/src/styles.css`); iPhone, iPad en
 Android; veilige schermranden (`env(safe-area-inset-*)`); dark mode; correct toetsenbord- en navigatiegedrag (Android-

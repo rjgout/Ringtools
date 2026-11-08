@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
-import { CallingLink, ErrorState, Spinner } from "../components/ui";
+import { CallingLink, ErrorState, PageHead, Spinner, StatusLabel } from "../components/ui";
 
 export function Callings() {
   const { api, ring } = useAuth();
@@ -10,14 +10,13 @@ export function Callings() {
   const drafts = useLoad(() => (isStaff ? api.drafts(ring!.id) : Promise.resolve({ drafts: [] })), [ring?.id]);
   return (
     <div className="stack">
-      <h1>Voorstellen</h1>
-      {isStaff && <Link to="/voorstellen/nieuw" className="btn btn-primary">Nieuw voorstel</Link>}
+      <PageHead title="Voorstellen" subtitle={ring ? `Alle voorstellen van ${ring.name}` : undefined} action={isStaff ? <Link to="/voorstellen/nieuw" className="btn btn-primary">Nieuw voorstel</Link> : undefined} />
       {drafts.data && drafts.data.drafts.length > 0 && (
         <section className="stack" aria-label="Concepten">
           <h2>Concepten</h2>
           {drafts.data.drafts.map((d) => (
             <Link key={d.id} to={`/voorstellen/concept/${d.id}`} className="glass panel">
-              <div className="row between"><div className="grow"><strong>{d.personName || "Naam nog niet ingevuld"}</strong><div className="muted">{d.unitName ?? "Wijk/gemeente nog niet gekozen"}</div></div><span className="badge">Concept</span></div>
+              <div className="row between"><div className="grow"><strong>{d.personName || "Naam nog niet ingevuld"}</strong><div className="muted">{d.unitName ?? "Wijk/gemeente nog niet gekozen"}</div></div><StatusLabel>Concept</StatusLabel></div>
             </Link>
           ))}
         </section>

@@ -219,3 +219,8 @@ Alle routes onder `/api/mobile/v1`, bearer-sessie met MFA-gate; webmin krijgt ov
 ### Inlogmail opnieuw versturen (beheerder)
 
 `POST /rings/:id/users/:userId/login-mail` – ringbeheerder van de eigen ring, recente MFA (`reauth-required`), alleen bestaande actieve leden (anders 404), afkoelperiode 5 min en verzendlimiet per adres (429), mislukte verzending `502 mail-failed`. Antwoord `{ ok, message }`: nooit een code of link. `ManagedUser` heeft hiervoor `canResendLoginMail` en `loginMailAvailableAt`. Audit: `SecurityEvent LOGIN_MAIL_RESENT_BY_MANAGER`.
+
+
+## Ontwerpstandaard
+
+Uniforme bediening (contextmenu, bevestigingsdialoog, sheet, statuslabels, 48 px-doelen): zie [`docs/ONTWERPSTANDAARD.md`](ONTWERPSTANDAARD.md).

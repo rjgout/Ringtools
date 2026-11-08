@@ -5,6 +5,7 @@ import { ApiClient } from "../src/lib/api";
 const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../src/lib/auth", () => ({ useAuth: () => auth.value }));
 
+import { answerDialog, pickMenuItem, renderUi } from "./ui";
 const { RingSetup } = await import("../src/screens/RingSetup");
 const { CallingPicker } = await import("../src/components/CallingPicker");
 
@@ -48,7 +49,7 @@ describe("Ringinrichting in de app", () => {
   it("toont de voortgang, een vacature en kan een verantwoordelijk hogeraadslid koppelen (alleen hogeraadsleden te kiezen)", async () => {
     const api = baseApi();
     auth.value = { api };
-    render(<RingSetup ringId="r1" />);
+    renderUi(<RingSetup ringId="r1" />);
     expect(await screen.findByText(/Zonder hogeraadsleden blijft elk voorstel/)).toBeTruthy();
     expect(await screen.findByText("Vacature")).toBeTruthy();
     const select = (await screen.findByLabelText("Verantwoordelijk hogeraadslid", { selector: "#w1-responsibleUserId" })) as HTMLSelectElement;
@@ -61,7 +62,7 @@ describe("Ringinrichting in de app", () => {
     const api = baseApi();
     api.createUnit = vi.fn(async () => { throw new (await import("../src/lib/api")).ApiRequestError(400, "Er bestaat al een wijk of gemeente met deze naam.", "ring"); });
     auth.value = { api };
-    render(<RingSetup ringId="r1" />);
+    renderUi(<RingSetup ringId="r1" />);
     fireEvent.click(await screen.findByRole("button", { name: "Gemeente" }));
     fireEvent.change(screen.getByLabelText("Naam"), { target: { value: "Proef" } });
     fireEvent.click(screen.getByRole("button", { name: "Toevoegen" }));
@@ -83,7 +84,7 @@ describe("CallingPicker: zoeken en selecteren", () => {
   it("zoekt, selecteert, stelt de organisatie voor en laat roepingen buiten Ringtools niet kiezen", async () => {
     auth.value = { api: { catalog, createCustomCalling: vi.fn() } };
     const onChange = vi.fn();
-    render(<CallingPicker ringId="r1" value={null} onChange={onChange} />);
+    renderUi(<CallingPicker ringId="r1" value={null} onChange={onChange} />);
     const presidentOption = await screen.findByRole("option", { name: /Ringpresident/ });
     expect((presidentOption as HTMLButtonElement).disabled).toBe(true);
     expect(presidentOption.textContent).toMatch(/buiten Ringtools/);
@@ -100,7 +101,7 @@ describe("CallingPicker: zoeken en selecteren", () => {
     auth.value = { api: { catalog, createCustomCalling: vi.fn() } };
     let current: Record<string, unknown> | null = { code: "eigen-1", source: "EIGEN", name: "Koorleider", category: "Muziek", customConfirmed: false, requiresConfirmation: true };
     const onChange = vi.fn((v) => { current = v; });
-    const { rerender } = render(<CallingPicker ringId="r1" value={current as never} onChange={onChange} />);
+    const { rerender } = renderUi(<CallingPicker ringId="r1" value={current as never} onChange={onChange} />);
     fireEvent.click(await screen.findByLabelText(/bevoegde leiding heeft de procedure/));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ source: "EIGEN", customConfirmed: true }));
     rerender(<CallingPicker ringId="r1" value={current as never} onChange={onChange} />);
@@ -110,7 +111,7 @@ describe("CallingPicker: zoeken en selecteren", () => {
     auth.value = { api: { catalog, createCustomCalling: vi.fn() } };
     const onChange = vi.fn();
     const chosen = { code: "x", source: "STANDAARD", name: "Ringtolk", category: "Technologie", customConfirmed: false, requiresConfirmation: false };
-    render(<CallingPicker ringId="r1" value={chosen as never} onChange={onChange} />);
+    renderUi(<CallingPicker ringId="r1" value={chosen as never} onChange={onChange} />);
     const status = await screen.findByRole("status");
     expect(status.textContent).toContain("Gekozen: Ringtolk");
     expect(status.textContent).not.toContain("·");
@@ -123,7 +124,7 @@ describe("CallingPicker: zoeken en selecteren", () => {
     const createCustomCalling = vi.fn(async () => ({ id: "nieuw-id" }));
     auth.value = { api: { catalog, createCustomCalling } };
     const onChange = vi.fn();
-    render(<CallingPicker ringId="r1" value={null} onChange={onChange} />);
+    renderUi(<CallingPicker ringId="r1" value={null} onChange={onChange} />);
     await screen.findByRole("option", { name: /Ringtolk/ });
     fireEvent.click(screen.getByRole("button", { name: "Eigen roeping toevoegen" }));
     fireEvent.change(screen.getByLabelText("Naam van de roeping"), { target: { value: "Fietscoördinator" } });

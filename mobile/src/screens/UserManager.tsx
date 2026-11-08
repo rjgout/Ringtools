@@ -1,10 +1,12 @@
+import { ActionMenu, MENU_ICONS } from "../components/Menu";
+import { Sheet, useConfirm } from "../components/Dialog";
 import { useState } from "react";
 import type { AppointAuthority, ChurchFunctionCode, InvitationItem, InvitationStatus, ManagedUser, Role } from "@shared/api-types";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
 import { useReauth } from "../components/Reauth";
-import { ErrorState, Spinner } from "../components/ui";
+import { ErrorState, Spinner, StatusLabel } from "../components/ui";
 import { accessInfo, formatWhen } from "../lib/accessStatus";
 
 const ROLES: { value: Role; label: string }[] = [
@@ -46,6 +48,7 @@ export function UserManager({ ringId }: { ringId: string }) {
   const { api } = useAuth();
   const { data, error, loading, reload } = useLoad(() => api.ringUsers(ringId), [ringId]);
   const { run, dialog } = useReauth();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<ManagedUser | "new" | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [busy, setBusy] = useState(false);
@@ -59,9 +62,35 @@ export function UserManager({ ringId }: { ringId: string }) {
     setDraft(target === "new" ? EMPTY : { name: target.name, email: target.email, churchFunction: target.churchFunction, churchFunctionCode: target.churchFunctionCode ?? "ONBEKEND", role: target.role, isRingManager: target.isRingManager, active: target.active, appointAuthority: target.appointAuthority ?? "NONE" });
   }
 
+  const deactivateText = (name: string) => ({
+    title: `${name} deactiveren?`,
+    message: `${name} kan daarna niet meer inloggen in deze ring en ziet geen voorstellen meer. Gegevens en eerdere reacties blijven bewaard.`,
+    detail: "Je kunt het account later weer activeren.",
+    confirmLabel: "Deactiveren",
+    danger: true,
+  });
+
+  /** Snel (de)activeren vanuit het menu; de server blijft bepalen of dit mag (bijv. minstens één actieve ringbeheerder). */
+  async function setActive(u: ManagedUser, active: boolean) {
+    if (busy) return;
+    if (!active && !(await confirm(deactivateText(u.name)))) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await run(() => api.updateRingUser(u.membershipId, { churchFunction: u.churchFunction, churchFunctionCode: u.churchFunctionCode ?? "ONBEKEND", role: u.role, isRingManager: u.isRingManager, active, appointAuthority: u.appointAuthority ?? "NONE", name: u.name, email: u.email }));
+      setNotice(active ? `${u.name} is weer actief.` : `${u.name} is gedeactiveerd.`);
+      await reload();
+    } catch (err) {
+      setNotice(err instanceof ApiRequestError && err.code !== "cancelled" ? err.message : err instanceof ApiRequestError ? null : "Er ging iets mis.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!editing || busy) return;
+    if (editing !== "new" && editing.active && !draft.active && !(await confirm(deactivateText(draft.name || editing.name)))) return;
     setBusy(true);
     setMessage(null);
     // Omschrijving is vrije tekst (geen bevoegdheid); zonder omschrijving gebruiken we de naam van de gekozen functie.
@@ -128,28 +157,36 @@ export function UserManager({ ringId }: { ringId: string }) {
       <Invitations items={invites.data?.invitations ?? []} error={invites.error} onChanged={async (text) => { if (text) setNotice(text); await invites.reload(); await reload(); }} />
       {loading && !data && <Spinner />}
       {error && <ErrorState error={error} onRetry={reload} />}
-      {data?.users.map((u) => (
-        <button key={u.membershipId} className="glass panel" onClick={() => open(u)} aria-label={`Wijzig ${u.name}`}>
-          <div className="row between">
-            <div className="grow" style={{ textAlign: "left" }}>
+      {data?.users.map((u) => {
+        const info = accessInfo(u);
+        return (
+          <div key={u.membershipId} className="glass item-row">
+            <button type="button" className="item-main" onClick={() => open(u)} aria-label={`Wijzig ${u.name}`}>
               <strong>{u.name}</strong>
               <div className="muted">{functionLabel(u.churchFunctionCode)}{u.churchFunction && u.churchFunctionCode === "ANDERS" ? ` – ${u.churchFunction}` : ""} · Rol: {ROLES.find((r) => r.value === u.role)?.label}</div>
               {u.churchFunctionCode === "ONBEKEND" && (u.role === "RINGPRESIDIUM" || u.role === "HOGERAAD") && <div className="muted">Kerkelijke functie nog vast te leggen</div>}
-              {accessInfo(u).lines.map((l) => <div key={l} className="muted">{l}</div>)}
-            </div>
-            <div className="stack" style={{ alignItems: "flex-end" }}>
-              {u.isRingManager && <span className="badge ok">Ringbeheerder</span>}
-              {u.appointAuthority && AUTHORITY_LABELS[u.appointAuthority] && <span className="badge">{AUTHORITY_LABELS[u.appointAuthority]}</span>}
-              <span className={`badge${u.activated ? " ok" : ""}`}>{accessInfo(u).badge}</span>
-              {!u.active && <span className="badge bad">Inactief</span>}
-            </div>
+              {info.lines.map((l) => <div key={l} className="muted">{l}</div>)}
+              <div className="row" style={{ flexWrap: "wrap", marginTop: 6 }}>
+                {u.isRingManager && <StatusLabel tone="ok">Ringbeheerder</StatusLabel>}
+                {u.appointAuthority && AUTHORITY_LABELS[u.appointAuthority] && <StatusLabel>{AUTHORITY_LABELS[u.appointAuthority]}</StatusLabel>}
+                <StatusLabel tone={u.activated ? "ok" : "neutral"}>{info.badge}</StatusLabel>
+                {!u.active && <StatusLabel tone="bad">Inactief</StatusLabel>}
+              </div>
+            </button>
+            <ActionMenu label={`Acties voor ${u.name}`} disabled={busy} items={[
+              { id: "edit", label: "Wijzigen", icon: MENU_ICONS.edit, onSelect: () => open(u) },
+              { id: "login-mail", label: "Inlogmail opnieuw versturen", icon: MENU_ICONS.mail, hidden: !info.loginMail.show, disabled: !!info.loginMail.note, onSelect: () => void sendLoginMail(u.userId) },
+              { id: "resend", label: "Uitnodiging opnieuw versturen", icon: MENU_ICONS.send, hidden: !info.resendInvitationId, disabled: !!info.resendNote, onSelect: () => void resend(info.resendInvitationId!) },
+              { id: "deactivate", label: "Deactiveren…", icon: MENU_ICONS.ban, danger: true, hidden: !u.active, onSelect: () => void setActive(u, false) },
+              { id: "activate", label: "Heractiveren", icon: MENU_ICONS.undo, hidden: u.active, onSelect: () => void setActive(u, true) },
+            ]} />
           </div>
-        </button>
-      ))}
+        );
+      })}
 
       {editing && (
-        <form className="glass card stack" onSubmit={save} aria-label={editing === "new" ? "Iemand uitnodigen" : "Gebruiker wijzigen"}>
-          <strong>{editing === "new" ? "Iemand uitnodigen" : "Gebruiker wijzigen"}</strong>
+        <Sheet title={editing === "new" ? "Iemand uitnodigen" : "Gebruiker wijzigen"} onClose={() => setEditing(null)}>
+        <form className="stack" onSubmit={save} aria-label={editing === "new" ? "Iemand uitnodigen" : "Gebruiker wijzigen"}>
           {editing === "new" && <span className="muted">De persoon krijgt een e-mail met een link om het account te activeren.</span>}
           <div><label htmlFor="u-name">Naam</label><input id="u-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} required minLength={2} /></div>
           <div><label htmlFor="u-email">E-mailadres</label><input id="u-email" type="email" autoCapitalize="none" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} required /></div>
@@ -192,6 +229,7 @@ export function UserManager({ ringId }: { ringId: string }) {
             <button className="btn btn-primary" disabled={busy}>{busy ? "Bezig…" : editing === "new" ? "Uitnodiging versturen" : "Opslaan"}</button>
           </div>
         </form>
+        </Sheet>
       )}
     </div>
   );
@@ -239,6 +277,7 @@ const STATUS_LABEL: Record<InvitationStatus, { text: string; cls: string }> = {
 function Invitations({ items, error, onChanged }: { items: InvitationItem[]; error: Error | null; onChanged: (notice?: string) => Promise<void> }) {
   const { api } = useAuth();
   const { run, dialog } = useReauth();
+  const confirm = useConfirm();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [show, setShow] = useState(false);
@@ -247,8 +286,18 @@ function Invitations({ items, error, onChanged }: { items: InvitationItem[]; err
   const shown = show ? items : open;
   if (error || (items.length === 0)) return null;
 
-  async function act(id: string, kind: "resend" | "revoke") {
+  async function act(id: string, kind: "resend" | "revoke", name = "") {
     if (busyId) return;
+    if (kind === "revoke") {
+      const ok = await confirm({
+        title: "Uitnodiging intrekken?",
+        message: `De uitnodiging${name ? ` voor ${name}` : ""} werkt daarna niet meer. De persoon kan het account dan niet met deze link of code activeren.`,
+        detail: "Je kunt later een nieuwe uitnodiging versturen.",
+        confirmLabel: "Intrekken",
+        danger: true,
+      });
+      if (!ok) return;
+    }
     setBusyId(id);
     setMessage(null);
     try {
@@ -283,14 +332,14 @@ function Invitations({ items, error, onChanged }: { items: InvitationItem[]; err
               {i.resendAvailableAt && new Date(i.resendAvailableAt).getTime() > Date.now() && <div className="muted">Opnieuw versturen kan vanaf {formatWhen(i.resendAvailableAt)}.</div>}
               {i.resendBlockedReason === "LIMIET" && <div className="muted">Maximaal aantal verzendingen bereikt. Trek in en nodig opnieuw uit.</div>}
             </div>
-            <span className={`badge ${STATUS_LABEL[i.status].cls}`}>{STATUS_LABEL[i.status].text}</span>
+            <StatusLabel tone={i.status === "GEACTIVEERD" ? "ok" : i.status === "VERLOPEN" || i.status === "NIET_VERSTUURD" ? "bad" : "neutral"}>{STATUS_LABEL[i.status].text}</StatusLabel>
+            {(i.canResend || i.canRevoke) && (
+              <ActionMenu label={`Acties voor uitnodiging van ${i.name}`} disabled={busyId === i.id} items={[
+                { id: "resend", label: i.status === "VERSTUURD" ? "Herinneren" : "Opnieuw versturen", icon: MENU_ICONS.send, hidden: !i.canResend, disabled: !!i.resendAvailableAt && new Date(i.resendAvailableAt).getTime() > Date.now(), onSelect: () => void act(i.id, "resend") },
+                { id: "revoke", label: "Intrekken…", icon: MENU_ICONS.ban, danger: true, hidden: !i.canRevoke, onSelect: () => void act(i.id, "revoke", i.name) },
+              ]} />
+            )}
           </div>
-          {(i.canResend || i.canRevoke) && (
-            <div className="row" style={{ marginTop: 8 }}>
-              {i.canResend && <button className="btn" disabled={busyId === i.id || (!!i.resendAvailableAt && new Date(i.resendAvailableAt).getTime() > Date.now())} onClick={() => void act(i.id, "resend")}>{i.status === "VERSTUURD" ? "Herinneren" : "Opnieuw versturen"}</button>}
-              {i.canRevoke && <button className="btn btn-ghost" disabled={busyId === i.id} onClick={() => void act(i.id, "revoke")}>Intrekken</button>}
-            </div>
-          )}
         </div>
       ))}
     </section>

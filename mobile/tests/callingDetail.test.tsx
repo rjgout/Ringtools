@@ -7,6 +7,7 @@ const auth = vi.hoisted(() => ({
 }));
 vi.mock("../src/lib/auth", () => ({ useAuth: () => auth.value }));
 
+import { renderUi } from "./ui";
 const { CallingDetail } = await import("../src/screens/CallingDetail");
 
 const detail = (ringId: string) => ({
@@ -18,7 +19,7 @@ function setup(activeRing: string, calling: string) {
   const selectRing = vi.fn(async () => {});
   const api = { calling: vi.fn(async () => detail(calling)) };
   auth.value = { api, ring: { id: activeRing }, selectRing };
-  const view = render(
+  const view = renderUi(
     <MemoryRouter initialEntries={["/roepingen/c1"]}>
       <Routes><Route path="/roepingen/:id" element={<CallingDetail />} /></Routes>
     </MemoryRouter>
@@ -53,7 +54,7 @@ describe("CallingDetail: dubbel tikken tijdens opslaan", () => {
       markProcessed: vi.fn(async () => ({ ok: true })),
     };
     auth.value = { api, ring: { id: "ring-A" }, selectRing: vi.fn(async () => {}) };
-    render(<MemoryRouter initialEntries={["/roepingen/c1"]}><Routes><Route path="/roepingen/:id" element={<CallingDetail />} /></Routes></MemoryRouter>);
+    renderUi(<MemoryRouter initialEntries={["/roepingen/c1"]}><Routes><Route path="/roepingen/:id" element={<CallingDetail />} /></Routes></MemoryRouter>);
     const btn = await screen.findByRole("button", { name: "Ondersteunen" });
     act(() => { btn.click(); btn.click(); }); // twee tikken binnen dezelfde render, vóór de knop uitgeschakeld kan worden
     resolveVote();

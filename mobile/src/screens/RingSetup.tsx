@@ -3,7 +3,9 @@ import type { CatalogResult, UnitInfo } from "@shared/api-types";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
-import { ErrorState, Spinner } from "../components/ui";
+import { ErrorState, Spinner, StatusLabel } from "../components/ui";
+import { ActionMenu, MENU_ICONS } from "../components/Menu";
+import { useConfirm } from "../components/Dialog";
 import { CatalogOverview } from "./CatalogOverview";
 
 /** Ringinrichting: voortgang, wijken en gemeenten (met hogeraadskoppeling) en eigen roepingen. Voor ringbeheerder en webmin. */
@@ -90,6 +92,14 @@ function UnitRow({ unit, hogeraad, everyone, onChange }: {
   everyone: { userId: string; name: string }[];
   onChange: (input: Record<string, unknown>) => void;
 }) {
+  const confirm = useConfirm();
+  const toggleActive = async () => {
+    if (unit.active) {
+      const ok = await confirm({ title: `${unit.kind === "WIJK" ? "Wijk" : "Gemeente"} ${unit.name} deactiveren?`, message: "Deze eenheid is daarna niet meer te kiezen bij nieuwe voorstellen. Bestaande voorstellen blijven ongewijzigd.", detail: "Je kunt de eenheid later heractiveren.", confirmLabel: "Deactiveren", danger: true });
+      if (!ok) return;
+    }
+    onChange({ active: !unit.active });
+  };
   const select = (label: string, current: string, options: { userId: string; name: string }[], key: string, emptyLabel: string) => (
     <div>
       <label htmlFor={`${unit.id}-${key}`}>{label}</label>
@@ -103,9 +113,12 @@ function UnitRow({ unit, hogeraad, everyone, onChange }: {
     <div className="glass panel stack">
       <div className="row between">
         <strong>{unit.kind === "WIJK" ? "Wijk" : "Gemeente"} {unit.name}</strong>
-        <span className={`badge ${!unit.active ? "bad" : unit.responsibleStatus === "OK" ? "ok" : ""}`}>
+        <StatusLabel tone={!unit.active ? "bad" : unit.responsibleStatus === "OK" ? "ok" : "neutral"}>
           {!unit.active ? "Inactief" : unit.responsibleStatus === "OK" ? personLabel(unit.responsible) : unit.responsibleStatus === "VACANT" ? "Vacature" : "Verantwoordelijke niet meer actief"}
-        </span>
+        </StatusLabel>
+        <ActionMenu label={`Acties voor ${unit.kind === "WIJK" ? "wijk" : "gemeente"} ${unit.name}`} items={[
+          { id: "toggle", label: unit.active ? "Deactiveren…" : "Heractiveren", icon: unit.active ? MENU_ICONS.ban : MENU_ICONS.undo, danger: unit.active, onSelect: () => void toggleActive() },
+        ]} />
       </div>
       {unit.active && (
         <>
@@ -115,13 +128,13 @@ function UnitRow({ unit, hogeraad, everyone, onChange }: {
           {select("Standaard: aanstellen", unit.defaults.aanstellen?.id ?? "", everyone, "defaultAanstellenUserId", "Geen standaard")}
         </>
       )}
-      <button className="btn btn-ghost" onClick={() => onChange({ active: !unit.active })}>{unit.active ? "Deactiveren" : "Heractiveren"}</button>
     </div>
   );
 }
 
 function CustomCallings({ ringId }: { ringId: string }) {
   const { api } = useAuth();
+  const confirm = useConfirm();
   const list = useLoad(() => api.customCallings(ringId), [ringId]);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
@@ -155,7 +168,13 @@ function CustomCallings({ ringId }: { ringId: string }) {
       {list.data?.callings.map((c) => (
         <div key={c.id} className="row between">
           <span className="grow">{c.name} <span className="muted">· {c.category}</span></span>
-          <button className="btn btn-ghost" onClick={() => run(() => api.updateCustomCalling(c.id, { active: !c.active }))}>{c.active ? "Deactiveren" : "Activeren"}</button>
+          <ActionMenu label={`Acties voor ${c.name}`} items={[{
+            id: "toggle", label: c.active ? "Deactiveren…" : "Activeren", icon: c.active ? MENU_ICONS.ban : MENU_ICONS.undo, danger: c.active,
+            onSelect: () => void (async () => {
+              if (c.active && !(await confirm({ title: `${c.name} deactiveren?`, message: "Deze eigen roeping is daarna niet meer te kiezen bij nieuwe voorstellen. Bestaande voorstellen blijven ongewijzigd.", confirmLabel: "Deactiveren", danger: true }))) return;
+              await run(() => api.updateCustomCalling(c.id, { active: !c.active }));
+            })(),
+          }]} />
         </div>
       ))}
       <form className="stack" aria-label="Eigen roeping toevoegen" onSubmit={(e) => { e.preventDefault(); void run(async () => { await api.createCustomCalling(ringId, { name, category }); setName(""); }); }}>

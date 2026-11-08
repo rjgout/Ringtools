@@ -5,7 +5,9 @@ import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
 import { CallingPicker, type PickedCalling } from "../components/CallingPicker";
-import { ErrorState, Spinner } from "../components/ui";
+import { ErrorState, PageHead, Spinner } from "../components/ui";
+import { ActionMenu, MENU_ICONS } from "../components/Menu";
+import { useConfirm } from "../components/Dialog";
 
 type Link = { mode: AccountLinkMode; userId: string };
 type Adviser = { code: string; functionName: string; answer: FollowUpAnswer; name: string; reason: string; link: Link };
@@ -113,8 +115,11 @@ export function OntheffingForm() {
     }
   }
 
+  const confirm = useConfirm();
   async function onDelete() {
-    if (!id || !window.confirm("Dit concept definitief verwijderen?")) return;
+    if (!id) return;
+    const ok = await confirm({ title: "Concept verwijderen?", message: "Dit concept wordt definitief verwijderd. Er is nog niets ingediend of verstuurd.", detail: "Deze actie kan niet ongedaan worden gemaakt.", confirmLabel: "Verwijderen", danger: true });
+    if (!ok) return;
     try { await api.deleteOntheffing(id); navigate("/ontheffingen", { replace: true }); } catch (err) { setMessage(err instanceof ApiRequestError ? err.message : "Verwijderen lukt nu niet."); }
   }
 
@@ -123,8 +128,11 @@ export function OntheffingForm() {
 
   return (
     <div className="stack">
-      <h1>{id ? "Concept ontheffing" : "Nieuwe ontheffing"}</h1>
-      <span className="muted">Een concept is alleen voor jou zichtbaar en verstuurt niets. Naam handmatig invoeren; er wordt niets uit een ledenregister overgenomen.</span>
+      <PageHead
+        title={id ? "Concept ontheffing" : "Nieuwe ontheffing"}
+        subtitle="Een concept is alleen voor jou zichtbaar en verstuurt niets. Naam handmatig invoeren; er wordt niets uit een ledenregister overgenomen."
+        action={id ? <ActionMenu label="Acties voor dit concept" disabled={busy} items={[{ id: "delete", label: "Concept verwijderen…", icon: MENU_ICONS.trash, danger: true, onSelect: () => void onDelete() }]} /> : undefined}
+      />
       {(loaded.loading && !loaded.data && !!id) && <Spinner />}
       {loaded.error && <ErrorState error={loaded.error} onRetry={loaded.reload} />}
 
@@ -181,7 +189,6 @@ export function OntheffingForm() {
         <button type="button" className="btn btn-ghost" disabled={busy} onClick={onSave}>Concept opslaan</button>
         <button type="button" className="btn btn-primary" disabled={busy || !name.trim() || !picked || !unitId} onClick={onSubmit}>Indienen bij ringpresidium</button>
       </div>
-      {id && <button type="button" className="btn btn-ghost" onClick={onDelete}>Concept verwijderen</button>}
     </div>
   );
 }

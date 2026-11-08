@@ -4,7 +4,9 @@ import type { DraftView } from "@shared/api-types";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
-import { ErrorState, Spinner } from "../components/ui";
+import { ErrorState, PageHead, Spinner } from "../components/ui";
+import { ActionMenu, MENU_ICONS } from "../components/Menu";
+import { useConfirm } from "../components/Dialog";
 import { CallingPicker, type PickedCalling } from "../components/CallingPicker";
 
 type TaskKey = "roepen" | "ondersteunen" | "aanstellen";
@@ -114,7 +116,11 @@ export function NewCalling() {
       navigate(`/roepingen/${res.id}`, { replace: true });
     });
   };
-  const discard = () => run(async () => { if (draftId) await api.deleteDraft(draftId); navigate("/voorstellen", { replace: true }); });
+  const confirm = useConfirm();
+  const discard = async () => {
+    const ok = await confirm({ title: "Concept verwijderen?", message: "Dit concept wordt definitief verwijderd. Er is nog niets ingediend of verstuurd.", detail: "Deze actie kan niet ongedaan worden gemaakt.", confirmLabel: "Verwijderen", danger: true });
+    if (ok) await run(async () => { if (draftId) await api.deleteDraft(draftId); navigate("/voorstellen", { replace: true }); });
+  };
 
   const taskSelect = (task: TaskKey, label: string, restricted: boolean) => {
     const eligible = task === "roepen" ? sug?.eligible.roepen : task === "aanstellen" ? sug?.eligible.aanstellen : undefined;
@@ -150,8 +156,11 @@ export function NewCalling() {
 
   return (
     <form className="stack" onSubmit={submit}>
-      <h1>{draftId ? "Concept voorstel" : "Nieuw voorstel"}</h1>
-      <span className="muted">Ring: {ring?.name}. Een concept is alleen zichtbaar voor ringstaf en verstuurt niets.</span>
+      <PageHead
+        title={draftId ? "Concept voorstel" : "Nieuw voorstel"}
+        subtitle={`Ring: ${ring?.name}. Een concept is alleen zichtbaar voor ringstaf en verstuurt niets.`}
+        action={draftId ? <ActionMenu label="Acties voor dit concept" disabled={busy} items={[{ id: "delete", label: "Concept verwijderen…", icon: MENU_ICONS.trash, danger: true, onSelect: () => void discard() }]} /> : undefined}
+      />
       {(units.loading || members.loading) && !units.data && <Spinner />}
       {units.error && <ErrorState error={units.error} onRetry={units.reload} />}
       {members.error && <ErrorState error={members.error} onRetry={members.reload} />}
@@ -186,7 +195,6 @@ export function NewCalling() {
         <button type="button" className="btn btn-ghost" disabled={busy} onClick={saveDraft}>Concept opslaan</button>
         <button className="btn btn-primary" type="submit" disabled={busy || !ready}>{busy ? "Bezig…" : "Voorstel indienen"}</button>
       </div>
-      {draftId && <button type="button" className="btn btn-ghost" disabled={busy} onClick={discard}>Concept verwijderen</button>}
     </form>
   );
 }

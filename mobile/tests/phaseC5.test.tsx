@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { parseTarget, routeFor } from "../src/lib/links";
 import { ApiRequestError } from "../src/lib/api";
@@ -8,6 +8,7 @@ const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown>, finish: v
 vi.mock("../src/lib/auth", () => ({ useAuth: () => ({ status: "signedOut", finishActivation: auth.finish, ...auth.value }) }));
 vi.mock("../src/components/Reauth", () => ({ useReauth: () => ({ run: (fn: () => Promise<unknown>) => fn(), dialog: null }) }));
 
+import { answerDialog, pickMenuItem, renderUi } from "./ui";
 const { Activate } = await import("../src/screens/Activate");
 const { UserManager } = await import("../src/screens/UserManager");
 
@@ -36,7 +37,7 @@ describe("Account activeren", () => {
     const activateInvitation = vi.fn(async () => FULL);
     auth.value = { api: { previewInvitation, activateInvitation } };
     const onFinished = vi.fn();
-    render(<Activate token={TOKEN} onFinished={onFinished} onCancel={() => {}} />);
+    renderUi(<Activate token={TOKEN} onFinished={onFinished} onCancel={() => {}} />);
     expect(await screen.findByText("Welkom, Eva")).toBeTruthy();
     expect(screen.getByText(/uitgenodigd voor Ring Zuid/)).toBeTruthy();
     expect(activateInvitation).not.toHaveBeenCalled(); // voorvertoning verbruikt niets
@@ -60,7 +61,7 @@ describe("Account activeren", () => {
     auth.finish.mockClear();
     auth.value = { api: { previewInvitation: vi.fn(async () => ({ valid: true as const, name: "Eva", ringName: "Ring Zuid", roleLabel: "x", expiresAt: "2030-01-01T00:00:00Z" })), activateInvitation: vi.fn(async () => FULL) } };
     const onFinished = vi.fn();
-    render(<Activate token={TOKEN} onFinished={onFinished} onCancel={() => {}} />);
+    renderUi(<Activate token={TOKEN} onFinished={onFinished} onCancel={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "Account activeren" }));
     fireEvent.click(await screen.findByRole("button", { name: "Naar het overzicht" }));
     expect(onFinished).toHaveBeenCalledWith("eva@example.nl", true);
@@ -71,7 +72,7 @@ describe("Account activeren", () => {
     const activateInvitation = vi.fn(async () => ({ ok: true as const, signedIn: false as const, mfaRequired: true, email: "mfa@example.nl", ringName: "Ring Zuid" }));
     auth.value = { api: { previewInvitation: vi.fn(async () => ({ valid: true as const, name: "Mfa", ringName: "Ring Zuid", roleLabel: "x", expiresAt: "2030-01-01T00:00:00Z" })), activateInvitation } };
     const onFinished = vi.fn();
-    render(<Activate token={TOKEN} onFinished={onFinished} onCancel={() => {}} />);
+    renderUi(<Activate token={TOKEN} onFinished={onFinished} onCancel={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "Account activeren" }));
     expect(await screen.findByText(/passkey/)).toBeTruthy();
     expect(auth.finish).not.toHaveBeenCalled();
@@ -83,7 +84,7 @@ describe("Account activeren", () => {
     auth.finish.mockClear();
     const activateInvitation = vi.fn(async () => ({ ok: true as const, signedIn: false as const, mfaRequired: false as const, email: "andere@example.nl", ringName: "Ring Zuid" }));
     auth.value = { status: "signedIn", api: { previewInvitation: vi.fn(async () => ({ valid: true as const, name: "Andere", ringName: "Ring Zuid", roleLabel: "x", expiresAt: "2030-01-01T00:00:00Z" })), activateInvitation } };
-    render(<Activate token={TOKEN} onFinished={() => {}} onCancel={() => {}} />);
+    renderUi(<Activate token={TOKEN} onFinished={() => {}} onCancel={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "Account activeren" }));
     await screen.findByText("Je account is geactiveerd");
     expect(activateInvitation).toHaveBeenCalledWith(expect.objectContaining({ issueSession: false }));
@@ -93,7 +94,7 @@ describe("Account activeren", () => {
 
   it("verlopen uitnodiging: duidelijke uitleg, geen technische termen, terugval naar activeringscode", async () => {
     auth.value = { api: { previewInvitation: vi.fn(async () => ({ valid: false as const, reason: "expired" as const })), activateInvitation: vi.fn() } };
-    render(<Activate token={TOKEN} onFinished={() => {}} onCancel={() => {}} />);
+    renderUi(<Activate token={TOKEN} onFinished={() => {}} onCancel={() => {}} />);
     expect(await screen.findByText("Deze uitnodiging is verlopen")).toBeTruthy();
     expect(screen.getByText(/Vraag de ringbeheerder om de uitnodiging opnieuw te versturen/)).toBeTruthy();
     expect(screen.queryByText(/token|api|server/i)).toBeNull();
@@ -103,7 +104,7 @@ describe("Account activeren", () => {
   it("al gebruikte of ingetrokken link: wijst naar inloggen", async () => {
     const onCancel = vi.fn();
     auth.value = { api: { previewInvitation: vi.fn(async () => ({ valid: false as const, reason: "invalid" as const })), activateInvitation: vi.fn() } };
-    render(<Activate token={TOKEN} onFinished={() => {}} onCancel={onCancel} />);
+    renderUi(<Activate token={TOKEN} onFinished={() => {}} onCancel={onCancel} />);
     expect(await screen.findByText("Deze uitnodiging werkt niet (meer)")).toBeTruthy();
     expect(screen.getByText(/Heb je je account al geactiveerd\? Dan kun je gewoon inloggen/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Naar inloggen" }));
@@ -120,7 +121,7 @@ describe("Account activeren", () => {
       .mockRejectedValueOnce(new ApiRequestError(0, "Geen verbinding met de server. Controleer je internetverbinding.", "network"))
       .mockResolvedValue({ ok: true, signedIn: false, email: "eva@example.nl", ringName: "Ring Zuid", mfaRequired: true });
     auth.value = { api: { previewInvitation, activateInvitation } };
-    render(<Activate token={TOKEN} onFinished={() => {}} onCancel={() => {}} />);
+    renderUi(<Activate token={TOKEN} onFinished={() => {}} onCancel={() => {}} />);
     expect(await screen.findByText("Geen verbinding")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Opnieuw proberen" }));
     fireEvent.click(await screen.findByRole("button", { name: "Account activeren" }));
@@ -133,7 +134,7 @@ describe("Account activeren", () => {
   it("handmatig met e-mailadres en code uit de mail (als de link de app niet opent)", async () => {
     const activateInvitation = vi.fn(async () => FULL);
     auth.value = { api: { previewInvitation: vi.fn(), activateInvitation } };
-    render(<Activate onFinished={() => {}} onCancel={() => {}} />);
+    renderUi(<Activate onFinished={() => {}} onCancel={() => {}} />);
     const button = screen.getByRole("button", { name: "Account activeren" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("E-mailadres"), { target: { value: " eva@example.nl " } });
@@ -147,7 +148,7 @@ describe("Account activeren", () => {
   it("foutmelding van de server (bijv. te veel pogingen) blijft zichtbaar en leest als gewone taal", async () => {
     const activateInvitation = vi.fn().mockRejectedValue(new ApiRequestError(429, "Te veel pogingen. Probeer het later opnieuw.", "invitation-rate-limited"));
     auth.value = { api: { previewInvitation: vi.fn(), activateInvitation } };
-    render(<Activate onFinished={() => {}} onCancel={() => {}} />);
+    renderUi(<Activate onFinished={() => {}} onCancel={() => {}} />);
     fireEvent.change(screen.getByLabelText("E-mailadres"), { target: { value: "eva@example.nl" } });
     fireEvent.change(screen.getByLabelText("Activeringscode"), { target: { value: "ABCDEFGHJKMN" } });
     fireEvent.click(screen.getByRole("button", { name: "Account activeren" }));
@@ -173,7 +174,7 @@ describe("Uitnodigen in het gebruikersbeheer", () => {
   it("toont statussen, verbergt afgeronde uitnodigingen standaard, en kan herinneren en intrekken (geen token of code zichtbaar)", async () => {
     const api = mk();
     auth.value = { api };
-    render(<MemoryRouter><UserManager ringId="r1" /></MemoryRouter>);
+    renderUi(<MemoryRouter><UserManager ringId="r1" /></MemoryRouter>);
     expect(await screen.findByText("Nieuw Lid")).toBeTruthy();
     expect(screen.getByText("Verstuurd")).toBeTruthy();
     expect(screen.getByText("Verlopen")).toBeTruthy();
@@ -183,16 +184,19 @@ describe("Uitnodigen in het gebruikersbeheer", () => {
     expect(screen.getByText("Account geactiveerd")).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/token|activeringscode/i);
 
-    fireEvent.click(screen.getByRole("button", { name: "Herinneren" }));
+    pickMenuItem("Acties voor uitnodiging van Nieuw Lid", "Herinneren");
     await waitFor(() => expect(api.resendInvitation).toHaveBeenCalledWith("i1"));
-    fireEvent.click(screen.getAllByRole("button", { name: "Intrekken" })[0]);
+    pickMenuItem("Acties voor uitnodiging van Nieuw Lid", /Intrekken/);
+    await screen.findByRole("alertdialog");
+    expect(api.revokeInvitation).not.toHaveBeenCalled(); // eerst bevestigen
+    answerDialog("Intrekken");
     await waitFor(() => expect(api.revokeInvitation).toHaveBeenCalledWith("i1"));
   });
 
   it("nieuwe gebruikers worden uitgenodigd (geen rechtstreeks account, geen machtigingsveld)", async () => {
     const api = mk();
     auth.value = { api };
-    render(<MemoryRouter><UserManager ringId="r1" /></MemoryRouter>);
+    renderUi(<MemoryRouter><UserManager ringId="r1" /></MemoryRouter>);
     await screen.findByText("Nieuw Lid");
     fireEvent.click(screen.getByRole("button", { name: "Uitnodigen" }));
     fireEvent.change(screen.getByLabelText("Naam"), { target: { value: "Pieter Pauw" } });

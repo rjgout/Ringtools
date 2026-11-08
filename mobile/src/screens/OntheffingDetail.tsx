@@ -4,7 +4,9 @@ import type { OntheffingPerson, OntheffingView } from "@shared/api-types";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
-import { ErrorState, Spinner } from "../components/ui";
+import { ErrorState, PageHead, Spinner, StatusLabel } from "../components/ui";
+import { ActionMenu, MENU_ICONS } from "../components/Menu";
+import { useConfirm } from "../components/Dialog";
 
 const fmt = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleDateString("nl-NL") : null);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -22,6 +24,7 @@ export function OntheffingDetail() {
   const members = useLoad(() => (v?.viewer.staff ? api.ringMembers(ring!.id) : Promise.resolve(null)), [v?.viewer.staff, ring?.id]);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const confirm = useConfirm();
 
   async function act(fn: () => Promise<unknown>, ok?: string) {
     setBusy(true);
@@ -38,11 +41,20 @@ export function OntheffingDetail() {
 
   return (
     <div className="stack">
-      <div>
-        <h1>{named[0]?.name ?? "Ontheffing"}</h1>
-        <span className="muted">{v.function?.name}{v.unit ? ` · ${v.unit.kind === "GEMEENTE" ? "Gemeente" : "Wijk"} ${v.unit.name}` : ""}</span>
-        <div><strong>{v.statusLabel}</strong></div>
-      </div>
+      <PageHead
+        title={named[0]?.name ?? "Ontheffing"}
+        subtitle={`${v.function?.name ?? ""}${v.unit ? ` · ${v.unit.kind === "GEMEENTE" ? "Gemeente" : "Wijk"} ${v.unit.name}` : ""}`}
+        action={v.viewer.canDelete ? (
+          <ActionMenu label="Acties voor dit dossier" disabled={busy} items={[{
+            id: "delete", label: "Dossier verwijderen…", icon: MENU_ICONS.trash, danger: true,
+            onSelect: () => void (async () => {
+              const ok = await confirm({ title: "Dossier verwijderen?", message: "Dit vertrouwelijke dossier en alle bijbehorende gegevens worden definitief verwijderd.", detail: "Deze actie kan niet ongedaan worden gemaakt.", confirmLabel: "Verwijderen", danger: true });
+              if (ok) await act(async () => { await api.deleteOntheffing(v.id); navigate("/ontheffingen", { replace: true }); });
+            })(),
+          }]} />
+        ) : undefined}
+      />
+      <div><StatusLabel>{v.statusLabel}</StatusLabel></div>
       {v.function?.warning && <div className="muted" role="note">{v.function.warning}</div>}
       {message && <div role="status" className="glass panel">{message}</div>}
       {v.viewer.staff && v.activity?.needsReview && (
@@ -83,7 +95,10 @@ export function OntheffingDetail() {
           <strong>Vrijgave aan de hoge raad</strong>
           <span className="muted">Het ringpresidium is akkoord. De hoge raad start pas na jouw expliciete vrijgave.</span>
           {v.blockers?.map((b) => <div key={b} className="error" role="alert">{b}</div>)}
-          <button className="btn btn-primary" disabled={busy || !!v.blockers?.length} onClick={() => window.confirm("Vrijgeven aan de hoge raad?") && act(() => api.releaseOntheffing(v.id), "Vrijgegeven aan de hoge raad.")}>Vrijgeven aan de hoge raad</button>
+          <button className="btn btn-primary" disabled={busy || !!v.blockers?.length} onClick={async () => {
+            const ok = await confirm({ title: "Vrijgeven aan de hoge raad?", message: "De hoge raad ontvangt daarna een verzoek om op deze ontheffing te reageren.", detail: "Controleer eerst of het presidiumbesluit klopt.", confirmLabel: "Vrijgeven" });
+            if (ok) await act(() => api.releaseOntheffing(v.id), "Vrijgegeven aan de hoge raad.");
+          }}>Vrijgeven aan de hoge raad</button>
         </div>
       )}
 
@@ -96,9 +111,6 @@ export function OntheffingDetail() {
         </div>
       )}
       {v.retention && <div className="muted">Dit dossier wordt na {fmt(v.retention.deleteAfter)} automatisch verwijderd.</div>}
-      {v.viewer.canDelete && (
-        <button className="btn btn-ghost" disabled={busy} onClick={() => window.confirm("Dit dossier definitief verwijderen?") && act(async () => { await api.deleteOntheffing(v.id); navigate("/ontheffingen", { replace: true }); })}>Dossier verwijderen</button>
-      )}
     </div>
   );
 }

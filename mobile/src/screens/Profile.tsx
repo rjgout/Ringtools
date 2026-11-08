@@ -6,6 +6,8 @@ import { isNative } from "../lib/native";
 import { APP_VERSION } from "../config";
 import { nativeCapabilities, PERSONAL_TEAM_NOTICE } from "../lib/buildProfile";
 import { useReauth } from "../components/Reauth";
+import { ActionMenu, MENU_ICONS } from "../components/Menu";
+import { useConfirm } from "../components/Dialog";
 import { activateDeviceLoginKey, deviceLoginMessage, deviceLoginSupported, readDeviceKeyRef } from "../lib/deviceLogin";
 import { describeDevice, enrollThisDevice, type DeviceState } from "../lib/deviceEnrollment";
 import { storage } from "../lib/storage";
@@ -60,7 +62,10 @@ export function Profile() {
     }
   }
 
+  const confirm = useConfirm();
   async function turnOffFaceId() {
+    const ok = await confirm({ title: "Inloggen met Face ID uitzetten?", message: "Op dit toestel log je daarna weer in met een e-mailcode en je tweede factor.", confirmLabel: "Uitzetten", danger: true });
+    if (!ok) return;
     const ref = await readDeviceKeyRef();
     if (!ref) return;
     setDeviceBusy(true);
@@ -157,12 +162,22 @@ export function Profile() {
         {sessions.data?.sessions.map((s) => (
           <div key={s.id} className="row between">
             <span className="grow">{s.device}{s.current ? " (dit toestel)" : ""}</span>
-            {!s.current && <button className="btn btn-ghost" onClick={async () => { await api.revokeSession(s.id); await sessions.reload(); }}>Uitloggen</button>}
+            {!s.current && (
+              <ActionMenu label={`Acties voor ${s.device}`} items={[{
+                id: "revoke", label: "Sessie intrekken…", icon: MENU_ICONS.ban, danger: true,
+                onSelect: () => void (async () => {
+                  const ok = await confirm({ title: "Sessie intrekken?", message: `${s.device} wordt direct uitgelogd en moet opnieuw inloggen.`, confirmLabel: "Intrekken", danger: true });
+                  if (ok) { await api.revokeSession(s.id); await sessions.reload(); }
+                })(),
+              }]} />
+            )}
           </div>
         ))}
       </section>
 
-      <button className="btn btn-ghost btn-block" onClick={() => void signOut()}>Uitloggen</button>
+      <button className="btn btn-ghost btn-block" onClick={() => void (async () => {
+        if (await confirm({ title: "Uitloggen?", message: "Je moet daarna opnieuw inloggen met een e-mailcode en je tweede factor.", confirmLabel: "Uitloggen" })) await signOut();
+      })()}>Uitloggen</button>
       <p className="muted">Ringtools {APP_VERSION}. MFA/passkeys, accountverwijdering en privacyinstellingen vind je voorlopig in de webapp.</p>
     </div>
   );
