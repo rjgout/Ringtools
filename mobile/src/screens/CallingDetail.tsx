@@ -181,7 +181,6 @@ export function CallingDetail() {
                     : data.assignableUsers.filter((u) => data.eligibleAssignees[t.task as "ROEPEN" | "AANSTELLEN"]!.includes(u.id))}
                   restricted={t.task !== "ONDERSTEUNEN" && !!data.eligibleAssignees && data.eligibleAssignees[t.task as "ROEPEN" | "AANSTELLEN"] !== null}
                   onAssign={(assigneeId) => act(() => api.assignTask(id, t.task, assigneeId), "Verantwoordelijke bijgewerkt.")}
-                  onExternal={(name) => act(() => api.assignTask(id, t.task, null, name), "Externe bevoegde persoon geregistreerd.")}
                   onComplete={(opts) => act(() => api.completeTask(id, t.task, opts), "Taak geregistreerd.")} />
               ))}
             </section>
@@ -192,13 +191,12 @@ export function CallingDetail() {
   );
 }
 
-function TaskRow({ task, users, busy, restricted = false, onAssign, onExternal, onComplete }: {
+function TaskRow({ task, users, busy, restricted = false, onAssign, onComplete }: {
   task: TaskView;
   users: { id: string; name: string }[];
   busy: boolean;
   restricted?: boolean;
   onAssign: (assigneeId: string | null) => void;
-  onExternal?: (name: string) => void;
   onComplete: (opts: { doneAt?: string; ondersteunenContext?: "AVONDMAALSVERGADERING" | "RINGCONFERENTIE" }) => void;
 }) {
   const [context, setContext] = useState<"AVONDMAALSVERGADERING" | "RINGCONFERENTIE" | "">("");
@@ -221,9 +219,7 @@ function TaskRow({ task, users, busy, restricted = false, onAssign, onExternal, 
       ) : (
         <span className="muted">Verantwoordelijke: {task.assignee?.name ?? task.assigneeExternalName ?? "niet toegewezen"}</span>
       )}
-      {task.canAssign && !task.doneAt && restricted && (
-        <ExternalPerson current={task.assigneeExternalName} busy={busy} onSave={(n) => onExternal?.(n)} id={task.task} hint={users.length === 0 ? "Er is niemand aangewezen die dit voor deze functie mag; registreer zo nodig een bevoegde externe persoon." : "Alleen aangewezen bevoegde personen zijn te kiezen."} />
-      )}
+      {task.canAssign && !task.doneAt && restricted && users.length === 0 && <span className="muted">Er is nog niemand bevoegd aangewezen voor deze functie.</span>}
       {task.canComplete && !task.doneAt && (
         <>
           {needsContext && (
@@ -318,18 +314,6 @@ function GroupDecisionForm({ stage, detail, busy, onSubmit }: {
       <div className="row"><button type="button" className="btn btn-ghost" onClick={close}>Annuleren</button><button className="btn btn-primary" disabled={busy || !valid}>Besluit vastleggen</button></div>
     </form>
     </Sheet>
-  );
-}
-
-function ExternalPerson({ id, current, busy, hint, onSave }: { id: string; current: string | null; busy: boolean; hint: string; onSave: (name: string) => void }) {
-  const [name, setName] = useState(current ?? "");
-  return (
-    <div className="stack">
-      <span className="muted">{hint}</span>
-      <label htmlFor={`ext-${id}`}>Bevoegde externe persoon (handmatig)</label>
-      <input id={`ext-${id}`} value={name} maxLength={120} onChange={(e) => setName(e.target.value)} />
-      <button type="button" className="btn btn-ghost" disabled={busy || name.trim().length < 2} onClick={() => onSave(name.trim())}>Externe persoon registreren</button>
-    </div>
   );
 }
 

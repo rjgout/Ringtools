@@ -22,6 +22,11 @@ const suggestions = (over: Record<string, unknown> = {}) => ({
   notes: { roepen: null, aanstellen: null }, eligible: { roepen: [{ id: "p1", name: "Piet" }], aanstellen: [{ id: "h1", name: "Hans" }, { id: "p1", name: "Piet" }] }, ...over,
 });
 
+async function chooseCalling(name: string) {
+  const option = (await screen.findByRole("option", { name: new RegExp(name) })) as HTMLOptionElement;
+  fireEvent.change(screen.getByLabelText("Roeping"), { target: { value: option.value } });
+}
+
 function setup(api: Record<string, unknown>, path = "/voorstellen/nieuw") {
   const full = {
     units: vi.fn(async () => ({ units: [{ id: "w1", kind: "WIJK", name: "Voorbeeld", active: true, responsibleStatus: "OK", responsible: null, defaults: {} }] })),
@@ -59,15 +64,16 @@ describe("ApiClient: concepten", () => {
 describe("Nieuw voorstel in vijf stappen", () => {
   it("naam → unit → roeping → verantwoordelijken → indienen: bewaart als concept en dient server-side in", async () => {
     const api = setup({});
-    fireEvent.change(await screen.findByLabelText(/Naam \(handmatig invoeren\)/), { target: { value: "Jan Jansen" } });
+    fireEvent.change(await screen.findByLabelText("Naam"), { target: { value: "Jan Jansen" } });
     fireEvent.change(screen.getByLabelText("Wijk of gemeente"), { target: { value: "w1" } });
     const submit = screen.getByRole("button", { name: "Voorstel indienen" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true); // nog geen roeping gekozen
-    fireEvent.click(await screen.findByRole("option", { name: /Ringadministrateur/ }));
+    await chooseCalling("Ringadministrateur");
     expect(submit.disabled).toBe(false);
-    // voorgesteld verantwoordelijke overnemen (alleen aanstellen is voorgesteld, want alleen daarvoor is hij bevoegd)
-    fireEvent.click(await screen.findByRole("button", { name: /Voorstel overnemen: Hans/ }));
-    expect((screen.getByLabelText("Wie stelt de persoon aan?") as HTMLSelectElement).value).toBe("h1");
+    // de voorgestelde verantwoordelijke is direct ingevuld (alleen aanstellen is voorgesteld, want alleen daarvoor is hij bevoegd)
+    await waitFor(() => expect((screen.getByLabelText("Wie stelt de persoon aan?") as HTMLSelectElement).value).toBe("h1"));
+    expect(screen.queryByRole("button", { name: /Voorgesteld: Hans/ })).toBeNull(); // al ingevuld: geen knop nodig
+    expect(screen.queryByText(/op grond van|standaard van de wijk/i)).toBeNull();
     expect([...(screen.getByLabelText("Wie roept de persoon?") as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(["Nog niet toegewezen", "Piet"]); // alleen bevoegden
     fireEvent.click(submit);
     await waitFor(() => expect(api.submitDraft).toHaveBeenCalledWith("d1"));
@@ -75,9 +81,22 @@ describe("Nieuw voorstel in vijf stappen", () => {
     expect(await screen.findByText("detail")).toBeTruthy();
   });
 
+  it("een eigen keuze van de verantwoordelijke wordt niet overschreven door de voorgestelde persoon", async () => {
+    const api = setup({});
+    fireEvent.change(await screen.findByLabelText("Naam"), { target: { value: "Jan Jansen" } });
+    fireEvent.change(screen.getByLabelText("Wijk of gemeente"), { target: { value: "w1" } });
+    await chooseCalling("Ringadministrateur");
+    const select = await screen.findByLabelText("Wie stelt de persoon aan?");
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe("h1"));
+    fireEvent.change(select, { target: { value: "p1" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Voorgesteld: Hans/ }));
+    expect((select as HTMLSelectElement).value).toBe("h1"); // bewust terugzetten kan
+    expect(api.suggestions).toHaveBeenCalled();
+  });
+
   it("slaat een onvolledig concept op zonder in te dienen", async () => {
     const api = setup({});
-    fireEvent.change(await screen.findByLabelText(/Naam \(handmatig invoeren\)/), { target: { value: "Alleen naam" } });
+    fireEvent.change(await screen.findByLabelText("Naam"), { target: { value: "Alleen naam" } });
     fireEvent.click(screen.getByRole("button", { name: "Concept opslaan" }));
     await waitFor(() => expect(api.createDraft).toHaveBeenCalledWith("r1", expect.objectContaining({ personName: "Alleen naam", functionCode: null, unitId: null })));
     expect(api.submitDraft).not.toHaveBeenCalled();
@@ -86,27 +105,28 @@ describe("Nieuw voorstel in vijf stappen", () => {
 
   it("een niet-geverifieerde roeping vraagt om bevestiging van de bevoegde leiding en toont de waarschuwing", async () => {
     const api = setup({ suggestions: vi.fn(async () => ({ suggestions: suggestions({ aanstellen: null, notes: { roepen: "Menselijke controle nodig: geen bevoegdheden vastgesteld.", aanstellen: "Menselijke controle nodig: geen bevoegdheden vastgesteld." }, eligible: { roepen: [], aanstellen: [] } }) })) });
-    fireEvent.change(await screen.findByLabelText(/Naam \(handmatig invoeren\)/), { target: { value: "Jan Jansen" } });
+    fireEvent.change(await screen.findByLabelText("Naam"), { target: { value: "Jan Jansen" } });
     fireEvent.change(screen.getByLabelText("Wijk of gemeente"), { target: { value: "w1" } });
-    fireEvent.click(await screen.findByRole("option", { name: /Instituutshoofd/ }));
+    await chooseCalling("Instituutshoofd");
     expect((await screen.findAllByText(/Menselijke controle nodig/)).length).toBeGreaterThan(0);
     const submit = screen.getByRole("button", { name: "Voorstel indienen" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     fireEvent.click(screen.getByLabelText(/bevoegde leiding heeft de procedure/));
     expect(submit.disabled).toBe(false);
-    // bevoegde externe persoon kan handmatig worden geregistreerd
-    fireEvent.change(screen.getByLabelText(/Of: externe uitvoerder zonder Ringtools-account/, { selector: "#ex-aanstellen" }), { target: { value: "Gebiedszeventiger Extern" } });
+    // iedereen heeft een account: er is geen invoer voor een externe uitvoerder meer
+    expect(screen.queryByLabelText(/externe uitvoerder/i)).toBeNull();
     fireEvent.click(submit);
-    await waitFor(() => expect(api.createDraft).toHaveBeenCalledWith("r1", expect.objectContaining({ procedureConfirmed: true, aanstellenExternalName: "Gebiedszeventiger Extern", aanstellenAssigneeId: null })));
+    await waitFor(() => expect(api.createDraft).toHaveBeenCalledWith("r1", expect.objectContaining({ procedureConfirmed: true, aanstellenAssigneeId: null })));
+    expect(JSON.stringify(api.createDraft.mock.calls[0][1])).not.toContain("ExternalName");
   });
 
   it("dubbel tikken op Indienen dient maar één keer in", async () => {
     let resolve: (v: { id: string; alreadySubmitted: boolean }) => void = () => {};
     const submitDraft = vi.fn(() => new Promise<{ id: string; alreadySubmitted: boolean }>((r) => { resolve = r; }));
     const api = setup({ submitDraft });
-    fireEvent.change(await screen.findByLabelText(/Naam \(handmatig invoeren\)/), { target: { value: "Jan Jansen" } });
+    fireEvent.change(await screen.findByLabelText("Naam"), { target: { value: "Jan Jansen" } });
     fireEvent.change(screen.getByLabelText("Wijk of gemeente"), { target: { value: "w1" } });
-    fireEvent.click(await screen.findByRole("option", { name: /Ringadministrateur/ }));
+    await chooseCalling("Ringadministrateur");
     const form = screen.getByRole("button", { name: "Voorstel indienen" }).closest("form")!;
     fireEvent.submit(form); fireEvent.submit(form); fireEvent.submit(form);
     await waitFor(() => expect(submitDraft).toHaveBeenCalledTimes(1));
@@ -123,7 +143,7 @@ describe("Nieuw voorstel in vijf stappen", () => {
     }));
     const submitDraft = vi.fn(async () => { throw new ApiRequestError(400, "Kies de wijk of gemeente van herkomst.", "workflow"); });
     const api = setup({ draft, submitDraft }, "/voorstellen/concept/d9");
-    await waitFor(() => expect((screen.getByLabelText(/Naam \(handmatig invoeren\)/) as HTMLInputElement).value).toBe("Bewaarde Naam"));
+    await waitFor(() => expect((screen.getByLabelText("Naam") as HTMLInputElement).value).toBe("Bewaarde Naam"));
     fireEvent.click(screen.getByRole("button", { name: "Voorstel indienen" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/wijk of gemeente van herkomst/);
     expect(api.updateDraft).toHaveBeenCalledWith("d9", expect.objectContaining({ personName: "Bewaarde Naam" })); // bestaand concept wordt bijgewerkt, niet opnieuw aangemaakt

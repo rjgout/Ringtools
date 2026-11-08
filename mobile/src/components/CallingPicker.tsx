@@ -5,14 +5,15 @@ import { ApiRequestError } from "../lib/api";
 
 export type PickedCalling = { code: string; source: "STANDAARD" | "EIGEN"; name: string; category: string; customConfirmed: boolean; requiresConfirmation: boolean };
 
+const keyOf = (c: { source: string; code: string }) => `${c.source}:${c.code}`;
+
 /**
- * Zoeken en selecteren uit de Nederlandse roepingencatalogus (standaardroepingen + eigen roepingen van deze ring).
- * Roepingen die buiten Ringtools lopen (bijv. ringpresident, patriarch) zijn niet te kiezen. Een eigen roeping vereist
- * een expliciete bevestiging dat de bevoegde leiding de procedure heeft gecontroleerd. Onder het resultaat staat "Eigen roeping toevoegen".
+ * Kiezen uit de Nederlandse roepingencatalogus (standaardroepingen + eigen roepingen van deze ring) met twee keuzelijsten:
+ * organisatie en roeping. Roepingen die buiten Ringtools lopen (bijv. ringpresident, patriarch) zijn niet te kiezen. Een eigen of
+ * niet-geverifieerde roeping vereist een expliciete bevestiging dat de bevoegde leiding de procedure heeft gecontroleerd.
  */
 export function CallingPicker({ ringId, value, onChange, canAddCustom = true }: { ringId: string; value: PickedCalling | null; onChange: (v: PickedCalling | null) => void; canAddCustom?: boolean }) {
   const { api } = useAuth();
-  const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
   const [result, setResult] = useState<CatalogResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,22 +24,25 @@ export function CallingPicker({ ringId, value, onChange, canAddCustom = true }: 
 
   useEffect(() => {
     const id = ++seq.current;
-    const t = setTimeout(async () => {
-      try {
-        const res = await api.catalog(ringId, q, category);
-        if (id === seq.current) { setResult(res); setError(null); }
-      } catch (err) {
-        if (id === seq.current) setError(err instanceof ApiRequestError ? err.message : "Er ging iets mis.");
-      }
-    }, 200);
-    return () => clearTimeout(t);
-  }, [api, ringId, q, category]);
+    api.catalog(ringId, "", category)
+      .then((res) => { if (id === seq.current) { setResult(res); setError(null); } })
+      .catch((err) => { if (id === seq.current) setError(err instanceof ApiRequestError ? err.message : "Er ging iets mis."); });
+  }, [api, ringId, category]);
 
-  const pick = (c: CatalogCalling) => {
-    if (!c.ringtoolsProcess) return;
+  // Een al gekozen roeping (bijv. uit een concept) bepaalt de getoonde organisatie.
+  useEffect(() => {
+    if (value && !category) setCategory(value.category);
+  }, [value, category]);
+
+  const callings = result?.callings ?? [];
+  const selected = value ? callings.find((c) => c.code === value.code && c.source === value.source) ?? null : null;
+
+  const pick = (k: string) => {
+    if (!k) { onChange(null); return; }
+    const c = callings.find((x) => keyOf(x) === k);
+    if (!c || !c.ringtoolsProcess) return;
     onChange({ code: c.code, source: c.source, name: c.name, category: c.category, customConfirmed: false, requiresConfirmation: c.requiresProcedureConfirmation });
-    // De organisatie wordt automatisch voorgesteld op basis van de gekozen roeping.
-    setCategory(c.category);
+    setCategory(c.category); // de organisatie volgt de gekozen roeping
   };
 
   async function addCustom(e: React.FormEvent) {
@@ -48,54 +52,46 @@ export function CallingPicker({ ringId, value, onChange, canAddCustom = true }: 
       onChange({ code: created.id, source: "EIGEN", name: newName.trim(), category: newCategory.trim(), customConfirmed: false, requiresConfirmation: true });
       setAdding(false);
       setNewName("");
-      setQ(newName);
+      setCategory(newCategory.trim());
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Er ging iets mis.");
     }
   }
 
-  const selected = value ? result?.callings.find((c) => c.code === value.code) : null;
   return (
     <div className="stack">
       <div>
         <label htmlFor="cp-cat">Organisatie</label>
-        <select id="cp-cat" value={category} onChange={(e) => setCategory(e.target.value)}>
+        <select id="cp-cat" value={category} onChange={(e) => { setCategory(e.target.value); if (value && value.category !== e.target.value) onChange(null); }}>
           <option value="">Alle organisaties</option>
           {(result?.categories ?? []).map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
-      <div><label htmlFor="cp-q">Roeping zoeken</label><input id="cp-q" type="search" placeholder="Zoek op naam van de roeping" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" autoCorrect="off" enterKeyHint="search" /></div>
-      {value && (
-        <div className="glass panel picked stack" role="status">
-          <div><strong>Gekozen: {value.name}</strong>{value.category && <div className="muted">{value.category}</div>}</div>
+      <div>
+        <label htmlFor="cp-calling">Roeping</label>
+        <select id="cp-calling" value={value ? keyOf(value) : ""} onChange={(e) => pick(e.target.value)}>
+          <option value="">Kies…</option>
+          {callings.map((c: CatalogCalling) => (
+            <option key={keyOf(c)} value={keyOf(c)} disabled={!c.ringtoolsProcess}>
+              {c.name}{c.source === "EIGEN" ? " (eigen roeping)" : ""}{!c.ringtoolsProcess ? " (buiten Ringtools)" : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+      {value && (selected?.warning || selected?.ruleStatus === "TE_BEOORDELEN" || value.requiresConfirmation) && (
+        <div className="stack" role="status">
           {selected?.warning && <div className="muted">{selected.warning}</div>}
           {selected?.ruleStatus === "TE_BEOORDELEN" && <div className="muted" role="note">Menselijke controle nodig: de regels voor deze roeping zijn niet geverifieerd.</div>}
-          {selected?.reviewNotes.length ? <div className="muted">Let op: een of meer regels staan nog ter controle bij de beheerder.</div> : null}
           {value.requiresConfirmation && (
-            <label className="row"><input type="checkbox" checked={value.customConfirmed} onChange={(e) => onChange({ ...value, customConfirmed: e.target.checked })} /> De bevoegde leiding heeft de procedure voor deze roeping gecontroleerd{value.source === "EIGEN" ? " (eigen roeping)" : " (bevoegdheden niet geverifieerd)"}</label>
+            <label className="row"><input type="checkbox" checked={value.customConfirmed} onChange={(e) => onChange({ ...value, customConfirmed: e.target.checked })} /> De bevoegde leiding heeft de procedure gecontroleerd{value.source === "EIGEN" ? " (eigen roeping)" : ""}</label>
           )}
-          <button type="button" className="btn btn-ghost" onClick={() => onChange(null)}>Andere roeping kiezen</button>
         </div>
       )}
-      {!value && <div className="stack" role="listbox" aria-label="Roepingen">
-        {result?.callings.map((c) => (
-          <button type="button" key={`${c.source}-${c.code}`} role="option" aria-selected={false} className="glass panel" disabled={!c.ringtoolsProcess} onClick={() => pick(c)}>
-            <div className="row between">
-              <div className="grow" style={{ textAlign: "left" }}>
-                <strong>{c.name}</strong>
-                <div className="muted">{c.category}{c.source === "EIGEN" ? " · eigen roeping" : ""}{!c.ringtoolsProcess ? " · buiten Ringtools" : ""}</div>
-              </div>
-            </div>
-          </button>
-        ))}
-        {result && result.callings.length === 0 && <span className="empty">Geen roeping gevonden.</span>}
-      </div>}
-      {canAddCustom && !adding && !value && <button type="button" className="btn btn-ghost" onClick={() => { setAdding(true); setNewName(q); setNewCategory(category); }}>Eigen roeping toevoegen</button>}
+      {canAddCustom && !adding && <button type="button" className="btn btn-ghost" onClick={() => { setAdding(true); setNewCategory(category); }}>Eigen roeping toevoegen</button>}
       {adding && (
         <form className="glass card stack" aria-label="Eigen roeping toevoegen" onSubmit={addCustom}>
           <div><label htmlFor="cp-new-name">Naam van de roeping</label><input id="cp-new-name" value={newName} onChange={(e) => setNewName(e.target.value)} required minLength={2} /></div>
           <div><label htmlFor="cp-new-cat">Categorie</label><input id="cp-new-cat" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} required /></div>
-          <span className="muted">Een eigen roeping is alleen zichtbaar binnen deze ring en krijgt geen automatische bevoegdheden.</span>
           <div className="row"><button type="button" className="btn btn-ghost" onClick={() => setAdding(false)}>Annuleren</button><button className="btn btn-primary">Toevoegen</button></div>
         </form>
       )}

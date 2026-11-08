@@ -14,11 +14,11 @@ export const TAB_ROOT: Record<TabId, string> = {
 
 /** Bij welk hoofdgebied een pad hoort (voor de actieve tab). Onbekende paden vallen terug op het overzicht. */
 export function tabForPath(pathname: string): TabId {
-  if (pathname.startsWith("/voorstellen") || pathname.startsWith("/roepingen")) return "voorstellen";
+  if (pathname.startsWith("/voorstellen") || pathname.startsWith("/roepingen") || pathname.startsWith("/ontheffingen")) return "voorstellen";
   if (pathname.startsWith("/meldingen")) return "meldingen";
   if (pathname.startsWith("/profiel")) return "profiel";
   if (pathname.startsWith("/beheer")) return "beheer";
-  return "overzicht"; // ook /ontheffingen en /open/…
+  return "overzicht"; // ook /open/…
 }
 
 /** Hoofdschermen tonen een grote titel; alle andere schermen een navigatiebalk met terugknop. */
@@ -30,15 +30,13 @@ export function isTabRoot(pathname: string): boolean {
 export function parentPath(pathname: string): string {
   if (pathname.startsWith("/voorstellen/")) return "/voorstellen";
   if (pathname.startsWith("/roepingen/")) return "/voorstellen";
-  if (pathname === "/ontheffingen") return "/";
-  if (pathname.startsWith("/ontheffingen/")) return "/ontheffingen";
+  if (pathname.startsWith("/ontheffingen")) return "/voorstellen"; // ontheffingen staan in de lijst bij Voorstellen
   return "/";
 }
 
 const TITLES: [RegExp, string][] = [
   [/^\/voorstellen$/, "Voorstellen"],
   [/^\/$/, "Overzicht"],
-  [/^\/ontheffingen$/, "Ontheffingen"],
 ];
 /** Korte naam van een scherm, gebruikt als label van de terugknop ("‹ Voorstellen"). */
 export function titleOf(pathname: string): string {
@@ -50,7 +48,6 @@ export function navTitle(pathname: string): string {
   if (pathname === "/voorstellen/nieuw") return "Nieuw voorstel";
   if (pathname.startsWith("/voorstellen/concept/")) return "Concept";
   if (pathname.startsWith("/roepingen/")) return "Voorstel";
-  if (pathname === "/ontheffingen") return "Ontheffingen";
   if (pathname === "/ontheffingen/nieuw") return "Nieuwe ontheffing";
   if (pathname.startsWith("/ontheffingen/concept/")) return "Concept";
   if (pathname.startsWith("/ontheffingen/")) return "Ontheffing";

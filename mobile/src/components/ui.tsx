@@ -103,17 +103,40 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
   );
 }
 
-export function CallingLink({ id, name, title, status, mine }: { id: string; name: string; title: string; status: string; mine?: boolean }) {
+/** Rij in een lijst: het type ("Voorstel" of "Ontheffing") staat er altijd duidelijk bij, zodat beide soorten in één lijst te onderscheiden zijn. */
+export function ListItem({ to, name, kind, subtitle, status, tone = "ok" }: { to: string; name: string; kind: "Voorstel" | "Ontheffing"; subtitle?: string; status: string; tone?: "neutral" | "ok" | "warn" | "bad" }) {
   return (
-    <Link to={`/roepingen/${id}`} className="glass panel">
+    <Link to={to} className="glass panel">
       <div className="row between">
         <div className="grow">
           <strong>{name}</strong>
-          <div className="muted">{title}</div>
+          <div className="row" style={{ flexWrap: "wrap", gap: "var(--space-2)", marginTop: 4 }}>
+            <StatusLabel tone={kind === "Ontheffing" ? "warn" : "neutral"}>{kind}</StatusLabel>
+            {subtitle && <span className="muted">{subtitle}</span>}
+          </div>
         </div>
-        {mine ? <StatusLabel tone="warn">Jouw reactie</StatusLabel> : <StatusLabel tone="ok">{status}</StatusLabel>}
+        <StatusLabel tone={tone}>{status}</StatusLabel>
       </div>
     </Link>
+  );
+}
+
+export function CallingLink({ id, name, title, status, mine }: { id: string; name: string; title: string; status: string; mine?: boolean }) {
+  return <ListItem to={`/roepingen/${id}`} name={name} kind="Voorstel" subtitle={title} status={mine ? "Jouw reactie" : status} tone={mine ? "warn" : "ok"} />;
+}
+
+/** Ontheffing in een lijst; het pad volgt uit de status (een concept opent het formulier). */
+export function OntheffingLink({ o }: { o: { id: string; status: string; personName: string | null; functionName: string | null; unitName?: string | null; statusLabel: string; needsMyVote?: boolean; needsReview?: boolean } }) {
+  const action = o.needsMyVote ? "Jouw reactie" : o.needsReview ? "Beoordeling nodig" : null;
+  return (
+    <ListItem
+      to={o.status === "CONCEPT" ? `/ontheffingen/concept/${o.id}` : `/ontheffingen/${o.id}`}
+      name={o.personName ?? "(nog geen naam)"}
+      kind="Ontheffing"
+      subtitle={`${o.functionName ?? "Nog geen roeping gekozen"}${o.unitName ? ` · ${o.unitName}` : ""}`}
+      status={action ?? o.statusLabel}
+      tone={action ? "warn" : "neutral"}
+    />
   );
 }
 

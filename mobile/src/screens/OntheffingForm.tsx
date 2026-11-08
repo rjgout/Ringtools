@@ -130,7 +130,6 @@ export function OntheffingForm() {
     <div className="stack">
       <PageHead
         title={id ? "Concept ontheffing" : "Nieuwe ontheffing"}
-        subtitle="Een concept is alleen voor jou zichtbaar en verstuurt niets. Naam handmatig invoeren; er wordt niets uit een ledenregister overgenomen."
         action={id ? <ActionMenu label="Acties voor dit concept" disabled={busy} items={[{ id: "delete", label: "Concept verwijderen…", icon: MENU_ICONS.trash, danger: true, onSelect: () => void onDelete() }]} /> : undefined}
       />
       {(loaded.loading && !loaded.data && !!id) && <Spinner />}
@@ -154,7 +153,6 @@ export function OntheffingForm() {
       <div className="glass card stack">
         <strong>3. Roeping</strong>
         <CallingPicker ringId={ring!.id} value={picked} onChange={mark(setPicked)} />
-        <span className="muted">De ontheffing van een bisschop verloopt buiten Ringtools en is niet te kiezen.</span>
       </div>
 
       {advisers.length > 0 && (

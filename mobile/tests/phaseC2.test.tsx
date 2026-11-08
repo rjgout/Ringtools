@@ -72,29 +72,36 @@ describe("Ringinrichting in de app", () => {
 });
 
 describe("CallingPicker: zoeken en selecteren", () => {
-  const catalog = vi.fn(async (_r: string, q: string) => ({
+  const catalog = vi.fn(async (_r: string, q: string, category = "") => ({
     version: "1", categories: ["Muziek", "Ringpresidium", "Technologie"],
     callings: [
       entry({ code: "ringtolk", name: "Ringtolk", category: "Technologie", warning: "Let op deze regel." }),
       entry({ code: "ringpresident", name: "Ringpresident", category: "Ringpresidium", ringtoolsProcess: false }),
       entry({ code: "eigen-1", source: "EIGEN", name: "Koorleider", category: "Muziek", approvalRoute: null }),
-    ].filter((c) => !q || c.name.toLowerCase().includes(q.toLowerCase())),
+    ].filter((c) => (!q || c.name.toLowerCase().includes(q.toLowerCase())) && (!category || c.category === category)),
   }));
 
-  it("zoekt, selecteert, stelt de organisatie voor en laat roepingen buiten Ringtools niet kiezen", async () => {
+  it("kiest via twee keuzelijsten (organisatie en roeping), stelt de organisatie voor en laat roepingen buiten Ringtools niet kiezen", async () => {
     auth.value = { api: { catalog, createCustomCalling: vi.fn() } };
     const onChange = vi.fn();
     renderUi(<CallingPicker ringId="r1" value={null} onChange={onChange} />);
-    const presidentOption = await screen.findByRole("option", { name: /Ringpresident/ });
-    expect((presidentOption as HTMLButtonElement).disabled).toBe(true);
-    expect(presidentOption.textContent).toMatch(/buiten Ringtools/);
-    fireEvent.click(presidentOption);
-    expect(onChange).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("option", { name: /Ringtolk/ }));
+    const president = await screen.findByRole("option", { name: /Ringpresident/ });
+    expect((president as HTMLOptionElement).disabled).toBe(true);
+    expect(president.textContent).toMatch(/buiten Ringtools/);
+    expect(screen.queryByLabelText("Roeping zoeken")).toBeNull(); // geen zoekveld meer
+    fireEvent.change(screen.getByLabelText("Roeping"), { target: { value: "STANDAARD:ringtolk" } });
     expect(onChange).toHaveBeenCalledWith({ code: "ringtolk", source: "STANDAARD", name: "Ringtolk", category: "Technologie", customConfirmed: false, requiresConfirmation: false });
     await waitFor(() => expect((screen.getByLabelText("Organisatie") as HTMLSelectElement).value).toBe("Technologie")); // automatisch voorgesteld
-    fireEvent.change(screen.getByLabelText("Roeping zoeken"), { target: { value: "tolk" } });
-    await waitFor(() => expect(catalog).toHaveBeenLastCalledWith("r1", "tolk", "Technologie"));
+  });
+
+  it("de organisatie filtert de roepingen in de keuzelijst", async () => {
+    auth.value = { api: { catalog, createCustomCalling: vi.fn() } };
+    renderUi(<CallingPicker ringId="r1" value={null} onChange={vi.fn()} />);
+    await screen.findByRole("option", { name: /Ringtolk/ });
+    fireEvent.change(screen.getByLabelText("Organisatie"), { target: { value: "Muziek" } });
+    await waitFor(() => expect(catalog).toHaveBeenLastCalledWith("r1", "", "Muziek"));
+    await waitFor(() => expect(screen.queryByRole("option", { name: /Ringtolk/ })).toBeNull());
+    expect(screen.getByRole("option", { name: /Koorleider/ })).toBeTruthy();
   });
 
   it("een eigen roeping vereist expliciete bevestiging van de bevoegde leiding", async () => {
@@ -107,16 +114,14 @@ describe("CallingPicker: zoeken en selecteren", () => {
     rerender(<CallingPicker ringId="r1" value={current as never} onChange={onChange} />);
   });
 
-  it("na het kiezen blijft alleen de keuze zichtbaar (geen dubbele lijst, geen losse punt); Andere roeping kiezen toont de lijst weer", async () => {
+  it("een gekozen roeping staat in de keuzelijst; terugzetten naar 'Kies…' wist de keuze", async () => {
     auth.value = { api: { catalog, createCustomCalling: vi.fn() } };
     const onChange = vi.fn();
-    const chosen = { code: "x", source: "STANDAARD", name: "Ringtolk", category: "Technologie", customConfirmed: false, requiresConfirmation: false };
+    const chosen = { code: "ringtolk", source: "STANDAARD", name: "Ringtolk", category: "Technologie", customConfirmed: false, requiresConfirmation: false };
     renderUi(<CallingPicker ringId="r1" value={chosen as never} onChange={onChange} />);
-    const status = await screen.findByRole("status");
-    expect(status.textContent).toContain("Gekozen: Ringtolk");
-    expect(status.textContent).not.toContain("·");
-    expect(screen.queryByRole("listbox")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Andere roeping kiezen" }));
+    await screen.findByRole("option", { name: /Ringtolk/ });
+    await waitFor(() => expect((screen.getByLabelText("Roeping") as HTMLSelectElement).value).toBe("STANDAARD:ringtolk"));
+    fireEvent.change(screen.getByLabelText("Roeping"), { target: { value: "" } });
     expect(onChange).toHaveBeenCalledWith(null);
   });
 

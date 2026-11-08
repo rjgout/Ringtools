@@ -16,13 +16,6 @@ type TaskKey = "roepen" | "ondersteunen" | "aanstellen";
  * Alles wordt als concept op de server bewaard (onvolledig mag); indienen valideert op de server opnieuw en is idempotent.
  * Er is geen koppeling met een ledenregister of LCR: de naam wordt altijd ingevoerd.
  */
-const SOURCE_LABEL: Record<string, string> = {
-  UNIT_STANDAARD: "standaard van de wijk/gemeente",
-  UNIT_VERANTWOORDELIJKE: "verantwoordelijk hogeraadslid van de wijk/gemeente",
-  FUNCTIE_RINGPRESIDENT: "ringpresident",
-  FUNCTIE_ENIGE_BEVOEGDE: "enige bevoegde persoon",
-};
-
 export function NewCalling() {
   const { id: draftIdParam } = useParams();
   const { api, ring } = useAuth();
@@ -32,7 +25,6 @@ export function NewCalling() {
   const [unitId, setUnitId] = useState("");
   const [picked, setPicked] = useState<PickedCalling | null>(null);
   const [assignees, setAssignees] = useState<Record<TaskKey, string>>({ roepen: "", ondersteunen: "", aanstellen: "" });
-  const [external, setExternal] = useState<{ roepen: string; aanstellen: string }>({ roepen: "", aanstellen: "" });
   const [view, setView] = useState<DraftView | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -53,7 +45,6 @@ export function NewCalling() {
         setPicked({ code: v.procedure.code, source: v.procedure.source, name: v.procedure.name, category: v.procedure.category, customConfirmed: v.draft.procedureConfirmed, requiresConfirmation: v.procedure.requiresConfirmation });
       }
       setAssignees({ roepen: v.draft.roepenAssigneeId ?? "", ondersteunen: v.draft.ondersteunenAssigneeId ?? "", aanstellen: v.draft.aanstellenAssigneeId ?? "" });
-      setExternal({ roepen: v.draft.roepenExternalName ?? "", aanstellen: v.draft.aanstellenExternalName ?? "" });
     }).catch((err) => setMessage(err instanceof ApiRequestError ? err.message : "Het concept kon niet worden geladen."));
   }, [api, draftIdParam]);
 
@@ -64,8 +55,7 @@ export function NewCalling() {
     functionCode: picked?.code ?? null,
     procedureConfirmed: picked?.customConfirmed ?? false,
     roepenAssigneeId: assignees.roepen || null, ondersteunenAssigneeId: assignees.ondersteunen || null, aanstellenAssigneeId: assignees.aanstellen || null,
-    roepenExternalName: external.roepen.trim() || null, aanstellenExternalName: external.aanstellen.trim() || null,
-  }), [personName, unitId, picked, assignees, external]);
+  }), [personName, unitId, picked, assignees]);
 
   async function save(): Promise<string> {
     const body = payload();
@@ -87,9 +77,23 @@ export function NewCalling() {
   }, [api, ring, unitId, picked?.code, picked?.source]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sug = view?.suggestions ?? null;
+  // De voorgestelde persoon wordt direct ingevuld, zolang er nog niets is gekozen; een eigen keuze wordt nooit overschreven.
+  const touched = useRef<Record<TaskKey, boolean>>({ roepen: false, ondersteunen: false, aanstellen: false });
+  useEffect(() => {
+    if (!sug) return;
+    setAssignees((a) => {
+      const next = { ...a };
+      let changed = false;
+      for (const t of ["roepen", "ondersteunen", "aanstellen"] as TaskKey[]) {
+        const s = sug[t];
+        if (s && !a[t] && !touched.current[t]) { next[t] = s.userId; changed = true; }
+      }
+      return changed ? next : a;
+    });
+  }, [sug]);
   function applySuggestion(task: TaskKey) {
     const s = sug?.[task];
-    if (s) setAssignees((a) => ({ ...a, [task]: s.userId }));
+    if (s) { touched.current[task] = false; setAssignees((a) => ({ ...a, [task]: s.userId })); }
   }
 
   async function run(fn: () => Promise<void>) {
@@ -124,28 +128,19 @@ export function NewCalling() {
 
   const taskSelect = (task: TaskKey, label: string, restricted: boolean) => {
     const eligible = task === "roepen" ? sug?.eligible.roepen : task === "aanstellen" ? sug?.eligible.aanstellen : undefined;
-    const options = restricted ? (eligible ?? []).map((u) => ({ id: u.id, name: u.basis ? `${u.name} – ${u.basis}` : u.name })) : (members.data?.members ?? []).map((m) => ({ id: m.id, name: m.name }));
+    const options = restricted ? (eligible ?? []).map((u) => ({ id: u.id, name: u.name })) : (members.data?.members ?? []).map((m) => ({ id: m.id, name: m.name }));
     const note = task === "roepen" || task === "aanstellen" ? sug?.notes[task] : null;
     return (
-      <div key={task} className="stack">
+      <div key={task}>
         <label htmlFor={`as-${task}`}>{label}</label>
-        <select id={`as-${task}`} value={assignees[task]} onChange={(e) => setAssignees((a) => ({ ...a, [task]: e.target.value }))}>
+        <select id={`as-${task}`} value={assignees[task]} onChange={(e) => { touched.current[task] = true; setAssignees((a) => ({ ...a, [task]: e.target.value })); }}>
           <option value="">Nog niet toegewezen</option>
           {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
         {sug?.[task] && assignees[task] !== sug[task]!.userId && (
-          <button type="button" className="btn btn-ghost" onClick={() => applySuggestion(task)}>
-            Voorstel overnemen: {sug[task]!.name} ({SOURCE_LABEL[sug[task]!.source]}{sug[task]!.basis ? `; ${sug[task]!.basis}` : ""})
-          </button>
+          <button type="button" className="btn btn-ghost" style={{ marginTop: 8 }} onClick={() => applySuggestion(task)}>Voorgesteld: {sug[task]!.name}</button>
         )}
         {note && <span className="muted" role="note">{note}</span>}
-        {restricted && (
-          <div>
-            <label htmlFor={`ex-${task}`}>Of: externe uitvoerder zonder Ringtools-account (handmatig)</label>
-            <input id={`ex-${task}`} value={external[task as "roepen" | "aanstellen"]} maxLength={120} onChange={(e) => setExternal((x) => ({ ...x, [task]: e.target.value }))} />
-            <span className="muted">Alleen voor een bevoegde persoon buiten deze ring of zonder Ringtools-account. Een lid van deze ring kies je hierboven; alleen bevoegde leden (kerkelijke functie en zo nodig machtiging) staan in de lijst.</span>
-          </div>
-        )}
       </div>
     );
   };
@@ -158,7 +153,7 @@ export function NewCalling() {
     <form className="stack" onSubmit={submit}>
       <PageHead
         title={draftId ? "Concept voorstel" : "Nieuw voorstel"}
-        subtitle={`Ring: ${ring?.name}. Een concept is alleen zichtbaar voor ringstaf en verstuurt niets.`}
+        subtitle={ring?.name}
         action={draftId ? <ActionMenu label="Acties voor dit concept" disabled={busy} items={[{ id: "delete", label: "Concept verwijderen…", icon: MENU_ICONS.trash, danger: true, onSelect: () => void discard() }]} /> : undefined}
       />
       {(units.loading || members.loading) && !units.data && <Spinner />}
@@ -166,7 +161,7 @@ export function NewCalling() {
       {members.error && <ErrorState error={members.error} onRetry={members.reload} />}
       <div className="glass card stack">
         <strong>1. Naam van de persoon</strong>
-        <div><label htmlFor="person">Naam (handmatig invoeren)</label><input id="person" value={personName} onChange={(e) => setPersonName(e.target.value)} minLength={2} maxLength={200} autoComplete="off" /></div>
+        <div><label htmlFor="person">Naam</label><input id="person" value={personName} onChange={(e) => setPersonName(e.target.value)} minLength={2} maxLength={200} autoComplete="off" /></div>
       </div>
       <div className="glass card stack">
         <strong>2. Wijk of gemeente van herkomst</strong>
@@ -177,15 +172,14 @@ export function NewCalling() {
             {(units.data?.units ?? []).filter((u) => u.active).map((u) => <option key={u.id} value={u.id}>{u.kind === "WIJK" ? "Wijk" : "Gemeente"} {u.name}</option>)}
           </select>
         </div>
-        {noUnits && <div className="error" role="alert">De ringinrichting is nog niet compleet: er zijn geen wijken of gemeenten ingevoerd. Je kunt het concept opslaan, maar pas indienen nadat de ringbeheerder deze heeft ingevoerd.</div>}
+        {noUnits && <div className="error" role="alert">Er zijn nog geen wijken of gemeenten ingevoerd. Vraag de ringbeheerder dit eerst te doen.</div>}
       </div>
       <div className="glass card stack">
         <strong>3. Roeping</strong>
         <CallingPicker ringId={ring!.id} value={picked} onChange={setPicked} />
       </div>
       <div className="glass card stack">
-        <strong>4. Verantwoordelijken controleren</strong>
-        <span className="muted">Roepen en aanstellen kunnen alleen door bevoegde leden worden toegewezen: de kerkelijke functie bepaalt wat mogelijk is en een aangewezen raadgever of hogeraadslid heeft daarnaast een expliciete machtiging nodig. Een wijkkoppeling is geen machtiging. De steunverlening in de kerkvergadering en de interne ondersteuning door presidium en hoge raad zijn aparte stappen.</span>
+        <strong>4. Verantwoordelijken</strong>
         {taskSelect("roepen", "Wie roept de persoon?", true)}
         {taskSelect("ondersteunen", "Wie begeleidt de steunverlening?", false)}
         {taskSelect("aanstellen", "Wie stelt de persoon aan?", true)}

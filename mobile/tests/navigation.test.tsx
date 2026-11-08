@@ -9,7 +9,7 @@ afterEach(cleanup);
 describe("Navigatielogica (puur)", () => {
   it("elk pad hoort bij precies één hoofdgebied; detailschermen blijven onder hun gebied actief", () => {
     expect(tabForPath("/")).toBe("overzicht");
-    expect(tabForPath("/ontheffingen/abc")).toBe("overzicht");
+    expect(tabForPath("/ontheffingen/abc")).toBe("voorstellen"); // ontheffingen staan in de lijst bij Voorstellen
     expect(tabForPath("/voorstellen/nieuw")).toBe("voorstellen");
     expect(tabForPath("/roepingen/x")).toBe("voorstellen"); // voorheen: geen enkele tab actief
     expect(tabForPath("/beheer/inrichting")).toBe("beheer");
@@ -18,13 +18,12 @@ describe("Navigatielogica (puur)", () => {
   });
   it("hoofdschermen hebben geen terugknop; diepere schermen wel", () => {
     for (const p of ["/", "/voorstellen", "/meldingen", "/profiel", "/beheer/gebruikers"]) expect(isTabRoot(p)).toBe(true);
-    for (const p of ["/roepingen/1", "/voorstellen/nieuw", "/ontheffingen", "/ontheffingen/9"]) expect(isTabRoot(p)).toBe(false);
+    for (const p of ["/roepingen/1", "/voorstellen/nieuw", "/ontheffingen/9"]) expect(isTabRoot(p)).toBe(false);
   });
   it("terug: met geschiedenis een stap terug; zonder geschiedenis (melding/link) naar het bovenliggende scherm — nooit vast", () => {
     expect(backAction("/roepingen/1", true)).toEqual({ kind: "history" });
     expect(backAction("/roepingen/1", false)).toEqual({ kind: "path", to: "/voorstellen" });
-    expect(backAction("/ontheffingen/9", false)).toEqual({ kind: "path", to: "/ontheffingen" });
-    expect(backAction("/ontheffingen", false)).toEqual({ kind: "path", to: "/" });
+    expect(backAction("/ontheffingen/9", false)).toEqual({ kind: "path", to: "/voorstellen" });
     expect(backAction("/voorstellen/concept/3", false)).toEqual({ kind: "path", to: "/voorstellen" });
     // Op een ander hoofdscherm brengt terug je naar het overzicht; op het overzicht zelf gaat de app naar de achtergrond (null).
     expect(backAction("/meldingen", true)).toEqual({ kind: "path", to: "/" });
@@ -34,7 +33,7 @@ describe("Navigatielogica (puur)", () => {
     expect(navTitle("/roepingen/1")).toBe("Voorstel");
     expect(navTitle("/ontheffingen/nieuw")).toBe("Nieuwe ontheffing");
     expect(titleOf(parentPath("/roepingen/1"))).toBe("Voorstellen");
-    expect(titleOf(parentPath("/ontheffingen"))).toBe("Overzicht");
+    expect(titleOf(parentPath("/ontheffingen/9"))).toBe("Voorstellen");
   });
 });
 

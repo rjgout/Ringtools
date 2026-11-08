@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ApiClient } from "../src/lib/api";
 import { parseTarget, routeFor } from "../src/lib/links";
@@ -10,7 +10,7 @@ vi.mock("../src/lib/auth", () => ({ useAuth: () => auth.value }));
 import { answerDialog, pickMenuItem, renderUi } from "./ui";
 const { OntheffingForm } = await import("../src/screens/OntheffingForm");
 const { OntheffingDetail } = await import("../src/screens/OntheffingDetail");
-const { Ontheffingen } = await import("../src/screens/Ontheffingen");
+const { Callings } = await import("../src/screens/Callings");
 
 afterEach(cleanup);
 
@@ -88,7 +88,7 @@ describe("Ontheffing: concept", () => {
     fireEvent.click(screen.getByLabelText(/Ja, dit account/));
     fireEvent.change(screen.getByLabelText("Ringtools-account van de betrokkene"), { target: { value: "u1" } });
     fireEvent.change(screen.getByLabelText("Wijk of gemeente"), { target: { value: "w1" } });
-    fireEvent.click(await screen.findByRole("option", { name: /ZHV-presidente/ }));
+    { const o = (await screen.findByRole("option", { name: /ZHV-presidente/ })) as HTMLOptionElement; fireEvent.change(screen.getByLabelText("Roeping"), { target: { value: o.value } }); }
     fireEvent.click(screen.getByRole("button", { name: "Concept opslaan" }));
     await waitFor(() => expect(api.createOntheffing).toHaveBeenCalled());
     expect(api.createOntheffing).toHaveBeenCalledWith("r1", expect.objectContaining({
@@ -197,12 +197,33 @@ describe("Ontheffing: uitvoering per persoon", () => {
   });
 });
 
-describe("Ontheffingen: lijst", () => {
-  it("toont de lijst en de knop voor een nieuwe ontheffing alleen aan ringstaf", async () => {
-    auth.value = { api: { ontheffingen: vi.fn(async () => ({ ontheffingen: [{ id: "o1", status: "PRESIDIUM_VOTING", statusLabel: "Behandeling door het ringpresidium", personName: "Anna", functionName: "Ringadministrateur", unitName: "Voorbeeld", joint: false, needsMyVote: true, needsReview: false, updatedAt: "2026-11-01T10:00:00Z" }] })) }, ring: { id: "r1", name: "Ring", role: "HOGERAAD" } };
-    renderUi(<MemoryRouter><Ontheffingen /></MemoryRouter>);
+describe("Voorstellen: voorstellen én ontheffingen in één lijst", () => {
+  const o = { id: "o1", status: "PRESIDIUM_VOTING", statusLabel: "Behandeling door het ringpresidium", personName: "Anna", functionName: "Ringadministrateur", unitName: "Voorbeeld", joint: false, needsMyVote: true, needsReview: false, updatedAt: "2026-11-01T10:00:00Z" };
+  const calling = { id: "c1", personName: "Bert", functionTitle: "Leraar", phase: "Hoge raad", needsMyResponse: false };
+
+  it("toont bij elke rij of het een voorstel of een ontheffing is, en beide knoppen alleen aan ringstaf", async () => {
+    auth.value = { api: { callings: vi.fn(async () => ({ callings: [calling] })), drafts: vi.fn(async () => ({ drafts: [] })), ontheffingen: vi.fn(async () => ({ ontheffingen: [o] })) }, ring: { id: "r1", name: "Ring", role: "RINGSECRETARIS" } };
+    renderUi(<MemoryRouter><Callings /></MemoryRouter>);
+    const anna = (await screen.findByText("Anna")).closest("a")!;
+    expect(within(anna).getByText("Ontheffing")).toBeTruthy();
+    expect(within(anna).getByText("Jouw reactie")).toBeTruthy(); // actie bovenaan
+    const bert = screen.getByText("Bert").closest("a")!;
+    expect(within(bert).getByText("Voorstel")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Nieuw voorstel" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Nieuwe ontheffing" })).toBeTruthy();
+    cleanup();
+    auth.value = { api: { callings: vi.fn(async () => ({ callings: [] })), drafts: vi.fn(async () => ({ drafts: [] })), ontheffingen: vi.fn(async () => ({ ontheffingen: [o] })) }, ring: { id: "r1", name: "Ring", role: "HOGERAAD" } };
+    renderUi(<MemoryRouter><Callings /></MemoryRouter>);
     expect(await screen.findByText("Anna")).toBeTruthy();
-    expect(screen.queryByText("Nieuwe ontheffing")).toBeNull();
-    expect(screen.getByLabelText("Wacht op jouw reactie")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Nieuw voorstel" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Nieuwe ontheffing" })).toBeNull();
+  });
+
+  it("een ontheffingsconcept staat bij de concepten en opent het formulier", async () => {
+    auth.value = { api: { callings: vi.fn(async () => ({ callings: [] })), drafts: vi.fn(async () => ({ drafts: [] })), ontheffingen: vi.fn(async () => ({ ontheffingen: [{ ...o, id: "o2", status: "CONCEPT", statusLabel: "Concept", needsMyVote: false, personName: "Cor" }] })) }, ring: { id: "r1", name: "Ring", role: "RINGSECRETARIS" } };
+    renderUi(<MemoryRouter><Callings /></MemoryRouter>);
+    const cor = (await screen.findByText("Cor")).closest("a")!;
+    expect(cor.getAttribute("href")).toContain("/ontheffingen/concept/o2");
+    expect(within(screen.getByLabelText("Concepten")).getByText("Ontheffing")).toBeTruthy();
   });
 });

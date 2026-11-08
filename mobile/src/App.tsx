@@ -1,4 +1,3 @@
-import { Ontheffingen } from "./screens/Ontheffingen";
 import { OntheffingForm } from "./screens/OntheffingForm";
 import { OntheffingDetail } from "./screens/OntheffingDetail";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -173,7 +172,7 @@ function Shell() {
             <Route path="/voorstellen/nieuw" element={<NewCalling />} />
             <Route path="/voorstellen/concept/:id" element={<NewCalling />} />
             <Route path="/roepingen/:id" element={<CallingDetail />} />
-            <Route path="/ontheffingen" element={<Ontheffingen />} />
+            <Route path="/ontheffingen" element={<Navigate to="/voorstellen" replace />} />
             <Route path="/ontheffingen/nieuw" element={<OntheffingForm />} />
             <Route path="/ontheffingen/concept/:id" element={<OntheffingForm />} />
             <Route path="/ontheffingen/:id" element={<OntheffingDetail />} />

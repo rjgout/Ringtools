@@ -23,6 +23,13 @@ Referentie: Figma-bestand *Ringtools UI Kit* (`R6qg8Qul1ZuIVYnBzDJ2PA`, pagina "
 5. **Tokens, geen kleurliteralen** buiten de `:root`-blokken (`tests/designTokens.test.ts`, `tests/uxStandard.test.ts`); licht/donker, hoog contrast en Dynamic Type volgen uit de tokens en rem-eenheden.
 6. **Rolgebonden acties** worden verborgen (`hidden`) of komen niet voor in het scherm; de server blijft de bevoegdheid bepalen.
 
+## Navigatie en invoer
+
+- **Overzicht** is alleen een overzicht: geen knoppen. Wat jouw actie vraagt (voorstel of ontheffing) staat er als rij die opent; verder niets.
+- **Voorstellen** is de enige lijst voor voorstellen én ontheffingen; elke rij toont het type ("Voorstel" of "Ontheffing") en de status. Ringstaf ziet daar beide knoppen ("Nieuw voorstel", "Nieuwe ontheffing"). Het aparte scherm Ontheffingen bestaat niet meer (`/ontheffingen` verwijst naar Voorstellen; ontheffingen horen onder de tab Voorstellen).
+- **Roeping kiezen**: twee keuzelijsten (organisatie, roeping), geen zoekveld. Weinig uitleg: alleen wat nodig is om een fout te voorkomen.
+- **Verantwoordelijken**: de voorgestelde persoon wordt direct ingevuld zolang er nog niets is gekozen; een eigen keuze wordt nooit overschreven. Er is geen invoer voor een externe uitvoerder (iedereen heeft een account).
+
 ## Aangepaste schermen
 
 Voorsteldetail (kopmenu verwijderen, menu per deelnemer: herinneren / opnieuw vragen / uit ronde, gezamenlijk akkoord als sheet bij de ronde, "Administratief verwerkt" direct onder de kop, melding bovenaan) · Voorstellen, Ontheffingen, Meldingen (`PageHead`, `StatusLabel`) · Nieuw voorstel en concept (menu "Concept verwijderen…") · Gebruikersbeheer (menu per gebruiker: wijzigen, inlogmail, uitnodiging opnieuw, (de)activeren; formulier als sheet; menu per uitnodiging met bevestiging bij intrekken) · Ontheffingsdetail en -concept (verwijderen via menu + dialoog; vrijgeven met bevestiging) · Profiel (sessie intrekken, Face ID uitzetten en uitloggen met bevestiging) · Ringinrichting (wijk/gemeente en eigen roeping deactiveren met bevestiging) · Overzicht (rijen en statuslabels).
