@@ -115,6 +115,10 @@ ok(existsSync(join(root, "ios/App/App/Assets.xcassets/AppIcon.appiconset")), "iO
   ok(tf.length > 0, ".github/workflows/ios-testflight.yml ontbreekt.");
   ok(!/-----BEGIN|AuthKey_[A-Z0-9]{10}\.p8/.test(tf.replace(/AuthKey_\$\{ASC_KEY_ID\}\.p8/g, "")), "ios-testflight.yml bevat een sleutel of vaste sleutelnaam.");
   ok(!/echo\s+"?\$\{?(ASC_API_KEY_P8_BASE64|ASC_KEY_ID|ASC_ISSUER_ID)[^|>]*$/m.test(tf), "ios-testflight.yml mag secrets niet printen.");
+  ok(/signingCertificate<\/key><string>Apple Distribution/.test(tf), "ios-testflight.yml moet in de export-opties expliciet 'Apple Distribution' vragen.");
+  ok(/verify-ios-bundle\.py --stage ipa/.test(tf) && /verify-ios-bundle\.py --stage archive/.test(tf), "ios-testflight.yml moet archive en IPA met verify-ios-bundle.py (echte plist-parser) controleren.");
+  ok(!/grep[^\n]*get-task-allow/.test(tf), "get-task-allow mag niet met grep worden gecontroleerd (een App Store-plist is één regel; gebruik de plist-parser).");
+  ok(existsSync(join(root, "scripts/verify-ios-bundle.py")), "scripts/verify-ios-bundle.py ontbreekt.");
   ok(/environment:\s*testflight/.test(tf) && /workflow_dispatch:/.test(tf) && !/\n\s*(push|pull_request|schedule):/.test(tf), "ios-testflight.yml moet handmatig (workflow_dispatch) draaien met de omgeving 'testflight'.");
 }
 

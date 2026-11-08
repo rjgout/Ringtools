@@ -156,6 +156,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Tests van de iOS-bundlecontrole (signing, get-task-allow, APNs)
+        run: python3 scripts/test_verify_ios_bundle.py
       - name: Native configuratie controleren (identiteit, links, privacy, geen geheimen)
         run: npm run check:native-config
       - name: Capacitor-configuratie controleren

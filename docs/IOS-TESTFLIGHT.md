@@ -42,9 +42,17 @@ Alleen jij kunt dit doen; het zijn eenmalige handelingen.
 10. **Testers:** App Store Connect → TestFlight → *Internal Testing* → **+** groep "Intern" → voeg jezelf (account met rol Admin/App Manager/Developer) toe en kies de build. Intern testen heeft geen Apple-review nodig.
 11. **Installeren op je iPhone:** installeer de app **TestFlight** uit de App Store, open de uitnodigingsmail (of de TestFlight-app) met hetzelfde Apple-ID → **Installeer** bij Ringtools. Verwijder eerst de oude persoonlijke testversie (`….ringtools.dev`) om verwarring te voorkomen; haar data en push zijn niet te hergebruiken.
 
+## Ondertekening: hoe het werkt en hoe je een fout leest
+
+Xcode maakt de archive met **automatische signing**, dus met een *Apple Development*-identiteit en een ontwikkelprofiel (`get-task-allow = true`). Dat is normaal en geen fout: `CODE_SIGN_IDENTITY = "iPhone Developer"` op projectniveau is de standaardwaarde en wordt bij een automatisch ondertekende archive door Xcode overruled. De **export** (`method = app-store-connect`, `signingCertificate = Apple Distribution`) ondertekent de app daarna opnieuw met *Apple Distribution* en een App Store-profiel. Dat profiel heeft geen apparatenlijst, de entitlements krijgen `aps-environment = production` en `get-task-allow` verdwijnt. Het projectbestand wordt daarom niet op "Apple Distribution" gezet: dat breekt automatische signing en de gewone Debug-, `Debug-PersonalTeam`- en simulatorbuilds.
+
+Een eerdere controle gebruikte `grep` op de uitvoer van `codesign`. Die uitvoer is bij een App Store-build één regel XML en bevat altijd `beta-reports-active = <true/>`; `grep -A1 get-task-allow` zag daardoor ten onrechte een `<true/>`. Nu leest `mobile/scripts/verify-ios-bundle.py` de entitlements en het ingebedde profiel met een echte plist-parser (getest in `mobile/scripts/test_verify_ios_bundle.py`, ook voor deze regressie).
+
+De workflow toont per stap (groep "Ondertekening") de handtekeningautoriteiten, profielnaam en UUID, of er een apparatenlijst is, en de waarden van `get-task-allow` en `aps-environment`, nooit sleutels of certificaten. Bij een fout geeft hij de reden en een hint. Voor de export staat bij een fout een korte uitleg van de distributie-log in de job.
+
 ## Controles die de workflow zelf doet
 
-`ios-testflight.yml` stopt als iets niet klopt: tests/build/`check:native-config`; Release-archive met automatische signing; IPA bevat `aps-environment = production`, `applinks:` en `webcredentials:`; geen `get-task-allow`; bundle-ID, versie en buildnummer kloppen; privacymanifest aanwezig. Daarna uploadt `altool` naar TestFlight. De API-sleutel staat alleen tijdelijk op de runner en wordt nooit geprint. De gewone CI (`mobile-ci.yml`) maakt bij elke wijziging ook een **Release-archive zonder signing** om Release-fouten vroeg te vangen.
+`ios-testflight.yml` stopt als iets niet klopt: tests/build/`check:native-config`; Release-archive met automatische signing; `codesign --verify --deep --strict`; handtekening *Apple Distribution*; App Store-profiel zonder apparatenlijst; `get-task-allow` uit (plist-parser); `aps-environment = production`, `applinks:` en `webcredentials:`; bundle-ID, versie en buildnummer kloppen; privacymanifest aanwezig. Daarna uploadt `altool` naar TestFlight. De API-sleutel staat alleen tijdelijk op de runner en wordt nooit geprint. De gewone CI (`mobile-ci.yml`) maakt bij elke wijziging ook een **Release-archive zonder signing** om Release-fouten vroeg te vangen.
 
 ## Pushmeldingen (APNs)
 
