@@ -23,7 +23,7 @@ export function DeviceLink({ onClose }: { onClose: () => void }) {
 
   return (
     <main className="page center">
-      <div className="glass card stack" style={{ width: "100%", maxWidth: 420 }}>
+      <div className="glass card stack card-narrow">
       <h1>Toestel koppelen</h1>
       {done ? (
         <>

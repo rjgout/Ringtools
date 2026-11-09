@@ -17,8 +17,8 @@ function AccountChoice({ id, link, members, onChange }: { id: string; link: Link
   return (
     <fieldset className="stack">
       <legend>Heeft deze persoon een Ringtools-account?</legend>
-      <label className="row"><input type="radio" name={id} style={{ width: 24, minHeight: 24 }} checked={link.mode === "GEEN_ACCOUNT"} onChange={() => onChange({ mode: "GEEN_ACCOUNT", userId: "" })} /> Nee, geen Ringtools-account</label>
-      <label className="row"><input type="radio" name={id} style={{ width: 24, minHeight: 24 }} checked={link.mode === "GEKOPPELD"} onChange={() => onChange({ mode: "GEKOPPELD", userId: link.userId })} /> Ja, dit account:</label>
+      <label className="row"><input type="radio" name={id} checked={link.mode === "GEEN_ACCOUNT"} onChange={() => onChange({ mode: "GEEN_ACCOUNT", userId: "" })} /> Nee, geen Ringtools-account</label>
+      <label className="row"><input type="radio" name={id} checked={link.mode === "GEKOPPELD"} onChange={() => onChange({ mode: "GEKOPPELD", userId: link.userId })} /> Ja, dit account:</label>
       {link.mode === "GEKOPPELD" && (
         <select aria-label="Ringtools-account van de betrokkene" value={link.userId} onChange={(e) => onChange({ mode: "GEKOPPELD", userId: e.target.value })}>
           <option value="">Kies het account…</option>
@@ -164,8 +164,8 @@ export function OntheffingForm() {
             return (
               <div key={a.code} className="glass panel stack">
                 <strong>{a.functionName}</strong>
-                <label className="row"><input type="radio" name={`ad-${a.code}`} style={{ width: 24, minHeight: 24 }} checked={a.answer === "NAAM"} onChange={() => set({ answer: "NAAM" })} /> Naam invullen</label>
-                <label className="row"><input type="radio" name={`ad-${a.code}`} style={{ width: 24, minHeight: 24 }} checked={a.answer === "NIET_VAN_TOEPASSING"} onChange={() => set({ answer: "NIET_VAN_TOEPASSING" })} /> Niet van toepassing</label>
+                <label className="row"><input type="radio" name={`ad-${a.code}`} checked={a.answer === "NAAM"} onChange={() => set({ answer: "NAAM" })} /> Naam invullen</label>
+                <label className="row"><input type="radio" name={`ad-${a.code}`} checked={a.answer === "NIET_VAN_TOEPASSING"} onChange={() => set({ answer: "NIET_VAN_TOEPASSING" })} /> Niet van toepassing</label>
                 {a.answer === "NAAM" && (
                   <>
                     <div><label htmlFor={`ad-name-${a.code}`}>Naam</label><input id={`ad-name-${a.code}`} value={a.name} onChange={(e) => set({ name: e.target.value })} autoComplete="off" /></div>

@@ -111,7 +111,7 @@ export function Profile() {
       <section className="glass card stack">
         <h2>Pushmeldingen</h2>
         <span className="muted">Je krijgt een melding zonder namen of functies; tikken opent het voorstel.</span>
-        {caps.limited && <div role="note" className="badge bad" style={{ whiteSpace: "normal", borderRadius: 12 }}>{PERSONAL_TEAM_NOTICE}</div>}
+        {caps.limited && <div role="note" className="note bad">{PERSONAL_TEAM_NOTICE}</div>}
         {caps.limited ? null : isNative ? <button className="btn btn-primary" onClick={push}>Meldingen aanzetten op dit toestel</button> : <span className="muted">Alleen beschikbaar in de app.</span>}
         {pushMessage && <div role="status">{pushMessage}</div>}
         {devices.data?.devices.map((d) => (

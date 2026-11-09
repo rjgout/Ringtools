@@ -42,3 +42,23 @@ Voorsteldetail (kopmenu verwijderen, menu per deelnemer: herinneren / opnieuw vr
 - Het "!"-icoon in de Figma-verwijderdialoog is niet overgenomen; de rode bevestigingsknop en de tekst dragen de waarschuwing.
 - Taken in het voorsteldetail houden hun inline invoer (verantwoordelijke, datum, registreren), omdat die direct bij de taak horen.
 - Alleen in Chromium (licht/donker, 390 en 320 px) visueel gecontroleerd; niet op een fysieke iPhone of Android-toestel.
+
+## iOS 26-ontwerpstijl (Liquid Glass) – gedeeld designsysteem
+
+Uitgangspunt (Apple HIG, Materials / Adopting Liquid Glass): **glas is de bedieningslaag, inhoud blijft rustig en effen.** Alle stijlen staan als tokens en componentklassen in `mobile/src/styles.css`; schermen gebruiken geen eigen kleuren, afrondingen of afmetingen (`tests/liquidGlassUi.test.tsx` bewaakt dit, inclusief het verbod op inline opmaak en browser-dialogen).
+
+| Laag | Wat | Implementatie |
+|---|---|---|
+| **Native Liquid Glass** | hoofdnavigatie (tabbalk) | echte `UITabBar` (iOS 26+: systeemglas), `NativeTabBarPlugin.swift` |
+| **Glas in CSS** (benadering, geen claim van Apple's exacte optiek) | navigatiebalk bovenaan, terugknop, icoonknoppen, contextmenu, segmentbesturing | tokens `--glass*`, `--glass-edge*`, `--elev-*`; klasse `.glass-control` en de componenten zelf |
+| **Effen oppervlakken** | kaarten, lijstrijen, formulieren, invoervelden, dialogen en sheets met inhoud | `.glass` (naam historisch: effen gegroepeerd vlak), `--field-bg` |
+
+- **Vormen:** bediening is een capsule (`--radius-pill`: knoppen, segmenten, labels, terugknop; icoonknop rond); kaarten `--radius-xl` (28), rijen/menu `--radius-l` (20), velden `--radius-m` (14).
+- **Knoppen:** `.btn-primary` (gevuld), `.btn-secondary`/`.btn-ghost` (tint-gevuld), `.btn-destructive`/`.btn-danger` (rood gevuld), `.btn-plain` (tekst), `.icon-btn` (rond glas, 48 px), uitgeschakeld = 45 % + niet tikbaar. Alle minimaal 48 px (`--touch`).
+- **Navigatiebalk:** glas bovenaan; de pagina schuift eronder door (de balk meet zijn hoogte → `--navbar-h`); één terugknop met duidelijke naam; lange titels lopen over meerdere regels.
+- **Overlays:** menu (glas, bij de knop), dialoog en sheet (effen, scrim met lichte blur), één stijl voor bevestigen/selecteren/formulieren; Escape/terug sluit; focus keert terug.
+- **Formulieren:** effen velden, 2 px rode rand bij `aria-invalid`, foutmelding als blok met waarschuwingsteken (`.error`), schakelaars i.p.v. vinkjes.
+- **Statussen:** `.status` met symbool (✓ ! ✕) naast de tekst; nooit alleen kleur.
+- **Toegankelijkheid per modus:** donker, Verhoogd contrast (glas nagenoeg dekkend), Reduce Transparency (glas effen, geen blur, geen lichtrand), Reduce Motion (alle overgangen uit), Dynamic Type (`-apple-system-*`, `min-height` i.p.v. vaste hoogtes; dialoogknoppen stapelen), veilige randen en toetsenbord ongewijzigd. Contrastparen voor glas, tint-gevulde knop, menu en veld worden per modus getest.
+- **Terugval:** Android, PWA en browser gebruiken dezelfde CSS-tokens (glas valt waar `backdrop-filter` ontbreekt effen terug); iOS 18–25 krijgt de standaardbalk met systeemblur voor de tabs. Android wordt niet in een iOS-kopie gedwongen: eigen terugknop-gedrag en de React-tabbalk blijven.
+- **Bewust niet native:** contextmenu's, sheets en dialogen blijven React-componenten. Een native `UIMenu` zou een onzichtbaar `UIButton` per ankerpositie met `performPrimaryAction()` en een callbackbrug per menu vragen, zonder toestel niet te verifiëren en met risico op regressies in rolgebonden acties; een eigen `UIGlassEffect`-laag boven de WebView geeft problemen met de appvergrendeling en overlays. Voorstel voor later: een gerichte proef met één native menu.

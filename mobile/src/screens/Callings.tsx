@@ -28,8 +28,8 @@ export function Callings() {
       <PageHead title="Voorstellen" subtitle={ring?.name} />
       {isStaff && (
         <div className="row">
-          <Link to="/voorstellen/nieuw" className="btn btn-primary" style={{ flex: 1 }}>Nieuw voorstel</Link>
-          <Link to="/ontheffingen/nieuw" className="btn btn-ghost" style={{ flex: 1 }}>Nieuwe ontheffing</Link>
+          <Link to="/voorstellen/nieuw" className="btn btn-primary btn-flex">Nieuw voorstel</Link>
+          <Link to="/ontheffingen/nieuw" className="btn btn-ghost btn-flex">Nieuwe ontheffing</Link>
         </div>
       )}
       {((drafts.data?.drafts.length ?? 0) > 0 || concepts.length > 0) && (

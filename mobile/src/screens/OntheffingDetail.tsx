@@ -131,7 +131,7 @@ function PersonRow({ v, p, busy, act, showExecution }: { v: OntheffingView; p: O
       </div>
       {showExecution && ex && (
         <>
-          <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          <ul className="stack plain-list">
             <li>{ex.informedAt ? `✓ Persoonlijk geïnformeerd (${fmt(ex.informedAt)})` : "○ Persoonlijk informeren"}</li>
             <li>{ex.announcedAt ? `✓ Bekendgemaakt (${fmt(ex.announcedAt)}) · ${ex.thanksOffered ? "gelegenheid tot dankbetuiging geboden" : "geen gelegenheid tot dankbetuiging geboden"}` : "○ Bekendmaking en gelegenheid tot dankbetuiging"}</li>
             <li>{ex.processedAt ? `✓ Administratief verwerkt (${fmt(ex.processedAt)})` : "○ Administratief verwerken"}</li>

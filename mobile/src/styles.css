@@ -33,6 +33,26 @@
   --material: 255 255 255;
   --material-alpha: 0.72;
   --material-blur: 20px;
+  /* Glas (Liquid Glass, CSS-benadering): alleen voor de bedieningslaag (navigatiebalk, terugknop, icoonknoppen, menu's, segmenten), nooit voor inhoud.
+     Inhoud (kaarten, lijsten, formulieren, velden) blijft op effen gegroepeerde oppervlakken voor leesbaarheid. */
+  --glass: 255 255 255;
+  --glass-alpha: 0.66;              /* bedieningselementen */
+  --glass-strong-alpha: 0.9;        /* menu's en overlays met leesbare inhoud */
+  --glass-blur: 24px;
+  --glass-saturate: 180%;
+  --glass-edge: 255 255 255;        /* spiegelende lichtrand aan de bovenkant */
+  --glass-edge-alpha: 0.8;
+  --glass-shadow: 0 8px 28px rgb(var(--shadow));
+  --scrim-blur: 6px;
+  --tint-rgb: 10 96 214;            /* kanalen van --tint, voor tint-gevulde (secundaire) knoppen */
+  --tint-fill-alpha: 0.13;
+  --field-bg: var(--bg-elevated);   /* invoervelden zijn altijd effen */
+  --elev-1: 0 1px 3px rgb(var(--shadow));
+  --elev-2: 0 6px 20px rgb(var(--shadow));
+  /* Beweging: kort en rustig; verdwijnt bij Reduce Motion */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-fast: 0.14s;
+  --dur: 0.24s;
   /* 8pt-grid (4pt voor fijne ruimte) */
   --space-1: 4px;
   --space-2: 8px;
@@ -42,9 +62,10 @@
   --space-6: 32px;
   --space-7: 48px;
   --radius-s: 8px;
-  --radius-m: 12px;
-  --radius-l: 16px;
-  --radius-xl: 24px;
+  --radius-m: 14px;
+  --radius-l: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;             /* iOS 26: bediening (knoppen, segmenten, labels) is een capsule */
   --touch: 48px;                    /* minimaal aanraakdoel (HIG: 44 pt) */
   /* Veilige schermranden */
   --sat: env(safe-area-inset-top, 0px);
@@ -79,6 +100,13 @@
     --shadow: 0 0 0 / 0.4;
     --material: 44 44 46;
     --material-alpha: 0.72;
+    --glass: 44 44 46;
+    --glass-alpha: 0.6;
+    --glass-strong-alpha: 0.9;
+    --glass-edge-alpha: 0.2;
+    --tint-rgb: 77 163 255;
+    --tint-fill-alpha: 0.18;
+    --field-bg: #2c2c2e;
   }
 }
 @media (prefers-contrast: more) {
@@ -92,6 +120,10 @@
     --warning-ink: #663500;
     --separator-alpha: 0.6;
     --material-alpha: 0.95;
+    --glass-alpha: 0.95;
+    --glass-strong-alpha: 1;
+    --tint-rgb: 0 64 221;
+    --tint-fill-alpha: 0.18;
   }
 }
 @media (prefers-contrast: more) and (prefers-color-scheme: dark) {
@@ -103,13 +135,15 @@
     --danger: #ff9289;
     --danger-fill: #ff9289;
     --warning-ink: #ffd180;
+    --tint-rgb: 112 184 255;
+    --tint-fill-alpha: 0.2;
   }
 }
 @media (prefers-reduced-transparency: reduce) {
-  :root { --material: 255 255 255; --material-alpha: 1; --material-blur: 0px; }
+  :root { --material: 255 255 255; --material-alpha: 1; --material-blur: 0px; --glass: 255 255 255; --glass-alpha: 1; --glass-strong-alpha: 1; --glass-blur: 0px; --glass-edge-alpha: 0; --scrim-blur: 0px; }
 }
 @media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-  :root { --material: 28 28 30; }
+  :root { --material: 28 28 30; --glass: 28 28 30; }
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -150,14 +184,27 @@ h2 { font-size: 1.25rem; font-weight: 600; margin: var(--space-2) 0 0; line-heig
 /* Oppervlakken. .glass blijft de klassenaam voor kaarten; kaarten zijn nu effen gegroepeerde oppervlakken (inset grouped), glas is voor balken en overlays. */
 .glass {
   background: var(--bg-elevated);
-  border: 1px solid rgb(var(--separator) / var(--separator-alpha));
-  box-shadow: 0 1px 2px rgb(var(--shadow));
+  border: 1px solid rgb(var(--separator) / calc(var(--separator-alpha) * 0.6));
+  box-shadow: var(--elev-1);
 }
 .material {
   background: rgb(var(--material) / var(--material-alpha));
   -webkit-backdrop-filter: blur(var(--material-blur)) saturate(180%);
   backdrop-filter: blur(var(--material-blur)) saturate(180%);
 }
+/* Eén glasrecept voor de bedieningslaag: doorzichtig materiaal, lichtrand bovenaan, zachte schaduw. Zonder Reduce Transparency effen. */
+.glass-control {
+  background: rgb(var(--glass) / var(--glass-alpha));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid rgb(var(--separator) / calc(var(--separator-alpha) * 0.5));
+  box-shadow: inset 0 1px 0 rgb(var(--glass-edge) / var(--glass-edge-alpha)), var(--elev-2);
+}
+/* Lange namen en beschrijvingen breken af in plaats van uit het scherm te lopen of te worden afgekapt. */
+.card, .panel, .item-main, .status, .empty, strong, h1, h2, .muted, .note { overflow-wrap: anywhere; }
+.card-narrow { width: 100%; max-width: 420px; }
+.row-wrap { flex-wrap: wrap; gap: var(--space-2); }
+.row-tight { margin-top: var(--space-1); }
 .card { border-radius: var(--radius-xl); padding: var(--space-4) var(--space-4); }
 .panel { border-radius: var(--radius-l); padding: var(--space-3) var(--space-4); }
 a.panel, button.panel { display: block; width: 100%; text-align: left; color: inherit; text-decoration: none; font: inherit; }
@@ -167,41 +214,53 @@ a.panel.row, button.panel.row { display: flex; }
 .picked { border: 2px solid var(--tint); }
 .btn {
   display: inline-flex; min-height: var(--touch); align-items: center; justify-content: center; gap: var(--space-2);
-  border: 0; border-radius: var(--radius-xl); padding: var(--space-3) var(--space-5); text-align: center; font: inherit; font-weight: 600; cursor: pointer; color: var(--text); /* padding: tekst die op een smal scherm afbreekt houdt ruimte */
-  transition: transform 0.12s ease-out, opacity 0.12s ease-out;
+  border: 0; border-radius: var(--radius-pill); padding: var(--space-3) var(--space-5); text-align: center; font: inherit; font-weight: 600; cursor: pointer; color: var(--text); /* padding: tekst die op een smal scherm afbreekt houdt ruimte */
+  text-decoration: none; transition: transform var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
-.btn:active { transform: scale(0.98); }
-.btn:disabled { opacity: 0.5; pointer-events: none; }
-.btn-primary { background: var(--tint); color: var(--on-tint); }
+.btn:active { transform: scale(0.97); filter: brightness(0.94); }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
+/* Varianten: primair (gevuld), secundair (tint-gevuld glas), destructief (gevuld rood), tekst, en icoon (.icon-btn). */
+.btn-primary { background: var(--tint); color: var(--on-tint); box-shadow: inset 0 1px 0 rgb(var(--glass-edge) / 0.3), var(--elev-1); }
 .btn-success { background: var(--success-fill); color: var(--on-success-fill); flex: 1; }
-.btn-danger { background: var(--danger-fill); color: var(--on-danger-fill); flex: 1; }
-.btn-ghost { background: rgb(var(--fill) / var(--fill-alpha)); color: var(--tint); }   /* secundair: grijs gevuld (iOS "gray"), tekst in tint */
+.btn-danger, .btn-destructive { background: var(--danger-fill); color: var(--on-danger-fill); flex: 1; }
+.btn-ghost, .btn-secondary { background: rgb(var(--tint-rgb) / var(--tint-fill-alpha)); color: var(--tint); }   /* secundair: tint-gevuld (iOS "tinted"), tekst in tint */
 .btn-plain { background: transparent; color: var(--tint); }                           /* tertiair: alleen tekst */
-.btn-small { min-height: 44px; padding: var(--space-2) var(--space-4); font-size: 0.9375rem; border-radius: 22px; }
+.btn-small { padding: var(--space-2) var(--space-4); font-size: 0.9375rem; }
 .btn-block { width: 100%; }
+.btn-flex { flex: 1; }
+.btn[aria-busy="true"] { opacity: 0.7; pointer-events: none; }
 label { display: block; font-size: 0.9375rem; font-weight: 600; margin-bottom: var(--space-2); }
 input, select {
   width: 100%; min-height: var(--touch); border-radius: var(--radius-m); border: 1px solid rgb(var(--separator) / var(--separator-alpha));
-  background: var(--bg-elevated); color: var(--text); padding: 0 var(--space-3); font: inherit; font-size: 1.0625rem; /* ≥16 px voorkomt inzoomen op iOS */
+  background: var(--field-bg); color: var(--text); padding: 0 var(--space-4); font: inherit; font-size: 1.0625rem; /* ≥16 px voorkomt inzoomen op iOS */
+  transition: border-color var(--dur-fast) var(--ease);
 }
+input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--danger); border-width: 2px; }
+input::placeholder { color: var(--text-muted); opacity: 1; }
+input[type="radio"] { width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; flex: none; accent-color: var(--tint); }
 /* iOS tekent een native keuzelijst lager dan een invoerveld en negeert min-height: eigen weergave met dezelfde hoogte als een invoerveld. */
 select {
-  -webkit-appearance: none; appearance: none; height: var(--touch); padding-right: calc(var(--space-3) + 28px);
+  -webkit-appearance: none; appearance: none; height: var(--touch); padding-right: calc(var(--space-4) + 28px);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='18' viewBox='0 0 12 18' fill='none' stroke='%238e8e93' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 7l4-4 4 4M2 11l4 4 4-4'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right var(--space-3) center; background-size: 12px 18px;
+  background-repeat: no-repeat; background-position: right var(--space-4) center; background-size: 12px 18px;
 }
 input:focus-visible, select:focus-visible, .btn:focus-visible, a:focus-visible, button:focus-visible { outline: 3px solid var(--tint); outline-offset: 2px; }
 .code { text-align: center; letter-spacing: 0.4em; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
 .badge { display: inline-block; border-radius: 999px; padding: var(--space-1) var(--space-3); font-size: 0.8125rem; font-weight: 600; background: var(--warning-bg); color: var(--warning-ink); }  /* Footnote 13 pt */
 .badge.ok { background: var(--success-bg); color: var(--success); }
 .badge.bad { background: var(--danger-bg); color: var(--danger); }
-.error { color: var(--danger); font-size: 0.9375rem; }
+.error { color: var(--danger); font-size: 0.9375rem; background: var(--danger-bg); border-radius: var(--radius-m); padding: var(--space-2) var(--space-3); margin: 0; }
+.error::before { content: "\26A0\FE0E  "; content: "\26A0\FE0E  " / ""; }   /* waarschuwingsteken: de fout herkenbaar zonder kleur */
+/* Notitie (uitleg of waarschuwing in een kaart): vervangt losse badge-stijlen met inline opmaak. */
+.note { display: block; border-radius: var(--radius-m); padding: var(--space-3) var(--space-4); background: var(--warning-bg); color: var(--warning-ink); font-size: 0.9375rem; }
+.note.bad { background: var(--danger-bg); color: var(--danger); }
+.badge-start { align-self: flex-start; }
 .banner { padding: calc(var(--sat) + var(--space-2)) var(--space-4) var(--space-2); text-align: center; font-size: 0.875rem; background: var(--warning-bg); color: var(--warning-ink); }
 .tabbar {
   display: flex; padding: var(--space-1) calc(var(--sar) + var(--space-2)) calc(var(--sab) + var(--space-1)) calc(var(--sal) + var(--space-2));
   border-top: 1px solid rgb(var(--separator) / var(--separator-alpha));
-  background: rgb(var(--material) / var(--material-alpha));
-  -webkit-backdrop-filter: blur(var(--material-blur)) saturate(180%); backdrop-filter: blur(var(--material-blur)) saturate(180%);
+  background: rgb(var(--glass) / var(--glass-strong-alpha));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   /* Ringbeheerders hebben zes tabs: op een smal scherm schuift de balk horizontaal in plaats van de pagina te laten overlopen. */
   overflow-x: auto; scrollbar-width: none;
 }
@@ -218,26 +277,40 @@ input:focus-visible, select:focus-visible, .btn:focus-visible, a:focus-visible, 
 .tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab .dot { position: absolute; top: -4px; left: 100%; margin-left: -8px; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 var(--space-1); background: var(--danger-fill); color: var(--on-danger-fill); font-size: 0.75rem; line-height: 20px; text-align: center; }
 /* Sheet (modaal blok bovenaan het scherm): staat bewust bovenin, zodat het toetsenbord het invoerveld nooit afdekt. */
-.sheet-backdrop { position: fixed; inset: 0; z-index: 20; background: rgb(var(--scrim) / var(--scrim-alpha)); }
+.sheet-backdrop { position: fixed; inset: 0; z-index: 20; background: rgb(var(--scrim) / var(--scrim-alpha)); -webkit-backdrop-filter: blur(var(--scrim-blur)); backdrop-filter: blur(var(--scrim-blur)); }
 .sheet {
   position: fixed; z-index: 21; top: calc(var(--sat) + var(--space-5)); left: calc(var(--sal) + var(--space-3)); right: calc(var(--sar) + var(--space-3));
   max-width: 480px; margin: 0 auto; max-height: calc(100% - var(--sat) - var(--space-6)); overflow-y: auto;
+  box-shadow: var(--glass-shadow);
 }
-/* Navigatiebalk (diepere schermen) */
+@media (prefers-reduced-motion: no-preference) { .sheet { animation: sheet-in var(--dur) var(--ease); } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(-16px) scale(0.98); } to { opacity: 1; transform: none; } }
+/* Navigatiebalk (diepere schermen): glas boven de pagina; de pagina schuift eronder door (hoogte wordt gemeten in NavBar: --navbar-h). */
 .navbar {
+  position: relative; z-index: 5; margin-bottom: calc(-1 * var(--navbar-h, calc(var(--sat) + 60px)));
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: var(--space-2);
-  padding: calc(var(--sat) + var(--space-1)) calc(var(--sar) + var(--space-2)) var(--space-1) calc(var(--sal) + var(--space-2));
-  min-height: calc(var(--sat) + 52px); border-bottom: 1px solid rgb(var(--separator) / var(--separator-alpha));
+  padding: calc(var(--sat) + var(--space-1)) calc(var(--sar) + var(--space-3)) var(--space-2) calc(var(--sal) + var(--space-3));
+  min-height: calc(var(--sat) + 56px);
+  background: rgb(var(--glass) / var(--glass-alpha));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border-bottom: 1px solid rgb(var(--separator) / calc(var(--separator-alpha) * 0.5));
 }
-.banner + .navbar { padding-top: var(--space-1); min-height: 52px; }
-.navbar-back { justify-self: start; display: inline-flex; align-items: center; gap: var(--space-1); min-height: 44px; padding: 0 var(--space-2); border: 0; background: transparent; color: var(--tint); font: inherit; cursor: pointer; }
-.navbar-title { text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50vw; }
+.banner + .navbar { padding-top: var(--space-1); min-height: 56px; }
+/* Terugknop: capsule van glas, zoals de bediening in iOS 26. */
+.navbar-back {
+  justify-self: start; display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--touch); padding: 0 var(--space-4) 0 var(--space-3);
+  border-radius: var(--radius-pill); color: var(--tint); font: inherit; cursor: pointer;
+  background: rgb(var(--glass) / var(--glass-strong-alpha)); border: 1px solid rgb(var(--separator) / calc(var(--separator-alpha) * 0.5));
+  box-shadow: inset 0 1px 0 rgb(var(--glass-edge) / var(--glass-edge-alpha)), var(--elev-1);
+}
+.navbar-back:active { transform: scale(0.97); }
+.navbar-title { text-align: center; max-width: 52vw; overflow-wrap: anywhere; }
 .navbar-spacer { justify-self: end; }
-.navbar + .page { padding-top: var(--space-4); }
+.navbar ~ .page { padding-top: calc(var(--navbar-h, calc(var(--sat) + 60px)) + var(--space-3)); }
 /* Segmentbesturing */
-.segmented { display: flex; gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-m); background: rgb(var(--fill) / var(--fill-alpha)); }
-.segmented button { flex: 1; min-height: 40px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
-.segmented button.on { background: var(--segment-on); box-shadow: 0 1px 2px rgb(var(--shadow)); color: var(--text); }
+.segmented { display: flex; gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-pill); background: rgb(var(--fill) / var(--fill-alpha)); }
+.segmented button { flex: 1; min-height: 44px; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text); font: inherit; font-weight: 600; cursor: pointer; transition: background var(--dur) var(--ease); overflow-wrap: anywhere; }
+.segmented button.on { background: var(--segment-on); box-shadow: inset 0 1px 0 rgb(var(--glass-edge) / var(--glass-edge-alpha)), var(--elev-1); color: var(--text); }
 .spinner { width: 32px; height: 32px; border-radius: 50%; border: 3px solid rgb(var(--separator) / var(--separator-alpha)); border-top-color: var(--tint); animation: spin 0.8s linear infinite; margin: var(--space-5) auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (min-width: 700px) { .page { padding-left: max(calc(var(--sal) + var(--space-4)), 10vw); padding-right: max(calc(var(--sar) + var(--space-4)), 10vw); } }
@@ -284,18 +357,25 @@ input[type="date"], input[type="datetime-local"], input[type="time"] { display: 
 /* ---- Uniforme bediening (Figma "Ringtools UI Kit"): icoonknop, contextmenu, bevestigingsdialoog, kaartrij, statuslabel ---- */
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center; flex: none; width: var(--touch); height: var(--touch); min-width: var(--touch);
-  padding: 0; border: 0; border-radius: var(--radius-m); background: rgb(var(--fill) / var(--fill-alpha)); color: var(--tint); cursor: pointer;
+  padding: 0; border: 1px solid rgb(var(--separator) / calc(var(--separator-alpha) * 0.5)); border-radius: 50%; color: var(--tint); cursor: pointer;
+  background: rgb(var(--glass) / var(--glass-strong-alpha));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: inset 0 1px 0 rgb(var(--glass-edge) / var(--glass-edge-alpha)), var(--elev-1);
+  transition: transform var(--dur-fast) var(--ease);
 }
-.icon-btn:active { opacity: 0.7; }
-.icon-btn:disabled { opacity: 0.5; pointer-events: none; }
+.icon-btn:active { transform: scale(0.94); }
+.icon-btn:disabled { opacity: 0.45; pointer-events: none; }
 .menu-backdrop { position: fixed; inset: 0; z-index: 30; background: transparent; }
 .menu {
   position: fixed; z-index: 31; min-width: 220px; max-width: calc(100% - 16px); max-height: calc(100% - 16px); overflow-y: auto; padding: var(--space-1) 0;
-  border-radius: var(--radius-l); border: 1px solid rgb(var(--separator) / var(--separator-alpha)); box-shadow: 0 8px 24px rgb(var(--shadow));
+  border-radius: var(--radius-l); border: 1px solid rgb(var(--separator) / calc(var(--separator-alpha) * 0.6));
+  background: rgb(var(--glass) / var(--glass-strong-alpha));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: inset 0 1px 0 rgb(var(--glass-edge) / var(--glass-edge-alpha)), var(--glass-shadow);
 }
 .menu.measuring { visibility: hidden; }
 .menu-item {
-  display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: var(--touch); padding: 0 var(--space-4); border: 0; background: transparent;
+  display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: var(--touch); padding: var(--space-2) var(--space-4); border: 0; background: transparent;
   color: var(--text); font: inherit; text-align: left; cursor: pointer;
 }
 .menu-item + .menu-item { border-top: 1px solid rgb(var(--separator) / var(--separator-alpha)); }
@@ -305,20 +385,39 @@ input[type="date"], input[type="datetime-local"], input[type="time"] { display: 
 .dialog-backdrop {
   position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
   padding: max(var(--sat), var(--space-4)) max(var(--sar), var(--space-4)) max(var(--sab), var(--space-4)) max(var(--sal), var(--space-4));
-  background: rgb(var(--scrim) / var(--scrim-alpha));
+  background: rgb(var(--scrim) / var(--scrim-alpha)); -webkit-backdrop-filter: blur(var(--scrim-blur)); backdrop-filter: blur(var(--scrim-blur));
 }
-.dialog { width: 100%; max-width: 420px; max-height: 100%; overflow-y: auto; }
+.dialog { width: 100%; max-width: 420px; max-height: 100%; overflow-y: auto; box-shadow: var(--glass-shadow); }
 .dialog-title { margin: 0; font-size: 1.25rem; }
-.dialog-actions > .btn { flex: 1; }
+.dialog-actions { flex-wrap: wrap; }
+.dialog-actions > .btn { flex: 1 1 140px; }   /* bij grote tekst staan de knoppen onder elkaar */
 /* Kaartrij: tikbaar hoofdgedeelte + ⋯ direct rechts, nooit een knop in een knop. */
 .item-row { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-radius: var(--radius-l); }
 .item-main { flex: 1; min-width: 0; padding: var(--space-2) 0; min-height: var(--touch); border: 0; background: transparent; color: inherit; text-align: left; font: inherit; text-decoration: none; display: block; cursor: pointer; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
 .page-head > .icon-btn, .page-head > .btn { margin-top: var(--space-1); }
 /* Statuslabel: één vorm voor alle statussen. */
-.status { display: inline-flex; align-items: center; min-height: 28px; border-radius: 999px; padding: 0 var(--space-3); font-size: 0.8125rem; font-weight: 600; background: rgb(var(--fill) / var(--fill-alpha)); color: var(--text-muted); white-space: nowrap; }
+.status { display: inline-flex; align-items: center; min-height: 28px; border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); gap: var(--space-1); font-size: 0.8125rem; font-weight: 600; background: rgb(var(--fill) / var(--fill-alpha)); color: var(--text-muted); text-align: center; }
 .status.ok { background: var(--success-bg); color: var(--success); }
 .status.warn { background: var(--warning-bg); color: var(--warning-ink); }
 .status.bad { background: var(--danger-bg); color: var(--danger); }
-@media (prefers-reduced-motion: no-preference) { .menu { animation: menu-in 0.12s ease-out; } }
-@keyframes menu-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: none; } }
+/* Status nooit alleen met kleur: een symbool gaat voor de tekst (voor schermlezers leeg gelaten, de tekst noemt de status al). */
+.status.ok::before { content: "\2713"; content: "\2713" / ""; }
+.status.warn::before { content: "!"; content: "!" / ""; font-weight: 800; }
+.status.bad::before { content: "\2715"; content: "\2715" / ""; }
+@media (prefers-reduced-motion: no-preference) { .menu { animation: menu-in var(--dur-fast) var(--ease); } }
+@keyframes menu-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+
+/* Reduce Motion: geen overgangen of animaties (de voortgangsindicator draait traag door). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+  .spinner { animation-duration: 3s !important; animation-iteration-count: infinite !important; }
+}
+
+/* Kleine hulpklassen (in plaats van losse inline-opmaak) */
+.mt-1 { margin-top: var(--space-1); }
+.mt-2 { margin-top: var(--space-2); }
+.text-right { text-align: right; }
+.muted-small { font-size: 0.75rem; }
+.plain-list { list-style: none; padding: 0; margin: 0; }
+summary { cursor: pointer; min-height: var(--touch); display: list-item; }

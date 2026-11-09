@@ -78,7 +78,7 @@ export function Activate({ token, onFinished, onCancel }: { token?: string; onFi
 
   return (
     <main className="page center">
-      <div className="glass card stack" style={{ width: "100%", maxWidth: 420 }}>
+      <div className="glass card stack card-narrow">
         <h1>Ringtools</h1>
         {phase.kind === "checking" && <Spinner />}
 

@@ -39,7 +39,7 @@ const ROUTE_LABEL: Record<string, string> = {
 };
 
 function Row({ label, value }: { label: string; value: string }) {
-  return <div className="row between"><span className="muted">{label}</span><span style={{ textAlign: "right" }}>{value}</span></div>;
+  return <div className="row between"><span className="muted">{label}</span><span className="text-right">{value}</span></div>;
 }
 
 /**
@@ -91,7 +91,7 @@ export function CatalogOverview({ ringId }: { ringId: string }) {
         Alleen lezen. Catalogusversie {data?.version ?? "…"}. Wijzigingen in de catalogus gelden alleen voor nieuwe voorstellen en ontheffingen: een bestaand dossier behoudt de procedure die bij indienen is vastgelegd.
         De catalogus bevat alleen functietitels en regels, geen personen.
       </span>
-      <div className="row" style={{ flexWrap: "wrap" }}>
+      <div className="row row-wrap">
         <span className="badge ok">{counts.GEVERIFIEERD} geverifieerd</span>
         <span className="badge">{counts.ALGEMEEN} nog te beoordelen</span>
         <span className="badge bad">{counts.BUITEN} buiten Ringtools</span>
@@ -133,10 +133,10 @@ function CatalogItem({ c }: { c: CatalogCalling }) {
   const kind = procedureKind(c);
   return (
     <details className="glass panel">
-      <summary style={{ cursor: "pointer" }}>
+      <summary>
         <span className="grow"><strong>{c.name}</strong> <span className={`badge ${KIND_BADGE[kind]}`}>{KIND_LABEL[kind]}</span></span>
       </summary>
-      <div className="stack" style={{ marginTop: 8 }}>
+      <div className="stack mt-2">
         {kind === "EIGEN" && <div className="muted">Eigen roeping van deze ring: er worden geen bevoegdheden of bijzondere kerkelijke procedures afgeleid. Bij gebruik bevestigt de bevoegde leiding dat de procedure is gecontroleerd.</div>}
         {kind === "BUITEN" && <div className="error" role="note">Deze functie volgt een procedure buiten Ringtools. In Ringtools kan hiervoor niets worden ingediend.{c.extraApproval ? ` Extra goedkeuring: ${c.extraApproval}.` : ""}</div>}
         {kind === "ALGEMEEN" && <div className="muted" role="note">De algemene ringprocedure geldt, maar de bevoegdheden voor deze functie zijn niet geverifieerd. Ringtools kent hier geen bevoegdheden aan personen toe; menselijke controle is nodig en bij gebruik is een bevestiging van de bevoegde leiding verplicht.</div>}

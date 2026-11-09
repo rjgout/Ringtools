@@ -143,7 +143,7 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
 
   return (
     <main className="page center">
-      <form className="glass card stack" style={{ width: "100%", maxWidth: 420 }} onSubmit={step === "email" ? request : step === "code" ? login : step === "totp" ? totp : (e) => { e.preventDefault(); if (pendingToken) void passkey(pendingToken); }}>
+      <form className="glass card stack card-narrow" onSubmit={step === "email" ? request : step === "code" ? login : step === "totp" ? totp : (e) => { e.preventDefault(); if (pendingToken) void passkey(pendingToken); }}>
         <div>
           <h1>Ringtools</h1>
           <span className="muted">Log in met je e-mailadres. Je ontvangt een code van 8 cijfers.</span>
@@ -204,7 +204,7 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
             Sommige inlogopties konden niet worden opgehaald. <button type="button" className="btn btn-ghost" onClick={caps.retry}>Opnieuw proberen</button>
           </p>
         )}
-        <p className="muted" style={{ fontSize: "0.75rem" }} data-testid="build-info">Versie {APP_VERSION} · build {BUILD_ID} · server {API_HOST}</p>
+        <p className="muted muted-small" data-testid="build-info">Versie {APP_VERSION} · build {BUILD_ID} · server {API_HOST}</p>
       </form>
     </main>
   );

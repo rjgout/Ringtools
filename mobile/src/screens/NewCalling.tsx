@@ -141,7 +141,7 @@ export function NewCalling() {
           {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
         {sug?.[task] && assignees[task] !== sug[task]!.userId && (
-          <button type="button" className="btn btn-ghost" style={{ marginTop: 8 }} onClick={() => applySuggestion(task)}>Voorgesteld: {sug[task]!.name}</button>
+          <button type="button" className="btn btn-ghost mt-2" onClick={() => applySuggestion(task)}>Voorgesteld: {sug[task]!.name}</button>
         )}
         {note && <span className="muted" role="note">{note}</span>}
       </div>

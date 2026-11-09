@@ -166,7 +166,7 @@ export function UserManager({ ringId }: { ringId: string }) {
               <div className="muted">{functionLabel(u.churchFunctionCode)}{u.churchFunction && u.churchFunctionCode === "ANDERS" ? ` – ${u.churchFunction}` : ""} · Rol: {ROLES.find((r) => r.value === u.role)?.label}</div>
               {u.churchFunctionCode === "ONBEKEND" && (u.role === "RINGPRESIDIUM" || u.role === "HOGERAAD") && <div className="muted">Kerkelijke functie nog vast te leggen</div>}
               {info.lines.map((l) => <div key={l} className="muted">{l}</div>)}
-              <div className="row" style={{ flexWrap: "wrap", marginTop: 6 }}>
+              <div className="row row-wrap mt-1">
                 {u.isRingManager && <StatusLabel tone="ok">Ringbeheerder</StatusLabel>}
                 {u.appointAuthority && AUTHORITY_LABELS[u.appointAuthority] && <StatusLabel>{AUTHORITY_LABELS[u.appointAuthority]}</StatusLabel>}
                 <StatusLabel tone={u.activated ? "ok" : "neutral"}>{info.badge}</StatusLabel>
@@ -241,7 +241,7 @@ function AccessSection({ user, busy, onResend, onLoginMail }: { user: ManagedUse
   return (
     <section className="stack" aria-label="Toegang en inlogcode">
       <strong>Toegang en inlogcode</strong>
-      <span className={`badge${info.activated ? " ok" : ""}`} style={{ alignSelf: "flex-start" }}>{info.badge}</span>
+      <span className={`badge badge-start${info.activated ? " ok" : ""}`}>{info.badge}</span>
       {info.lines.map((l) => <span key={l} className="muted">{l}</span>)}
       {info.resendInvitationId && (
         <>
@@ -257,7 +257,7 @@ function AccessSection({ user, busy, onResend, onLoginMail }: { user: ManagedUse
         </>
       )}
       {info.guidance && (
-        <div className="badge" role="note" style={{ whiteSpace: "normal", borderRadius: 12 }}>
+        <div className="note" role="note">
           {info.guidance.map((g) => <div key={g}>{g}</div>)}
         </div>
       )}

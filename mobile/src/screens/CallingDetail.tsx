@@ -104,7 +104,7 @@ export function CallingDetail() {
             <div><StatusLabel tone="ok">{data.phase}</StatusLabel></div>
             {data.unit && <div className="muted">{data.unit.kind === "GEMEENTE" ? "Gemeente" : "Wijk"} {data.unit.name}</div>}
             {data.function?.needsReview && (
-              <div className="badge bad" role="note" style={{ whiteSpace: "normal", borderRadius: 12, marginTop: 6 }}>
+              <div className="note bad mt-1" role="note">
                 Menselijke controle nodig: voor deze {data.function.source === "EIGEN" ? "eigen " : ""}roeping zijn de bevoegdheden niet geverifieerd{data.function.procedureConfirmed ? "; de bevoegde leiding heeft de procedure als gecontroleerd bevestigd" : ""}.
               </div>
             )}

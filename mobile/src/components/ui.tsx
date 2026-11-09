@@ -185,8 +185,23 @@ function WebTabBar({ unread, pending, canManageUsers = false }: TabBarProps) {
 
 /** Navigatiebalk voor schermen onder een hoofdgebied: terugknop met de naam van het vorige scherm en de titel van dit scherm. */
 export function NavBar({ title, backLabel, onBack }: { title: string; backLabel: string; onBack: () => void }) {
+  const ref = useRef<HTMLElement>(null);
+  // De pagina schuift onder de glazen balk door; de werkelijke hoogte (ook bij grote tekst of een lange titel) bepaalt de bovenmarge van de pagina.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const measure = () => root.style.setProperty("--navbar-h", `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    measure();
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    ro?.observe(el);
+    return () => {
+      ro?.disconnect();
+      root.style.removeProperty("--navbar-h");
+    };
+  }, []);
   return (
-    <header className="navbar material">
+    <header ref={ref} className="navbar">
       <button type="button" className="navbar-back" onClick={onBack} aria-label={`Terug naar ${backLabel}`}>
         <svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M10 2L2 10l8 8" /></svg>
         <span>{backLabel}</span>
@@ -217,7 +232,7 @@ export function ListItem({ to, name, kind, subtitle, status, tone = "ok" }: { to
       <div className="row between">
         <div className="grow">
           <strong>{name}</strong>
-          <div className="row" style={{ flexWrap: "wrap", gap: "var(--space-2)", marginTop: 4 }}>
+          <div className="row row-wrap row-tight">
             <StatusLabel tone={kind === "Ontheffing" ? "warn" : "neutral"}>{kind}</StatusLabel>
             {subtitle && <span className="muted">{subtitle}</span>}
           </div>
