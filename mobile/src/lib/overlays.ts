@@ -5,13 +5,23 @@
 type Entry = { id: number; close: () => void };
 const stack: Entry[] = [];
 let next = 1;
+const listeners = new Set<() => void>();
+const emit = () => listeners.forEach((l) => l());
+
+/** Meldt wijzigingen (open/dicht) aan o.a. de native tabbalk, die tijdens een overlay verdwijnt. Verwijdert alleen de eigen luisteraar. */
+export function subscribeOverlays(cb: () => void): () => void {
+  listeners.add(cb);
+  return () => void listeners.delete(cb);
+}
 
 export function registerOverlay(close: () => void): () => void {
   const entry = { id: next++, close };
   stack.push(entry);
+  emit();
   return () => {
     const i = stack.findIndex((e) => e.id === entry.id);
     if (i >= 0) stack.splice(i, 1);
+    emit();
   };
 }
 

@@ -188,7 +188,7 @@ function Shell() {
         )}
       </main>
       <DeviceOffer />
-      <TabBar unread={unread} pending={me?.pendingCount ?? 0} canManageUsers={!!ring?.isRingManager} />
+      <TabBar unread={unread} pending={me?.pendingCount ?? 0} canManageUsers={!!ring?.isRingManager} hidden={lock.phase !== "unlocked" || lock.shielded} />
     </div>
   );
 }

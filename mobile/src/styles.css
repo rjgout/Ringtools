@@ -208,6 +208,8 @@ input:focus-visible, select:focus-visible, .btn:focus-visible, a:focus-visible, 
 .tabbar::-webkit-scrollbar { display: none; }
 /* Toetsenbord open: de pagina krimpt (Keyboard.resize "body"); de tabbalk verdwijnt zodat hij niet boven het toetsenbord zweeft. */
 :root[data-keyboard="open"] .tabbar { display: none; }
+/* Native iOS-tabbalk (UITabBar, op iOS 26+ Liquid Glass): zweeft boven de WebView; de pagina houdt er ruimte voor vrij (hoogte komt van native). De webbalk is dan niet aanwezig. */
+:root[data-tabbar="native"] .page { padding-bottom: calc(var(--native-tabbar-h, 0px) + var(--space-4)); }
 .tab { flex: 1 1 0; min-width: 0; padding: 0 var(--space-1); min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1);
   color: var(--text-muted); text-decoration: none; font-size: 0.6875rem; font-weight: 600; position: relative; }   /* Caption 2, 11 pt */
 @supports (font: -apple-system-caption2) { .tab { font: -apple-system-caption2; font-weight: 600; } }

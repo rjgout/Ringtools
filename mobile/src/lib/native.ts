@@ -77,11 +77,21 @@ function webKeyboardSource(): KeyboardSource {
   };
 }
 
+const keyboardListeners = new Set<() => void>();
+export const emitKeyboardChange = () => keyboardListeners.forEach((l) => l());
+export const isKeyboardOpen = () => document.documentElement.dataset.keyboard === "open";
+/** Meldt open/dicht van het toetsenbord (voor de native tabbalk). Verwijdert alleen de eigen luisteraar. */
+export function subscribeKeyboard(cb: () => void): () => void {
+  keyboardListeners.add(cb);
+  return () => void keyboardListeners.delete(cb);
+}
+
 /** Zet `data-keyboard="open|closed"` op het documentelement; de stijlen verbergen daarmee de tabbalk. */
 export function watchKeyboard(): () => void {
   const root = document.documentElement;
   return watchKeyboardWith(isNative ? nativeKeyboardSource() : webKeyboardSource(), (open) => {
     root.dataset.keyboard = open ? "open" : "closed";
+    emitKeyboardChange();
   });
 }
 

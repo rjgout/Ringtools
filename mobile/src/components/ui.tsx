@@ -1,6 +1,10 @@
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ApiRequestError } from "../lib/api";
 import { TAB_ROOT, tabForPath, type TabId } from "../lib/navigation";
+import { buildTabs, getNativeTabBarBridge, nativeTabBarSupported } from "../lib/nativeTabBar";
+import { hasOverlay, subscribeOverlays } from "../lib/overlays";
+import { isKeyboardOpen, subscribeKeyboard } from "../lib/native";
 
 export function Spinner() {
   return <div className="spinner" role="status" aria-label="Laden" />;
@@ -36,38 +40,141 @@ function TabIcon({ tab }: { tab: TabId }) {
   );
 }
 
-/**
- * Hoofdnavigatie (HIG: maximaal vijf tabs, icoon + label). Ringbeheerders krijgen één extra tab "Beheer" (gebruikers en inrichting
- * zitten daarin als segmenten) in plaats van twee losse tabs; zo blijft de balk op elk scherm passen.
- * Opnieuw tikken op de actieve tab brengt je terug naar de bovenkant van het hoofdscherm.
- */
-export function TabBar({ unread, pending, canManageUsers = false }: { unread: number; pending: number; canManageUsers?: boolean }) {
+type TabBarProps = { unread: number; pending: number; canManageUsers?: boolean; hidden?: boolean };
+
+/** Waar een tik op een tab heen gaat; opnieuw tikken op de actieve tab brengt je terug naar de bovenkant van het hoofdscherm (ongewijzigd gedrag). */
+function useTabPress() {
   const location = useLocation();
   const navigate = useNavigate();
   const active = tabForPath(location.pathname);
-  const tabs: { id: TabId; label: string; badge?: number; badgeLabel?: string }[] = [
-    { id: "overzicht", label: "Overzicht", badge: pending, badgeLabel: `${pending} wachten op jou` },
-    { id: "voorstellen", label: "Voorstellen" },
-    ...(canManageUsers ? [{ id: "beheer" as TabId, label: "Beheer" }] : []),
-    { id: "meldingen", label: "Meldingen", badge: unread, badgeLabel: `${unread} ongelezen` },
-    { id: "profiel", label: "Profiel" },
-  ];
-  const press = (id: TabId) => (e: React.MouseEvent) => {
-    e.preventDefault();
+  const latest = useRef({ active, pathname: location.pathname });
+  latest.current = { active, pathname: location.pathname };
+  const press = (id: TabId) => {
     const root = TAB_ROOT[id];
-    if (active === id && location.pathname === root) {
+    const { active: now, pathname } = latest.current;
+    if (now === id && pathname === root) {
       document.querySelector("main.page")?.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
     navigate(root);
   };
+  return { active, press };
+}
+
+function useSignal(subscribe: (cb: () => void) => () => void, read: () => boolean) {
+  const [value, setValue] = useState(read);
+  useEffect(() => {
+    setValue(read());
+    return subscribe(() => setValue(read()));
+  }, [subscribe, read]);
+  return value;
+}
+
+/**
+ * Hoofdnavigatie (HIG: maximaal vijf tabs, icoon + label). Ringbeheerders krijgen één extra tab "Beheer" (gebruikers en inrichting
+ * zitten daarin als segmenten) in plaats van twee losse tabs; zo blijft de balk op elk scherm passen.
+ * Op iOS (app) tekent de native UITabBar (op iOS 26+ Liquid Glass) de balk; overal anders, en als de native balk niet start, de React-balk.
+ */
+export function TabBar(props: TabBarProps) {
+  const native = useNativeTabBar(props);
+  const root = document.documentElement;
+  useEffect(() => {
+    if (native === "web" || native === "off") delete root.dataset.tabbar;
+  }, [native, root]);
+  if (native === "native" || native === "pending") return null;
+  return <WebTabBar {...props} />;
+}
+
+type NativeState = "off" | "pending" | "native" | "web";
+
+/**
+ * Houdt de native balk synchroon met de app: tabs en tellers, geselecteerde tab (volgt de route, dus ook bij deeplinks, meldingen en terug),
+ * en zichtbaarheid (vergrendeld/afgeschermd, toetsenbord, geopende overlays). Faalt de plug-in, dan blijft de webbalk staan.
+ */
+function useNativeTabBar({ unread, pending, canManageUsers = false, hidden = false }: TabBarProps): NativeState {
+  const supported = nativeTabBarSupported();
+  const { active, press } = useTabPress();
+  const [state, setState] = useState<NativeState>(supported ? "pending" : "off");
+  const keyboard = useSignal(subscribeKeyboard, isKeyboardOpen);
+  const overlay = useSignal(subscribeOverlays, hasOverlay);
+  const pressRef = useRef(press);
+  pressRef.current = press;
+  const tabs = buildTabs({ unread, pending, canManageUsers });
+  const tabsKey = JSON.stringify(tabs);
+  const hide = hidden || keyboard || overlay;
+  const hideRef = useRef(hide);
+  hideRef.current = hide;
+  const root = document.documentElement;
+
+  // Selectie en luisteraars: één keer per aanmelding van de balk.
+  useEffect(() => {
+    if (!supported) return;
+    const bridge = getNativeTabBarBridge();
+    const offSelect = bridge.onSelect((id) => pressRef.current(id as TabId));
+    const offLayout = bridge.onLayout((h) => root.style.setProperty("--native-tabbar-h", `${Math.max(0, Math.round(h))}px`));
+    return () => {
+      offSelect();
+      offLayout();
+      root.style.removeProperty("--native-tabbar-h");
+      delete root.dataset.tabbar;
+      void bridge.remove().catch(() => {});
+    };
+  }, [supported, root]);
+
+  // Tabs, selectie, kleur en zichtbaarheid doorgeven.
+  useEffect(() => {
+    if (!supported) return;
+    let cancelled = false;
+    // Nooit blijven hangen zonder balk: reageert de plug-in niet binnen 2 s, dan neemt de webbalk het over.
+    const timer = setTimeout(() => !cancelled && setState((st) => (st === "pending" ? "web" : st)), 2000);
+    const tint = getComputedStyle(root).getPropertyValue("--tint").trim();
+    getNativeTabBarBridge()
+      .update({ tabs: JSON.parse(tabsKey) as typeof tabs, selected: active, tint: /^#[0-9a-f]{6}$/i.test(tint) ? tint : undefined, hidden: hideRef.current })
+      .then(({ height }) => {
+        if (cancelled) return;
+        clearTimeout(timer);
+        root.dataset.tabbar = "native";
+        root.style.setProperty("--native-tabbar-h", `${Math.max(0, Math.round(height))}px`);
+        setState("native");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        root.style.removeProperty("--native-tabbar-h");
+        setState("web"); // terugval: de webbalk blijft werken
+      });
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [supported, tabsKey, active, root]);
+
+  useEffect(() => {
+    if (!supported || state !== "native") return;
+    void getNativeTabBarBridge().setHidden(hide).catch(() => {});
+  }, [supported, state, hide]);
+
+  return state;
+}
+
+function WebTabBar({ unread, pending, canManageUsers = false }: TabBarProps) {
+  const { active, press } = useTabPress();
+  const tabs = buildTabs({ unread, pending, canManageUsers });
   return (
     <nav className="tabbar" aria-label="Hoofdnavigatie">
       {tabs.map((t) => (
-        <a key={t.id} href={`#${TAB_ROOT[t.id]}`} className={`tab${active === t.id ? " active" : ""}`} aria-current={active === t.id ? "page" : undefined} onClick={press(t.id)}>
+        <a
+          key={t.id}
+          href={`#${TAB_ROOT[t.id]}`}
+          className={`tab${active === t.id ? " active" : ""}`}
+          aria-current={active === t.id ? "page" : undefined}
+          onClick={(e) => {
+            e.preventDefault();
+            press(t.id);
+          }}
+        >
           <span className="tab-icon-wrap">
             <TabIcon tab={t.id} />
-            {!!t.badge && t.badge > 0 && <span className="dot" aria-label={t.badgeLabel}>{t.badge > 99 ? "99+" : t.badge}</span>}
+            {t.badge > 0 && <span className="dot" aria-label={t.id === "overzicht" ? `${t.badge} wachten op jou` : `${t.badge} ongelezen`}>{t.badge > 99 ? "99+" : t.badge}</span>}
           </span>
           <span className="tab-label">{t.label}</span>
         </a>

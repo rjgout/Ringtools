@@ -111,6 +111,21 @@ ok(existsSync(join(root, "ios/App/App/Assets.xcassets/AppIcon.appiconset")), "iO
   const appDelegate = read("ios/App/App/AppDelegate.swift");
   ok(/didRegisterForRemoteNotificationsWithDeviceToken[\s\S]*capacitorDidRegisterForRemoteNotifications/.test(appDelegate) && /didFailToRegisterForRemoteNotificationsWithError[\s\S]*capacitorDidFailToRegisterForRemoteNotifications/.test(appDelegate),
     "AppDelegate.swift: de APNs-doorgeefluiken (didRegister…/didFailToRegister… → Capacitor-notificaties) ontbreken; zonder die krijgt de app nooit een pushtoken.");
+  // Native iOS-tabbalk (UITabBar, Liquid Glass op iOS 26+): eigen lokale plug-in, publieke Apple-API's.
+  {
+    const iosApp = join(root, "ios/App/App");
+    const read = (f) => (existsSync(join(iosApp, f)) ? readFileSync(join(iosApp, f), "utf8") : "");
+    const plugin = read("NativeTabBarPlugin.swift");
+    ok(plugin.includes("UITabBar") && plugin.includes('jsName = "NativeTabBar"'), "NativeTabBarPlugin.swift ontbreekt of mist UITabBar/jsName NativeTabBar.");
+    ok(!/private\s+api|_UIBarBackground|valueForKey\(\s*"_/i.test(plugin), "NativeTabBarPlugin.swift mag geen niet-openbare API's gebruiken.");
+    ok(read("MainViewController.swift").includes("registerPluginInstance(NativeTabBarPlugin())"), "MainViewController registreert NativeTabBarPlugin niet.");
+    ok(read("SceneDelegate.swift").includes("MainViewController()"), "SceneDelegate moet MainViewController gebruiken.");
+    ok(read("Base.lproj/Main.storyboard").includes('customClass="MainViewController"'), "Main.storyboard moet MainViewController gebruiken.");
+    const proj = readFileSync(join(root, "ios/App/App.xcodeproj/project.pbxproj"), "utf8");
+    ok(/NativeTabBarPlugin\.swift in Sources/.test(proj) && /MainViewController\.swift in Sources/.test(proj), "NativeTabBarPlugin.swift/MainViewController.swift staan niet in de Sources-buildfase.");
+    const ts = readFileSync(join(root, "src/lib/nativeTabBar.ts"), "utf8");
+    ok(ts.includes('registerPlugin<Raw>("NativeTabBar")') && /Capacitor\.getPlatform\(\) === "ios"/.test(ts), "nativeTabBar.ts moet de plug-in NativeTabBar alleen op iOS gebruiken.");
+  }
   const tf = existsSync(join(root, "../.github/workflows/ios-testflight.yml")) ? readFileSync(join(root, "../.github/workflows/ios-testflight.yml"), "utf8") : "";
   ok(tf.length > 0, ".github/workflows/ios-testflight.yml ontbreekt.");
   ok(!/-----BEGIN|AuthKey_[A-Z0-9]{10}\.p8/.test(tf.replace(/AuthKey_\$\{ASC_KEY_ID\}\.p8/g, "")), "ios-testflight.yml bevat een sleutel of vaste sleutelnaam.");

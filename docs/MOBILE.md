@@ -229,3 +229,16 @@ Uniforme bediening (contextmenu, bevestigingsdialoog, sheet, statuslabels, 48 px
 ## App-icoon
 
 Bron: `mobile/resources/icon.png` (1024 × 1024, zonder transparantie; iOS en Android-icoon zonder adaptieve vorm), `icon-background.png` (verloop in dezelfde kleuren) en `icon-foreground.png` (logo met zachte rand, binnen de veilige zone van het adaptieve Android-icoon). Genereren: `cd mobile && npm run assets`. Let op: dat commando maakt ook de splashschermen en PWA-bestanden opnieuw; neem alleen de iconen (`AppIcon-512@2x.png`, `mipmap-*`) over en laat de rest ongewijzigd.
+
+## Native iOS-tabbalk (Liquid Glass)
+
+Op **iOS (alleen in de app)** tekent een echte `UITabBar` de hoofdnavigatie; op iOS 26 en hoger is dat het zwevende Liquid Glass van het systeem (we stellen daar niets zelf in), op iOS 18 tot 26 de standaard `UITabBarAppearance` met systeemblur. **Android, PWA en browser** houden de React-balk (`TabBar` in `mobile/src/components/ui.tsx`); er wordt nooit een tweede balk getoond.
+
+- **Oplossing:** eigen, kleine lokale Capacitor-plug-in met uitsluitend publieke Apple-API's: `mobile/ios/App/App/NativeTabBarPlugin.swift` (jsName `NativeTabBar`), geregistreerd in `MainViewController.swift` (`registerPluginInstance`, vervangt `CAPBridgeViewController` in `SceneDelegate` en storyboard). Geen extra dependency of licentie; de balk wordt ook in de Personal Team-build gebruikt (geen entitlements nodig).
+- **Waarom geen bestaande plug-in:** onderzocht zijn o.a. `@capgo/capacitor-native-navigation` en `@capgo/native-navigation` (UITabBar/UITabBarController, Capacitor 8). Het zijn jonge, brede navigatiebibliotheken waarvan onderhoud en versiestabiliteit niet te toetsen zijn; Ringtools heeft alleen een tabbalk nodig, en AGENTS.md vraagt exact gepinde, beperkte plug-ins achter een eigen laag. Een eigen bridge van ~200 regels is kleiner en volledig reviewbaar.
+- **Gedeelde bron:** `buildTabs` (`lib/nativeTabBar.ts`) bepaalt tabs, volgorde, rolgebonden Beheer-tab, tellers en toegankelijkheidslabels voor beide balken.
+- **Synchronisatie:** de geselecteerde tab volgt altijd de React Router-route (deeplinks, pushmeldingen, terug); een tik navigeert naar de tabroot; opnieuw tikken op de actieve tab scrolt omhoog (ongewijzigd). Native `tabSelected` → `useTabPress`.
+- **Zichtbaarheid:** verborgen als de app vergrendeld of afgeschermd is (`lock.phase`/`shielded`), tijdens het toetsenbord en bij open overlays (menu/dialoog/sheet); native verbergt de balk bovendien zodra de app inactief wordt (nooit boven het privacyscherm/de app-switcher). De WebView reserveert de hoogte via `--native-tabbar-h` (`html[data-tabbar="native"]`).
+- **Terugval:** ontbreekt de plug-in, geeft hij een fout of antwoordt hij niet binnen 2 s, dan verschijnt de webbalk.
+- **Kleur:** de actieve tab gebruikt de bestaande app-accentkleur (`--tint`, nu systeemblauw; de app heeft geen oranje accent) en volgt licht/donker.
+- **Tests:** `mobile/tests/nativeTabBar.test.tsx` (tabs, rollen, tellers, routesynchronisatie, tik, verbergen, terugval) en `check:native-config`. Het uiterlijk zelf (Liquid Glass) is alleen op een toestel te beoordelen.
