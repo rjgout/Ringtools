@@ -32,7 +32,7 @@ function setup(over: Record<string, unknown> = {}) {
 async function toCodeStep() {
   render(<Login />);
   fireEvent.change(screen.getByLabelText("E-mailadres"), { target: { value: "eva@example.nl" } });
-  fireEvent.click(screen.getByRole("button", { name: "Stuur code" }));
+  fireEvent.click(screen.getByRole("button", { name: "Verder" }));
   fireEvent.change(await screen.findByLabelText("Inlogcode uit de e-mail"), { target: { value: "12345678" } });
   fireEvent.click(screen.getByRole("button", { name: "Inloggen" }));
 }

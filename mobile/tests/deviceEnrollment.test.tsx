@@ -54,6 +54,12 @@ describe("Face ID automatisch inrichten (library)", () => {
     expect(k.remove).toHaveBeenCalledWith("tag-oud");
   });
 
+  it("Android gebruikt dezelfde cryptografische challenge en registreert expliciet als Android", async () => {
+    const a = api(); const k = keys();
+    expect(await lib.enrollThisDevice(a as never, ME, k, "android")).toEqual({ ok: true });
+    expect(a.deviceEnrollComplete).toHaveBeenCalledWith(expect.objectContaining({ platform: "ANDROID", label: "Android", signature: "SIG" }));
+  });
+
   it("Face ID geannuleerd: geen registratie, nieuwe sleutel verwijderd, lokale toestand ongewijzigd, gebruiker blijft ingelogd (geen fout)", async () => {
     await storage.setDeviceKey(JSON.stringify(PREV));
     const k = keys({ sign: vi.fn(async () => { throw new Error("user cancel"); }) });
@@ -114,7 +120,7 @@ describe("Face ID automatisch inrichten (library)", () => {
 
   it("niet op iOS: niet ondersteund en geen netwerkverkeer", async () => {
     const a = api();
-    const res = await lib.enrollThisDevice(a as never, ME, keys(), "android");
+    const res = await lib.enrollThisDevice(a as never, ME, keys(), "web");
     expect(res.ok).toBe(false);
     expect(a.deviceEnrollChallenge).not.toHaveBeenCalled();
   });
@@ -157,8 +163,8 @@ describe("Aanbod na de eerste aanmelding (DeviceOffer)", () => {
     const a = setup();
     render(<DeviceOffer />);
     await screen.findByTestId("device-offer");
-    expect(screen.getByRole("dialog").textContent).toMatch(/Face ID of, als je toestel dat toestaat, met je toestelcode/);
-    fireEvent.click(screen.getByRole("button", { name: "Niet nu" }));
+    expect(screen.getByRole("dialog").textContent).toMatch(/biometrie of beveiliging van je telefoon/);
+    fireEvent.click(screen.getByRole("button", { name: "Nee, ik log telkens opnieuw in" }));
     await waitFor(() => expect(screen.queryByTestId("device-offer")).toBeNull());
     expect(await storage.getDeviceOfferDeclined()).toBe("u1");
     expect(a.deviceEnrollChallenge).not.toHaveBeenCalled();
@@ -169,7 +175,6 @@ describe("Aanbod na de eerste aanmelding (DeviceOffer)", () => {
   });
 
   it.each([
-    ["account zonder verplichte MFA", { mfa: false }],
     ["serverfunctie uit", { flag: false }],
   ])("geen aanbod: %s", async (_n, over) => {
     const a = setup(over);
@@ -177,6 +182,13 @@ describe("Aanbod na de eerste aanmelding (DeviceOffer)", () => {
     await waitFor(() => expect(a.meta).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByTestId("device-offer")).toBeNull();
+  });
+
+  it("gewone gebruiker zonder vooraf ingestelde MFA krijgt het aanbod", async () => {
+    setup({ mfa: false });
+    render(<DeviceOffer />);
+    expect(await screen.findByTestId("device-offer")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ja, stel dit in" })).toBeTruthy();
   });
 
   it("toestel al ingesteld en actief voor dit account: geen aanbod (niet opnieuw koppelen)", async () => {
@@ -194,8 +206,8 @@ describe("Aanbod na de eerste aanmelding (DeviceOffer)", () => {
     render(<DeviceOffer />);
     const dlg = await screen.findByTestId("device-offer");
     expect(dlg.textContent).toMatch(/al ingesteld voor het account van Piet Bakker/);
-    fireEvent.click(screen.getByRole("button", { name: "Niet nu" }));
+    fireEvent.click(screen.getByRole("button", { name: "Nee, ik log telkens opnieuw in" }));
     await waitFor(() => expect(screen.queryByTestId("device-offer")).toBeNull());
-    expect(await refNow()).toMatchObject({ userId: "u9" });
+    expect(await refNow()).toBeNull();
   });
 });

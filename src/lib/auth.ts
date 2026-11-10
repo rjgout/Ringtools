@@ -1,3 +1,4 @@
+import { acceptInvitationsForVerifiedUser, normalizeEmail } from "./invitations";
 import bcrypt from "bcryptjs";
 import { randomInt, randomUUID } from "node:crypto";
 import { prisma } from "./prisma";
@@ -43,11 +44,11 @@ export const RECENT_MFA_WINDOW_MS = 15 * 60 * 1000; // 15 minuten
  * hieronder. Alleen `getSessionAwaitingMfa()` mag deze sessie lezen, en
  * uitsluitend om de MFA-pagina's te laten weten wie er moet verifiëren.
  */
-export async function createSession(userId: string, userAgent?: string | null): Promise<{ rawToken: string; expiresAt: Date }> {
+export async function createSession(userId: string, userAgent?: string | null, verifiedEmail?: string): Promise<{ rawToken: string; expiresAt: Date }> {
   const rawToken = generateRawToken();
   const expiresAt = new Date(Date.now() + AWAITING_MFA_TTL_MS);
   await prisma.session.create({
-    data: { userId, tokenHash: hashToken(rawToken), expiresAt, userAgent: userAgent || null },
+    data: { userId, tokenHash: hashToken(rawToken), expiresAt, userAgent: userAgent || null, loginEmail: verifiedEmail ? normalizeEmail(verifiedEmail) : null },
   });
   return { rawToken, expiresAt };
 }
@@ -57,13 +58,17 @@ export async function createSession(userId: string, userAgent?: string | null): 
  * (optionele) passkey-verificatie niet hebben ingeschakeld. Nooit voor het
  * adminaccount: dat doorloopt altijd TOTP (zie `mfaRequired`).
  */
-export async function createVerifiedSession(userId: string, userAgent?: string | null): Promise<{ rawToken: string; expiresAt: Date }> {
+export async function createVerifiedSession(userId: string, userAgent?: string | null, verifiedEmail?: string): Promise<{ rawToken: string; expiresAt: Date }> {
   const rawToken = generateRawToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  await prisma.session.create({
-    data: { userId, tokenHash: hashToken(rawToken), expiresAt, mfaAt: new Date(), userAgent: userAgent || null },
+  await prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<{ active: boolean; role: string }[]>`SELECT active, role::text FROM "User" WHERE id = ${userId} FOR UPDATE`;
+    if (!rows[0]?.active) throw new SessionNoLongerValidError();
+    const currentUser = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    if (verifiedEmail && normalizeEmail(currentUser.email) === normalizeEmail(verifiedEmail)) await acceptInvitationsForVerifiedUser(tx, userId);
+    await tx.session.create({ data: { userId, tokenHash: hashToken(rawToken), expiresAt, mfaAt: new Date(), userAgent: userAgent || null } });
+    await tx.user.updateMany({ where: { id: userId, activatedAt: null }, data: { activatedAt: new Date() } });
   });
-  await markActivated(userId);
   return { rawToken, expiresAt };
 }
 
@@ -232,9 +237,11 @@ export async function promoteSessionToMfaVerified(sessionId: string, userId: str
   const rawToken = generateRawToken();
   const expiresAt = new Date(Date.now() + SESSION_IDLE_TTL_MS);
   await prisma.$transaction(async (tx) => {
+    const users = await tx.$queryRaw<{ active: boolean }[]>`SELECT active FROM "User" WHERE id = ${userId} FOR UPDATE`;
+    if (!users[0]?.active) throw new SessionNoLongerValidError();
     // Een sessie die via een vertrouwd toestel is aangemaakt (E2.4a) blijft ook na herverificatie aan dat toestel gebonden, zodat intrekken of
     // uitzetten van het toestel haar altijd beëindigt. Dan eerst gebruiker en toestel vergrendelen (vaste volgorde) en controleren dat het toestel nog geldt.
-    const current = await tx.session.findFirst({ where: { id: sessionId, userId }, select: { deviceId: true } });
+    const current = await tx.session.findFirst({ where: { id: sessionId, userId }, select: { deviceId: true, loginEmail: true } });
     let deviceId: string | null = null;
     if (current?.deviceId) {
       const lock = await lockUserThenDevice(tx, userId, current.deviceId);
@@ -249,6 +256,8 @@ export async function promoteSessionToMfaVerified(sessionId: string, userId: str
     // tweede op de rijvergrendeling, vindt de rij weg (count 0) en geeft géén tweede sessie uit.
     const removed = await tx.session.deleteMany({ where: { id: sessionId, userId } });
     if (removed.count !== 1) throw new SessionNoLongerValidError();
+    const currentUser = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    if (current?.loginEmail && normalizeEmail(currentUser.email) === current.loginEmail) await acceptInvitationsForVerifiedUser(tx, userId);
     await tx.session.create({
       data: { userId, tokenHash: hashToken(rawToken), expiresAt, mfaAt: new Date(), userAgent: userAgent || null, deviceId },
     });
@@ -289,7 +298,15 @@ export async function listSessionsForUser(userId: string) {
 }
 
 export async function destroySessionById(userId: string, sessionId: string): Promise<void> {
-  await prisma.session.deleteMany({ where: { id: sessionId, userId } });
+  await prisma.$transaction(async tx => {
+    const current = await tx.session.findFirst({ where: { id: sessionId, userId } });
+    if (current?.deviceId) {
+      await lockUserThenDevice(tx, userId, current.deviceId);
+      await tx.trustedDevice.updateMany({ where: { id: current.deviceId, userId }, data: { revokedAt: new Date(), loginEnabledAt: null } });
+      await tx.session.deleteMany({ where: { userId, deviceId: current.deviceId } });
+    }
+    await tx.session.deleteMany({ where: { id: sessionId, userId } });
+  });
 }
 
 /**
@@ -417,6 +434,7 @@ export async function verifyAdminPassword(username: string, password: string): P
 /** Ruimt verlopen sessies en verbruikte/verlopen inloglinks op (nachtelijke taak). */
 export async function deleteExpiredAuthData(): Promise<{ sessions: number; magicLinks: number; challenges: number }> {
   const now = new Date();
+  await prisma.invitationLoginCode.deleteMany({ where: { expiresAt: { lt: now } } });
   const sessions = await prisma.session.deleteMany({ where: { expiresAt: { lt: now } } });
   const magicLinks = await prisma.magicLinkToken.deleteMany({
     where: { OR: [{ expiresAt: { lt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } }, { usedAt: { not: null } }] },

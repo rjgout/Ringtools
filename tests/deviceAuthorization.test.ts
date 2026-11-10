@@ -156,7 +156,8 @@ describe("Besluit eigenaar: weesapparaat na een verloren serverantwoord", () => 
     const c = await loginChallenge(first.installationId!);
     const forged = crypto.sign("sha256", Buffer.from("x"), { key: crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey, dsaEncoding: "der" }).toString("base64");
     await expect(loginWithDevice({ installationId: first.installationId!, challengeId: c.challengeId, signature: forged })).rejects.toBeTruthy();
-    expect(await prisma.session.count({ where: { userId: a.id, deviceId: { not: null } } })).toBe(0);
+    // De al bestaande, volledig geverifieerde sessie is bij inrichting aan dit toestel gebonden; de vervalsing creëert niets nieuws.
+    expect(await prisma.session.count({ where: { userId: a.id, deviceId: { not: null } } })).toBe(1);
 
     // De gebruiker kan opnieuw proberen (nieuwe sleutel en installatie) ...
     const second = await enrolViaApi(ta, a.id);

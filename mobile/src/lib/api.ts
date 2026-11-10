@@ -102,7 +102,7 @@ export class ApiClient {
       /* lege of niet-JSON-respons */
     }
     if (!res.ok) {
-      if (res.status === 401 && token) this.opts.onUnauthorized?.();
+      if (res.status === 401 && token && tokenOverride === undefined) this.opts.onUnauthorized?.();
       throw new ApiRequestError(res.status, typeof data.error === "string" ? data.error : "Er ging iets mis.", typeof data.code === "string" ? data.code : null);
     }
     return data as T;
@@ -139,7 +139,7 @@ export class ApiClient {
   deviceEnrollChallenge() {
     return this.request<{ enrollmentId: string; challenge: string; userId: string; expiresAt: string }>("POST", "/auth/device/enroll/challenge", {});
   }
-  deviceEnrollComplete(input: { enrollmentId: string; publicKey: string; installationId: string; signature: string; platform: "IOS"; label: string }) {
+  deviceEnrollComplete(input: { enrollmentId: string; publicKey: string; installationId: string; signature: string; platform: "IOS" | "ANDROID"; label: string }) {
     return this.request<{ ok: boolean; deviceId: string }>("POST", "/auth/device/enroll/complete", input);
   }
   deviceDisable(installationId: string) {
@@ -163,6 +163,7 @@ export class ApiClient {
   refresh() {
     return this.request<{ rotated: boolean; token?: string; expiresAt?: string }>("POST", "/auth/refresh", {});
   }
+  retryLogout(token: string) { return this.request<{ ok: boolean }>("POST", "/auth/logout", {}, token); }
   logout(pushToken?: string) {
     return this.request<{ ok: boolean }>("POST", "/auth/logout", { pushToken });
   }

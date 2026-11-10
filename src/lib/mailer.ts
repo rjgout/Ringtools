@@ -92,6 +92,14 @@ export async function sendTestMail(to: string) {
 
 // ---- E-mailsjablonen (Nederlands) ----
 
+export function loginCodeEmail(name: string, code: string) {
+  return { subject: "Ringtools – je inlogcode", text: [
+    `Hallo ${name.trim().split(/\s+/)[0]},`, "", `Je eenmalige inlogcode voor Ringtools is: ${code}`, "",
+    "Open Ringtools en voer deze acht cijfers in. De code is 15 minuten geldig en kan één keer worden gebruikt.",
+    "Heb je deze code niet aangevraagd? Dan kun je deze e-mail negeren.",
+  ].join("\n") };
+}
+
 export function magicLinkEmail(name: string, link: string, code?: string) {
   return {
     subject: "Ringtools – je inloglink",
@@ -196,27 +204,26 @@ export function supportReminderEmail(opts: { name: string; personName: string; f
 
 /** Uitnodiging voor een nieuwe of bestaande gebruiker. Bewust zonder rol- of functiegegevens en zonder namen van anderen. */
 export function invitationEmail(opts: { name: string; ringName: string; link: string; code: string; expiresAt: Date }) {
-  const days = Math.max(1, Math.round((opts.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+  const links = [
+    ["iPhone/iPad", process.env.IOS_INSTALL_URL], ["Android", process.env.ANDROID_INSTALL_URL],
+  ].flatMap(([label, value]) => {
+    if (!value) return [];
+    try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password ? [`${label}: ${url.href}`] : []; } catch { return []; }
+  });
   return {
-    subject: "Ringtools – je bent uitgenodigd",
+    subject: "Welkom bij Ringtools",
     text: [
-      `Beste ${opts.name},`,
-      "",
-      `Je bent uitgenodigd om Ringtools te gebruiken voor ${opts.ringName}.`,
-      "",
-      "Zo activeer je je account:",
-      "1. Installeer de Ringtools-app op je telefoon (of open hem als hij al is geïnstalleerd).",
-      "2. Tik op de onderstaande link. De app opent en je account wordt geactiveerd.",
-      "",
-      opts.link,
-      "",
-      "Opent de app niet? Kies dan in de app op het inlogscherm 'Ik heb een uitnodiging' en vul dit e-mailadres en deze activeringscode in:",
-      opts.code,
-      "",
-      "Daarna log je in met je e-mailadres: je ontvangt dan een code van 8 cijfers.",
-      "",
-      `De uitnodiging is ${days} dagen geldig en kan maar één keer worden gebruikt.`,
-      "Heb je deze uitnodiging niet verwacht? Dan kun je deze e-mail negeren; er gebeurt niets zonder jouw activatie.",
+      `Hallo ${opts.name.trim().split(/\s+/)[0]},`, "",
+      `Je bent uitgenodigd om Ringtools te gebruiken voor ${opts.ringName}.`, "",
+      "Met Ringtools kun je op een veilige en eenvoudige manier betrokken zijn bij het behandelen van roepingen en ontheffingen.", "",
+      "Om te beginnen:",
+      links.length ? "1. Download de Ringtools-app via de onderstaande link voor jouw telefoon." : "1. Vraag je ringbeheerder om de installatie-instructies voor jouw telefoon.",
+      ...links,
+      "2. Open de app en vul het e-mailadres in waarop je deze mail ontvangt.",
+      "3. Je ontvangt een eenmalige inlogcode waarmee je kunt aanmelden.", "",
+      "Daarna kun je direct aan de slag. Je hoeft geen wachtwoord aan te maken.",
+      "Heb je al extra verificatie ingesteld? Die blijft nodig bij het aanmelden.", "",
+      "Hartelijke groet,", "Ringtools",
     ].join("\n"),
   };
 }

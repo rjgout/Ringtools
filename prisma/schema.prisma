@@ -211,6 +211,7 @@ model OpenLinkToken {
 // is — dat is de enige plek die hele-applicatietoegang bepaalt, dus een
 // gedeeltelijk ingelogde gebruiker kan nergens in de app komen.
 model Session {
+  loginEmail String? // Alleen pending-login: het daadwerkelijk geverifieerde e-mailadres, niet een later gewijzigd accountadres.
   id             String         @id @default(cuid())
   userId         String
   user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -962,6 +963,7 @@ enum TrustedDevicePlatform {
 // Een geregistreerd toestel is GEEN zelfstandige MFA-methode (E2.4 beoordeelt dat opnieuw). Zonder attestatie kan de server
 // niet bewijzen dat de sleutel in hardware zit; dat staat in docs/E2-3-TOESTELSLEUTELS-ONDERZOEK.md.
 model TrustedDevice {
+  loginProtocol Int @default(1) // 2: expliciete lokale verificatie bij iedere ondertekening
   id              String                 @id @default(cuid())
   userId          String
   user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1033,4 +1035,16 @@ model DeviceEnrollment {
   createdAt      DateTime  @default(now())
 
   @@index([userId, createdAt])
+}
+
+// E-mailbewijs voor uitgenodigde personen die nog geen account hebben.
+model InvitationLoginCode {
+  id String @id @default(cuid())
+  email String
+  codeHash String
+  expiresAt DateTime
+  usedAt DateTime?
+  attempts Int @default(0)
+  createdAt DateTime @default(now())
+  @@index([email, expiresAt])
 }

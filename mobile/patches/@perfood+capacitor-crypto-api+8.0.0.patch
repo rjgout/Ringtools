@@ -1,5 +1,5 @@
 diff --git a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/BiometryApi.java b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/BiometryApi.java
-index 73390b3..3d693d6 100644
+index 73390b3..f6d52a0 100644
 --- a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/BiometryApi.java
 +++ b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/BiometryApi.java
 @@ -45,12 +45,12 @@ public class BiometryApi {
@@ -42,8 +42,30 @@ index 73390b3..3d693d6 100644
  
          FragmentActivity fragmentActivity = (FragmentActivity) this.activity;
          Executor executor = ContextCompat.getMainExecutor(this.context);
+@@ -151,13 +151,17 @@ public class BiometryApi {
+         new Handler(Looper.getMainLooper()).post(() -> {
+             BiometricPrompt prompt = new BiometricPrompt(fragmentActivity, executor, callback);
+ 
++            // Before Android 11 the platform cannot combine STRONG with DEVICE_CREDENTIAL.
++            // Keep the key flow strong-only rather than accepting a weak biometric in an existing key-auth window.
++            final int allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.R
++                ? BiometricManager.Authenticators.BIOMETRIC_STRONG : authenticationType;
+             BiometricPrompt.PromptInfo.Builder builder = new BiometricPrompt.PromptInfo.Builder()
+-                .setTitle("Biometric login")
+-                .setSubtitle("Use biometrics to continue")
+-                .setAllowedAuthenticators(authenticationType);
++                .setTitle("Ringtools")
++                .setSubtitle("Bevestig met de beveiliging van je telefoon")
++                .setAllowedAuthenticators(allowed);
+ 
+             // if no DEVICE_CREDENTIAL is used, set negative button text
+-            if ((authenticationType & BiometricManager.Authenticators.DEVICE_CREDENTIAL) == 0) {
++            if ((allowed & BiometricManager.Authenticators.DEVICE_CREDENTIAL) == 0) {
+                 builder.setNegativeButtonText("Cancel");
+             }
+ 
 diff --git a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApi.java b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApi.java
-index fc26229..e17d363 100644
+index fc26229..797297f 100644
 --- a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApi.java
 +++ b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApi.java
 @@ -61,7 +61,7 @@ public class CryptoApi {
@@ -64,7 +86,30 @@ index fc26229..e17d363 100644
  
          // we do not support ecdh below android 12
          if (algorithm.equalsIgnoreCase("ecdh") && Build.VERSION.SDK_INT < 31) {
-@@ -173,13 +173,13 @@ public class CryptoApi {
+@@ -117,7 +117,12 @@ public class CryptoApi {
+             if (type.length != 0) {
+                 builder.setInvalidatedByBiometricEnrollment(true);
+                 builder.setUserAuthenticationRequired(true);
+-                builder.setUserAuthenticationParameters(5, this.getKeyProperties(type[0])); // 5 seconds for which this key is authorized to be used after the user is successfully authenticated
++                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
++                    builder.setUserAuthenticationParameters(5, this.getKeyProperties(type[0]));
++                } else {
++                    // Android 7–10: Keystore requires a secure device credential or strong biometric.
++                    builder.setUserAuthenticationValidityDurationSeconds(5);
++                }
+             }
+ 
+             // Generate the key (StrongBox preferred, fallback to TEE)
+@@ -137,7 +142,7 @@ public class CryptoApi {
+ 
+             // Try TEE fallback only if StrongBox failed
+             if (!keyGenerated) {
+-                builder.setIsStrongBoxBacked(false);
++                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) builder.setIsStrongBoxBacked(false);
+                 keyPairGenerator.initialize(builder.build());
+                 keyPair = keyPairGenerator.generateKeyPair();
+             }
+@@ -173,13 +178,13 @@ public class CryptoApi {
      }
  
      public String loadKey(String tag, String algorithm) {
@@ -80,7 +125,7 @@ index fc26229..e17d363 100644
  
          try {
              String label = this.getLabel(algorithm);
-@@ -194,7 +194,7 @@ public class CryptoApi {
+@@ -194,7 +199,7 @@ public class CryptoApi {
      }
  
      public String sign(String tag, String data) throws InvalidKeyException {
@@ -89,7 +134,7 @@ index fc26229..e17d363 100644
  
          try {
              KeyStore.PrivateKeyEntry privateKeyEntry = this.getPrivateKeyEntry(tag, CryptoApi.LabelECDSA);
-@@ -216,7 +216,7 @@ public class CryptoApi {
+@@ -216,7 +221,7 @@ public class CryptoApi {
      }
  
      public boolean verify(String foreignPublicKeyBase64, String data, String signatureBase64) {
@@ -98,7 +143,7 @@ index fc26229..e17d363 100644
  
          try {
              PublicKey foreignPublicKey = loadPublicKeyFromBase64(foreignPublicKeyBase64);
-@@ -238,7 +238,7 @@ public class CryptoApi {
+@@ -238,7 +243,7 @@ public class CryptoApi {
      }
  
      public JSObject encrypt(SecretKey secretKey, String plaintext) {
@@ -107,7 +152,7 @@ index fc26229..e17d363 100644
  
          try {
              byte[] iv = new byte[IV_LENGTH];
-@@ -272,7 +272,7 @@ public class CryptoApi {
+@@ -272,7 +277,7 @@ public class CryptoApi {
      }
  
      public String decrypt(SecretKey secretKey, String iv, String ciphertext) {
@@ -116,7 +161,7 @@ index fc26229..e17d363 100644
  
          try {
              byte[] ivBytes = Base64.decode(iv, Base64.DEFAULT);
-@@ -301,13 +301,13 @@ public class CryptoApi {
+@@ -301,13 +306,13 @@ public class CryptoApi {
      }
  
      public SecretKey deriveSecret(String tag, String foreignPublicKeyBase64) throws InvalidKeyException {
@@ -132,6 +177,65 @@ index fc26229..e17d363 100644
                  this.generateKey(tag, "ecdh");
                  privateKeyEntry = this.getPrivateKeyEntry(tag, CryptoApi.LabelECDH);
                  if (privateKeyEntry == null) {
+diff --git a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApiPlugin.java b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApiPlugin.java
+index 76de7d1..340c0c2 100644
+--- a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApiPlugin.java
++++ b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/CryptoApiPlugin.java
+@@ -108,40 +108,21 @@ public class CryptoApiPlugin extends Plugin {
+         String data = call.getString("data");
+         String type = call.getString("type");
+ 
+-        try {
+-            String signature = implementation.sign(tag, data);
+-            JSObject ret = new JSObject();
+-            if (signature != null) {
+-                ret.put("signature", signature);
+-            }
+-            call.resolve(ret);
+-        } catch (InvalidKeyException e) {
+-            // UserNotAuthenticatedException belongs to InvalidKeyException
+-            // key is secured with biometry and needs authentication
+-            biometry.authenticate(
+-                this.getAuthenticationType(type != null ? type : CryptoApiPlugin.BIOMETRY),
+-                new BiometryApi.AuthenticationCallback() {
+-                    @Override
+-                    public void onSuccess() {
+-                        try {
+-                            String signature = implementation.sign(tag, data);
+-                            JSObject ret = new JSObject();
+-                            if (signature != null) {
+-                                ret.put("signature", signature);
+-                            }
+-                            call.resolve(ret);
+-                        } catch (InvalidKeyException e) {
+-                            call.reject("CryptoAPIPlugin.sign: Error authenticating user");
+-                        }
+-                    }
+-
+-                    @Override
+-                    public void onError(String error) {
+-                        call.reject(error);
+-                    }
++        biometry.authenticate(
++            this.getAuthenticationType(type != null ? type : CryptoApiPlugin.BIOMETRY),
++            new BiometryApi.AuthenticationCallback() {
++                @Override public void onSuccess() {
++                    try {
++                        String signature = implementation.sign(tag, data);
++                        if (signature == null) { call.reject("signing_failed"); return; }
++                        JSObject ret = new JSObject();
++                        ret.put("signature", signature);
++                        call.resolve(ret);
++                    } catch (InvalidKeyException e) { call.reject("signing_failed"); }
+                 }
+-            );
+-        }
++                @Override public void onError(String error) { call.reject(error); }
++            }
++        );
+     }
+ 
+     @PluginMethod
 diff --git a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/PasskeyApi.java b/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/PasskeyApi.java
 index 3b954ba..58dcc40 100644
 --- a/node_modules/@perfood/capacitor-crypto-api/android/src/main/java/de/perfood/plugins/cryptoapi/PasskeyApi.java

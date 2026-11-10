@@ -63,7 +63,7 @@ describe("Berichtformaat en ondertekening (gelijk aan de server)", () => {
     const err = await lib.loginWithDeviceKey(api as never, k, "ios").catch((e) => e);
     expect(err).toBeInstanceOf(lib.DeviceLoginError);
     expect(err.message).toMatch(/Er is niet ingelogd/);
-    expect(err.message).toMatch(/koppel dit toestel opnieuw/);
+    expect(err.message).toMatch(/Log opnieuw in met je e-mailcode/);
     expect(err.message).not.toMatch(/SECRET/);
     expect(api.deviceLogin).not.toHaveBeenCalled();
     expect(k.create).not.toHaveBeenCalled(); // nooit automatisch herregistreren
@@ -73,14 +73,14 @@ describe("Berichtformaat en ondertekening (gelijk aan de server)", () => {
     const api = apiMock();
     await expect(lib.loginWithDeviceKey(api as never, keys(), "ios")).rejects.toMatchObject({ code: "no-key" });
     expect(api.deviceChallenge).not.toHaveBeenCalled();
-    await expect(lib.loginWithDeviceKey(api as never, keys(), "android")).rejects.toMatchObject({ code: "unsupported" });
+    await expect(lib.loginWithDeviceKey(api as never, keys(), "web")).rejects.toMatchObject({ code: "unsupported" });
     await expect(lib.loginWithDeviceKey(api as never, keys({ available: () => false }), "ios")).rejects.toMatchObject({ code: "unsupported" });
   });
 
   it("ingetrokken/niet geactiveerd toestel: duidelijke melding met herstelroute, sleutel blijft onaangeroerd", () => {
     const msg = lib.deviceLoginMessage(new ApiRequestError(403, "Inloggen met dit toestel is niet beschikbaar.", "device-login-unavailable"));
     expect(msg).toMatch(/niet beschikbaar/);
-    expect(msg).toMatch(/koppel dit toestel opnieuw/);
+    expect(msg).toMatch(/Log opnieuw in met je e-mailcode/);
   });
 
   it("activeren: ondertekent de activeringschallenge (apart contextlabel)", async () => {
@@ -105,7 +105,7 @@ describe("Inlogscherm: Inloggen met Face ID", () => {
     const s = setup();
     await s.ready;
     render(<Login />);
-    const btn = await screen.findByRole("button", { name: "Inloggen met Face ID of toestelcode" });
+    const btn = await screen.findByRole("button", { name: "Inloggen met de beveiliging van je telefoon" });
     fireEvent.click(btn);
     await waitFor(() => expect(s.signInWithDevice).toHaveBeenCalledTimes(1));
     expect((s.api.requestCode as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
@@ -116,21 +116,21 @@ describe("Inlogscherm: Inloggen met Face ID", () => {
     await a.ready;
     render(<Login />);
     await waitFor(() => expect((a.api.meta as ReturnType<typeof vi.fn>)).toHaveBeenCalled());
-    expect(screen.queryByRole("button", { name: "Inloggen met Face ID of toestelcode" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Inloggen met de beveiliging van je telefoon" })).toBeNull();
     expect(screen.getByLabelText("E-mailadres")).toBeTruthy();
     cleanup();
     const b = setup({ deviceLogin: false });
     await b.ready;
     render(<Login />);
     await waitFor(() => expect((b.api.meta as ReturnType<typeof vi.fn>)).toHaveBeenCalled());
-    expect(screen.queryByRole("button", { name: "Inloggen met Face ID of toestelcode" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Inloggen met de beveiliging van je telefoon" })).toBeNull();
   });
 
   it("mislukte aanmelding toont een melding en laat de gebruiker op het inlogscherm (geen zwakkere terugval)", async () => {
     const s = setup({ signInWithDevice: async () => { throw new lib.DeviceLoginError("De verificatie met dit toestel is geannuleerd of mislukt. Er is niet ingelogd. Lukt het niet?", "cancelled"); } });
     await s.ready;
     render(<Login />);
-    fireEvent.click(await screen.findByRole("button", { name: "Inloggen met Face ID of toestelcode" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Inloggen met de beveiliging van je telefoon" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/Er is niet ingelogd/);
     expect(screen.getByLabelText("E-mailadres")).toBeTruthy();
     expect(s.api.requestCode).not.toHaveBeenCalled();

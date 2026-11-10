@@ -48,7 +48,7 @@ export type PendingLogin = { mfaRequired: true; method: "passkey" | "totp"; meth
  *   (functievlag `NATIVE_TOTP_LOGIN_ENABLED`, bevestigde TOTP). Beide extra methoden zijn een tweede factor ná de e-mailcode.
  * - Geen enkele methode bruikbaar: oude, veilige weigering of melding (de code is dan al verbruikt, net als voorheen).
  */
-export async function beginMfaLogin(user: User): Promise<PendingLogin> {
+export async function beginMfaLogin(user: User, verifiedEmail?: string): Promise<PendingLogin> {
   const passkeyEnabled = env.nativePasskeysEnabled;
   const totpUsable = env.nativeTotpLoginEnabled && user.role !== "ADMIN" && (await isTotpConfirmed(user.id));
   if (!passkeyEnabled && !totpUsable) throw new ApiError(403, NOT_SUPPORTED, "mfa-not-supported");
@@ -59,7 +59,7 @@ export async function beginMfaLogin(user: User): Promise<PendingLogin> {
   if (isLocked(user.id)) throw new ApiError(429, "Te veel mislukte pogingen. Probeer het over 15 minuten opnieuw.", "locked");
   // Maximaal één wachtende app-login per gebruiker; wachtende webinlogpogingen blijven onaangeroerd.
   await prisma.session.deleteMany({ where: { userId: user.id, mfaAt: null, userAgent: PENDING_AGENT } });
-  const pending = await createSession(user.id, PENDING_AGENT);
+  const pending = await createSession(user.id, PENDING_AGENT, verifiedEmail);
   const methods: ("passkey" | "totp")[] = [...(passkeyUsable ? (["passkey"] as const) : []), ...(totpUsable ? (["totp"] as const) : [])];
   return { mfaRequired: true, method: methods[0], methods, pendingToken: pending.rawToken, expiresAt: pending.expiresAt.toISOString() };
 }

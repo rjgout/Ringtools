@@ -12,6 +12,7 @@ export async function resetDatabase() {
   await prisma.vote.deleteMany();
   await prisma.eligibleVoter.deleteMany();
   await prisma.calling.deleteMany();
+  await prisma.invitationLoginCode.deleteMany();
   await prisma.magicLinkToken.deleteMany();
   await prisma.session.deleteMany();
   await prisma.user.deleteMany();

@@ -168,7 +168,7 @@ describe("Opnieuw versturen vanuit het gebruikersbeheer: bestaande beveiliging b
 
 describe("Ontbrekende inlogcode: wat de server wel en niet verraadt", () => {
   const GENERIC = "Als dit e-mailadres bekend is bij Ringtools";
-  it("onbekend adres, niet-geactiveerde uitnodiging zonder account en inactief account krijgen hetzelfde antwoord; alleen een actief account krijgt een mail", async () => {
+  it("onbekend adres, niet-geactiveerde uitnodiging zonder account en inactief account krijgen hetzelfde antwoord; actief account en geldige uitnodiging krijgen een code", async () => {
     const w = await world();
     await prisma.ringInvitation.create({
       data: { ringId: w.ringA.id, createdById: w.manager.id, name: "Alleen Uitgenodigd", email: "uitgenodigd@test.nl", role: "HOGERAAD", churchFunction: "x", churchFunctionCode: "HOGERAADSLID", tokenHash: "t-u", codeHash: "c-u", expiresAt: new Date(Date.now() + 86400_000), sentAt: new Date(), sendCount: 1 },
@@ -185,8 +185,8 @@ describe("Ontbrekende inlogcode: wat de server wel en niet verraadt", () => {
     }
     expect(new Set(answers).size).toBe(1); // geen verschil in het antwoord: geen accountenumeratie
     expect(JSON.parse(answers[0]).message).toContain(GENERIC);
-    expect(sendMailMock).toHaveBeenCalledTimes(1);
-    expect((sendMailMock.mock.calls[0][0] as { to: string }).to).toBe("actief@test.nl");
+    expect(sendMailMock).toHaveBeenCalledTimes(2);
+    expect(sendMailMock.mock.calls.map(c => (c[0] as { to: string }).to)).toEqual(["uitgenodigd@test.nl", "actief@test.nl"]);
   });
 
   it("verzendlimiet voor inlogcodes (5 per 15 minuten per adres) geeft een duidelijke melding, ook voor onbekende adressen", async () => {

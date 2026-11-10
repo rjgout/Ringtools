@@ -75,7 +75,7 @@ export async function enrollCompleteApi(auth: ApiAuth, body: Record<string, unkn
     completeEnrollment(auth.user.id, {
       enrollmentId: str(body.enrollmentId), publicKey: str(body.publicKey), installationId: str(body.installationId),
       signature: str(body.signature), platform: str(body.platform), label: str(body.label),
-    })
+    }, auth.sessionId)
   );
   return { ok: true, deviceId: res.deviceId };
 }

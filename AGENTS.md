@@ -5,6 +5,10 @@ Lees dit bestand volledig vóór je iets wijzigt. Bij tegenstrijdigheid met een 
 tenzij de eigenaar uitdrukkelijk anders heeft opgedragen. (Bij de invoering van dit bestand bestonden er geen andere
 `AGENTS.md`/`CLAUDE.md`; voeg bij een nieuw instructiebestand de inhoud hier samen i.p.v. een tweede bron te maken.)
 
+## Aanmelding release 1.0 (nieuwe opdracht eigenaar)
+
+De expliciete release-1.0-opdracht vervangt voor dit onderdeel de eerdere beperkingen hieronder: gewone gebruikers mogen na verse e-mailverificatie een toestel registreren zonder vooraf MFA in te schrijven; verplichte MFA blijft gelden. Nieuwe Android-toestellen kunnen aanmelden met protocol 2 en verplichte expliciete systeemverificatie vóór iedere ondertekening. Legacy Android-protocol 1 blijft uitgesloten. De bestaande functievlaggen worden niet automatisch in productie geactiveerd. `mobile/patches` bevat hiervoor naast de loggingpatch ook de Android-verificatiepatch. Zie `docs/AANMELDEN-RELEASE-1.md` voor migratie, sessies, herinstallatie en fysieke acceptatie. Nieuwe e-mailuitnodigingen worden bij volledige geverifieerde aanmelding atomair geaccepteerd. Aanvragen of onafgeronde MFA activeert niets. Website en webmin-beveiliging blijven behouden.
+
 ## Koers: app-first met een blijvende beveiligde webomgeving (permanent, door de eigenaar vastgesteld; vervangt de eerdere app-only-aanname)
 
 > **Beslissing eigenaar (fase E):** Ringtools blijft app-first, maar wordt **niet** app-only. De website houdt een beveiligde inlogmogelijkheid voor bevoegde gebruikers, bijvoorbeeld een ringsecretaris of
@@ -61,7 +65,7 @@ Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet ·
 | Wijken/gemeenten, hogeraadskoppeling, ringinrichting, roepingencatalogus, eigen roepingen, aanstellingsbevoegdheid | ✅ C2 (toesteltest open) | ✅ C2 (toesteltest open) | — | ✅ (ringbeheerder in de app; webmin heeft geen app-ingang meer) |
 | Nieuw voorstel via concept (naam → unit → roeping → verantwoordelijken), servercontrole bevoegdheden en eigen roepingen | ✅ C3 (toesteltest open) | ✅ C3 (toesteltest open) | — | — |
 | Gestructureerde kerkelijke functies (ringpresident, eerste/tweede raadgever, …), machtigingen, voorgestelde bevoegde uitvoerders, catalogusoverzicht onder Inrichting | ✅ C4.5 (toesteltest open) | ✅ C4.5 (toesteltest open) | — | ✅ (ringbeheerder in de app; webmin heeft geen app-ingang meer) |
-| Uitnodigen en activeren van nieuwe gebruikers (ringbeheerder nodigt uit; activatie met link of e-mail + code; zonder verplichte MFA direct ingelogd, met verplichte MFA geen sessie) | ✅ C5.1 (toesteltest open) | ✅ C5.1 (toesteltest open) | informatieve landingspagina `/uitnodiging/<token>` | ✅ (website: direct toevoegen; uitnodigen namens een ring niet meer) |
+| Uitnodigen en activeren van nieuwe gebruikers (welkomstmail; automatische acceptatie na volledig geverifieerde e-mailcode-aanmelding; bestaande MFA blijft vereist; legacylinks blijven tijdelijk bruikbaar) | ✅ C5.1 (toesteltest open) | ✅ C5.1 (toesteltest open) | informatieve landingspagina `/uitnodiging/<token>` | ✅ (website: direct toevoegen; uitnodigen namens een ring niet meer) |
 | Ontheffingen (aparte module; vertrouwelijk, betrokkene heeft geen toegang) | ✅ C4 (toesteltest open) | ✅ C4 (toesteltest open) | — | — |
 | Verplichte appvergrendeling (Face ID/Touch ID/biometrie/toestelcode; 30 s achtergrond; afscherming app-switcher; Android FLAG_SECURE) | ✅ E3 stap 1 (toesteltest open; ook in PersonalTeam) | ✅ E3 stap 1 (toesteltest open) | — | — |
 | Hoofdnavigatie (tabbalk) | ✅ native `UITabBar` (Liquid Glass op iOS 26+; toesteltest open) | ✅ React-balk | ✅ web | — |

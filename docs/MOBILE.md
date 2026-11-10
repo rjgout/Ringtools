@@ -242,3 +242,8 @@ Op **iOS (alleen in de app)** tekent een echte `UITabBar` de hoofdnavigatie; op 
 - **Terugval:** ontbreekt de plug-in, geeft hij een fout of antwoordt hij niet binnen 2 s, dan verschijnt de webbalk.
 - **Kleur:** de actieve tab gebruikt de bestaande app-accentkleur (`--tint`, nu systeemblauw; de app heeft geen oranje accent) en volgt licht/donker.
 - **Tests:** `mobile/tests/nativeTabBar.test.tsx` (tabs, rollen, tellers, routesynchronisatie, tik, verbergen, terugval) en `check:native-config`. Het uiterlijk zelf (Liquid Glass) is alleen op een toestel te beoordelen.
+
+
+## Vereenvoudigde aanmelding release 1.0
+
+Zie [het implementatie- en migratieoverzicht](AANMELDEN-RELEASE-1.md) voor automatische uitnodigingsacceptatie, lokale sessiekeuze, toestelregistratie en vereiste fysieke acceptatietests. Deze wijziging introduceert geen analytics of biometrische gegevens op de server; alleen publieke sleutels en beveiligingsmetadata worden geregistreerd.

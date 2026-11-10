@@ -778,3 +778,8 @@ niet worden uitgevoerd — zie het eindrapport voor de precieze afbakening.
   de server/database (zie de noodprocedure in
   [Multifactorauthenticatie (MFA)](#multifactorauthenticatie-mfa)) —
   bewust geen in-app-noodtoegang.
+
+
+## Vereenvoudigde aanmelding release 1.0
+
+Zie [het implementatie- en migratieoverzicht](docs/AANMELDEN-RELEASE-1.md) voor automatische uitnodigingsacceptatie, lokale sessiekeuze, toestelregistratie en vereiste fysieke acceptatietests. Deze wijziging introduceert geen analytics of biometrische gegevens op de server; alleen publieke sleutels en beveiligingsmetadata worden geregistreerd.

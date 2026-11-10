@@ -23,9 +23,10 @@ vi.mock("@capacitor/app", () => ({ App: cap.api }));
 vi.mock("@capacitor/splash-screen", () => ({ SplashScreen: { hide: vi.fn(async () => {}) } }));
 vi.mock("../src/lib/native", () => ({ isNative: true, platform: "ios", onBackButton: () => () => {} }));
 vi.mock("../src/lib/push", () => ({ registerForPush: vi.fn() }));
-const store = vi.hoisted(() => ({ token: null as string | null }));
+const store = vi.hoisted(() => ({ token: null as string | null, deviceKey: null as string | null }));
 const storage = vi.hoisted(() => ({
   hasSession: vi.fn(async () => store.token !== null),
+  getDeviceKey: vi.fn(async () => store.deviceKey),
   getToken: vi.fn(async () => store.token),
   setToken: vi.fn(async (t: string) => void (store.token = t)),
   getMode: vi.fn(async () => null),
@@ -33,9 +34,10 @@ const storage = vi.hoisted(() => ({
   setRing: vi.fn(async () => {}),
   getPushToken: vi.fn(async () => null),
   setPendingUnregister: vi.fn(async () => {}),
+  getPendingLogouts: vi.fn(async () => []), queueLogout: vi.fn(async () => {}), removeQueuedLogout: vi.fn(async () => {}),
   getPendingUnregister: vi.fn(async () => null),
   clearPendingUnregister: vi.fn(async () => {}),
-  clearSession: vi.fn(async () => void (store.token = null)),
+  clearDeviceKey: vi.fn(async () => { store.deviceKey = null; }), clearDeviceOfferDeclined: vi.fn(async () => {}), clearSession: vi.fn(async () => void (store.token = null)),
 }));
 vi.mock("../src/lib/storage", () => ({ storage }));
 
@@ -75,6 +77,7 @@ async function mount() {
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(fakeFetch));
   store.token = null;
+  store.deviceKey = null;
   net.calls = [];
   net.meStatus = 200;
   now = 1_000_000;
@@ -133,6 +136,23 @@ describe("Opstarten met en zonder opgeslagen sessie", () => {
     act(() => cap.emit("appStateChange", { isActive: true }));
     await Promise.resolve();
     expect(auth).toHaveBeenCalledTimes(1);
+  });
+
+  it("uitloggen met verlopen sessie start geen automatische toestelaanmelding", async () => {
+    store.token = "tok";
+    await mount();
+    await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("signedIn:Geheime Naam"));
+    store.deviceKey = JSON.stringify({ installationId: "01234567890123456789012345678901", tag: "synthetisch", userId: "u1" });
+    net.calls = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { method?: string }) => {
+      if (url.endsWith("/auth/logout")) return { status: 401, ok: false, json: async () => ({ error: "verlopen" }) } as Response;
+      return fakeFetch(url, init);
+    }));
+    act(() => screen.getByText("uit").click());
+    await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("signedOut:-"));
+    expect(storage.queueLogout).toHaveBeenCalledWith("tok");
+    expect(net.calls.some(c => c.includes("/auth/device/"))).toBe(false);
+    expect(store.deviceKey).toBeNull();
   });
 
   it("uitloggen: sessie lokaal gewist, direct inlogscherm, geen extra prompt; daarna lange achtergrond zonder prompt", async () => {

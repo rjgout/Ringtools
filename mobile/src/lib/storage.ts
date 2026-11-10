@@ -1,4 +1,4 @@
-import { Capacitor } from "@capacitor/core";
+import { registerPlugin, Capacitor } from "@capacitor/core";
 import { KeychainAccess, SecureStorage } from "@aparajita/capacitor-secure-storage";
 
 /**
@@ -13,17 +13,30 @@ const PUSH = "ringtools.pushToken";
 const DEVICE = "ringtools.deviceId";
 const DEVICE_KEY = "ringtools.deviceKey";
 const DEVICE_OFFER = "ringtools.deviceOfferDeclined";
+const PENDING_LOGOUTS = "ringtools.pendingLogouts";
 const PENDING_UNREGISTER = "ringtools.pendingPushUnregister";
 
 const memory = new Map<string, string>();
 const native = Capacitor.isNativePlatform();
 let ready: Promise<void> | null = null;
+let sessionToken: string | null = null;
+let sessionUserId: string | null = null;
+const Installation = registerPlugin<{ identity(): Promise<{ id: string }> }>("Installation");
 
 function init(): Promise<void> {
   if (!native) return Promise.resolve();
   ready ??= (async () => {
     await SecureStorage.setSynchronize(false); // niet via iCloud synchroniseren
     await SecureStorage.setDefaultKeychainAccess(KeychainAccess.afterFirstUnlockThisDeviceOnly); // niet in back-ups naar andere toestellen
+    const { id } = await Installation.identity();
+    if (!id) throw new Error("installation-unavailable");
+    const previous = await SecureStorage.get("ringtools.installation");
+    if (previous !== id) {
+      // Geen token of toestelsleutel uit een vorige installatie hergebruiken.
+      for (const key of [TOKEN, RING, MODE, PUSH, DEVICE, DEVICE_KEY, DEVICE_OFFER, PENDING_UNREGISTER, PENDING_LOGOUTS]) await SecureStorage.remove(key);
+      await SecureStorage.set("ringtools.installation", id);
+    }
+    if (!(await SecureStorage.get(DEVICE_KEY))) await SecureStorage.remove(TOKEN);
   })();
   return ready;
 }
@@ -50,16 +63,46 @@ export const storage = {
   async hasSession(): Promise<boolean> {
     if (!native) return memory.has(TOKEN);
     await init();
-    return (await SecureStorage.keys()).includes(TOKEN);
+    const keys = await SecureStorage.keys();
+    return keys.includes(TOKEN) || keys.includes(DEVICE_KEY);
   },
-  getToken: () => get(TOKEN),
-  setToken: (v: string) => set(TOKEN, v),
+  getToken: async () => sessionToken ?? await get(TOKEN),
+  async setToken(v: string, userId?: string) {
+    sessionToken = v;
+    sessionUserId = userId ?? null;
+    // Alleen een expliciet geregistreerd toestel mag automatisch hervatten.
+    const raw = await get(DEVICE_KEY);
+    const owner = raw ? (JSON.parse(raw) as { userId?: string }).userId : null;
+    if (owner && userId === owner) await set(TOKEN, v);
+    else await remove(TOKEN);
+  },
+  async persistSession() {
+    const raw = await get(DEVICE_KEY);
+    const owner = raw ? (JSON.parse(raw) as { userId?: string }).userId : null;
+    if (sessionToken && owner && owner === sessionUserId) await set(TOKEN, sessionToken);
+  },
+  async forgetPersistentSession() { await remove(TOKEN); },
   /** Verouderd: "admin" werd bewaard na een webmin-login in oudere appversies. Wordt bij het opstarten genegeerd en gewist (systeembeheer is uitsluitend via de website). */
   getMode: () => get(MODE),
   getRing: () => get(RING),
   setRing: (v: string) => set(RING, v),
   getPushToken: () => get(PUSH),
   setPushToken: (v: string) => set(PUSH, v),
+  async getPendingLogouts(): Promise<string[]> {
+    const raw = await get(PENDING_LOGOUTS);
+    if (!raw) return [];
+    const values: unknown = JSON.parse(raw);
+    return Array.isArray(values) ? values.filter((v): v is string => typeof v === "string") : [];
+  },
+  async queueLogout(token: string) {
+    const previous = await this.getPendingLogouts();
+    await set(PENDING_LOGOUTS, JSON.stringify([...new Set([...previous, token])]));
+  },
+  async removeQueuedLogout(token: string) {
+    const pending = (await this.getPendingLogouts()).filter(t => t !== token);
+    if (pending.length) await set(PENDING_LOGOUTS, JSON.stringify(pending));
+    else await remove(PENDING_LOGOUTS);
+  },
   getPendingUnregister: () => get(PENDING_UNREGISTER),
   setPendingUnregister: (v: string) => set(PENDING_UNREGISTER, v),
   clearPendingUnregister: () => remove(PENDING_UNREGISTER),
@@ -71,7 +114,7 @@ export const storage = {
     await set(DEVICE, id);
     return id;
   },
-  /** Verwijzing naar de toestelsleutel (installatie-ID, tag); de privésleutel zelf verlaat nooit de beveiligde hardware. Blijft bestaan bij uitloggen. */
+  /** Verwijzing naar de toestelsleutel (installatie-ID, tag); de privésleutel zelf verlaat nooit de beveiligde hardware. Wordt bij expliciet uitloggen samen met de native sleutel verwijderd. */
   getDeviceKey: () => get(DEVICE_KEY),
   setDeviceKey: (v: string) => set(DEVICE_KEY, v),
   clearDeviceKey: () => remove(DEVICE_KEY),
@@ -81,6 +124,8 @@ export const storage = {
   clearDeviceOfferDeclined: () => remove(DEVICE_OFFER),
   /** Wist de sessiegegevens; de installatie-ID en een nog niet afgemeld pushtoken blijven bewust bestaan. */
   async clearSession() {
+    sessionToken = null;
+    sessionUserId = null;
     await Promise.all([TOKEN, RING, PUSH, MODE].map(remove));
   },
 };

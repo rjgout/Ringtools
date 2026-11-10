@@ -1,4 +1,5 @@
-import { createVerifiedSession, consumeLoginCode, rotateSessionIfDue, destroySession, mfaRequired } from "../auth";
+import { loginInvitedPerson } from "../invitationLogin";
+import { createVerifiedSession, consumeLoginCode, rotateSessionIfDue, mfaRequired } from "../auth";
 import { rateLimit } from "../rateLimit";
 import { emailSchema } from "../validation";
 import { sendLoginMail } from "../loginMail";
@@ -41,10 +42,11 @@ const ringOf = (ctx: Ctx) => ctx.query.get("ring") || str(ctx.body.ringId);
 
 // ---- Inloggen (geen token nodig) ----
 
-publicRoute("POST", "/auth/request-code", async ({ body }) => {
+publicRoute("POST", "/auth/request-code", async ({ request, body }) => {
+  if (!rateLimit(`request-code-ip:${clientKeyOf(request)}`, 30, 15 * 60 * 1000).allowed) throw new ApiError(429, "Te veel aanvragen. Probeer het later opnieuw.", "rate-limited");
   const email = emailSchema.safeParse(body.email);
   if (!email.success) throw new ApiError(400, "Vul een geldig e-mailadres in.", "validation");
-  const result = await sendLoginMail(email.data, null);
+  const result = await sendLoginMail(email.data, null, { codeOnly: true });
   if (!result.ok) throw new ApiError(429, result.message, "rate-limited");
   return { ok: true, message: result.message };
 });
@@ -59,15 +61,19 @@ publicRoute("POST", "/auth/login", async ({ body }) => {
     throw new ApiError(429, "Te veel pogingen. Probeer het later opnieuw.", "rate-limited");
   }
   const user = await consumeLoginCode(email.data, code);
-  if (!user) throw invalid;
+  if (!user) {
+    const invited = await loginInvitedPerson(email.data, code, "Ringtools-app");
+    if (!invited) throw invalid;
+    return { token: invited.token, expiresAt: invited.expiresAt.toISOString(), ...(await svc.getMe(invited.userId)) };
+  }
   if (user.role === "ADMIN") throw new ApiError(403, "Het beheerdersaccount gebruikt de webapp.", "admin-web-only");
   if (mfaRequired(user)) {
     // Verplichte MFA: nooit een volledige sessie op de code alleen. Met native passkeys (functievlag) volgt een beperkte pending-login;
     // zonder de vlag de oude, veilige weigering. De code is in beide gevallen al verbruikt.
-    return nativeMfa.beginMfaLogin(user);
+    return nativeMfa.beginMfaLogin(user, email.data);
   }
   const device = str(body.deviceName).slice(0, 60).replace(/[^\p{L}\p{N} ._-]/gu, "");
-  const session = await createVerifiedSession(user.id, `Ringtools-app${device ? ` (${device})` : ""}`);
+  const session = await createVerifiedSession(user.id, `Ringtools-app${device ? ` (${device})` : ""}`, email.data);
   return { token: session.rawToken, expiresAt: session.expiresAt.toISOString(), ...(await svc.getMe(user.id)) };
 });
 
@@ -135,7 +141,7 @@ authedRoute("POST", "/auth/refresh", async ({ auth }) => {
 authedRoute("POST", "/auth/logout", async ({ auth, body }) => {
   const pushToken = str(body.pushToken);
   if (pushToken) await svc.unregisterDevice(auth.user.id, pushToken);
-  await destroySession(auth.token);
+  await svc.revokeMySession(auth.user.id, auth.sessionId);
   return { ok: true };
 });
 

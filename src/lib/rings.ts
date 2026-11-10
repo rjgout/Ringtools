@@ -75,6 +75,7 @@ async function resolveUser(
   if (name.length < 2) throw new RingError("Vul een naam in.");
   if (!email.includes("@")) throw new RingError("Vul een geldig e-mailadres in.");
 
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${email}, 0))`;
   const existing = await tx.user.findUnique({ where: { email } });
   if (existing) {
     if (opts.actor.role === "ADMIN" && existing.role !== "ADMIN") {
@@ -226,6 +227,7 @@ export async function addMember(input: { actorId: string; ringId: string; isRing
     if (!ring) throw new RingError("Deze ring bestaat niet.");
 
     const { user, isNew } = await resolveUser(tx, { ...input, actor });
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${user.id} FOR UPDATE`;
     const existingMembership = await tx.ringMembership.findUnique({
       where: { userId_ringId: { userId: user.id, ringId: input.ringId } },
     });
@@ -281,6 +283,12 @@ export async function updateMember(input: {
     if (!before) throw new RingError("Dit lidmaatschap bestaat niet.");
     const actor = await assertCanManageRing(tx, input.actorId, before.ringId);
 
+    // Dezelfde volgorde als code-aanmelding: e-mailidentiteit, gebruiker, ring.
+    if (input.email !== undefined) {
+      const emailIdentity = normalizeEmail(input.email);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${emailIdentity}, 0))`;
+    }
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${before.userId} FOR UPDATE`;
     await lockRing(tx, before.ringId);
 
     const wantsProfileChange =

@@ -3,7 +3,8 @@ import type { LoginResult, Me, RingInfo } from "@shared/api-types";
 import { ApiClient, ApiRequestError } from "./api";
 import { storage } from "./storage";
 import { API_BASE } from "../config";
-import { loginWithDeviceKey } from "./deviceLogin";
+import { nativeDeviceKeys } from "./deviceKey";
+import { loginWithDeviceKey, readDeviceKeyRef } from "./deviceLogin";
 import { platform } from "./native";
 import { registerForPush } from "./push";
 import { resumeSession } from "./resume";
@@ -56,11 +57,15 @@ export function useAuth(): AuthValue {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const tokenRef = useRef<string | null>(null);
+  const currentUserRef = useRef<string | null>(null);
+  const signingOutRef = useRef(false);
   // Stabiele, synchrone verwijzing naar de vergrendeling (zie components/AppLock.tsx).
   const lock = useAppLock();
   const lockRef = useRef(lock);
   lockRef.current = lock;
   const [status, setStatus] = useState<Status>("loading");
+  const statusRef = useRef<Status>("loading");
+  statusRef.current = status;
   const [startupError, setStartupError] = useState<ApiRequestError | null>(null);
   const [startupAttempt, setStartupAttempt] = useState(0);
   const [me, setMe] = useState<Me | null>(null);
@@ -73,6 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const pushToken = await storage.getPushToken();
     if (pushToken) await storage.setPendingUnregister(pushToken);
     tokenRef.current = null;
+    currentUserRef.current = null;
     setMe(null);
     setRingId(null);
     setStatus("signedOut");
@@ -85,7 +91,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       new ApiClient({
         baseUrl: API_BASE,
         getToken: () => tokenRef.current,
-        onUnauthorized: () => void clearSession(),
+        onUnauthorized: () => { if (signingOutRef.current || statusRef.current !== "signedIn") return; void clearSession().then(async () => {
+          if (await readDeviceKeyRef()) setStartupAttempt(n => n + 1);
+        }); },
         // Vangnet: zolang de app vergrendeld is gaat er geen enkel verzoek de deur uit.
         isBlocked: () => !lockRef.current.isUnlocked(),
       }),
@@ -101,6 +109,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [status]);
   useEffect(() => {
     flushRef.current = async () => {
+      for (const token of await storage.getPendingLogouts()) {
+        try { await api.retryLogout(token); await storage.removeQueuedLogout(token); }
+        catch (err) { if (err instanceof ApiRequestError && err.status === 401) await storage.removeQueuedLogout(token); }
+      }
       const pending = await storage.getPendingUnregister();
       if (!pending) return;
       try {
@@ -114,6 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [api]);
 
   const applyMe = useCallback(async (next: Me) => {
+    currentUserRef.current = next.user.id;
     setMe(next);
     const saved = await storage.getRing();
     const chosen = next.rings.find((r) => r.id === saved) ?? next.rings[0] ?? null;
@@ -125,6 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (signingOutRef.current) { setStatus("signedOut"); return; }
       setStatus("loading");
       // Een bewaarde beheerderssessie (uit een oudere appversie) wordt nooit meer hervat: systeembeheer gebeurt uitsluitend via de website.
       if ((await storage.getMode().catch(() => null)) === "admin") {
@@ -155,6 +169,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setStatus("unavailable");
       } else {
         tokenRef.current = null;
+        // Alleen na ontgrendeling van de appgate een nieuwe challenge ondertekenen.
+        if (lockRef.current.isUnlocked() && await readDeviceKeyRef()) {
+          try {
+            const next = await loginWithDeviceKey(api);
+            if (cancelled || signingOutRef.current) return;
+            if (!lockRef.current.isUnlocked()) { setStatus("signedOut"); return; }
+            tokenRef.current = next.token;
+            await storage.setToken(next.token, next.user.id);
+            await applyMe({ user: next.user, rings: next.rings, pendingCount: next.pendingCount });
+            setStatus("signedIn");
+            return;
+          } catch { /* annuleren, ingetrokken of verloren sleutel: gewone aanmelding */ }
+        }
         setStatus("signedOut");
       }
     })();
@@ -177,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (result.rotated && result.token) {
         // Een geroteerd token moet bewaard blijven (anders raakt de sessie zoek), ook als de app intussen vergrendeld is.
         tokenRef.current = result.token;
-        await storage.setToken(result.token);
+        await storage.setToken(result.token, currentUserRef.current ?? undefined);
       }
       if (!lockRef.current.isUnlocked()) return; // intussen vergrendeld: geen gegevens meer opvragen
       const next = await api.me();
@@ -198,7 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if ("mfaRequired" in result && result.mfaRequired) return { pendingToken: result.pendingToken, methods: result.methods ?? (result.method ? [result.method] : []) };
       const full = result as LoginResult;
       tokenRef.current = full.token;
-      await storage.setToken(full.token);
+      await storage.setToken(full.token, full.user.id);
       await applyMe({ user: full.user, rings: full.rings, pendingCount: full.pendingCount });
       setStatus("signedIn");
     },
@@ -208,7 +235,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const finishActivation = useCallback(
     async (result: LoginResult) => {
       tokenRef.current = result.token;
-      await storage.setToken(result.token);
+      await storage.setToken(result.token, result.user.id);
       await applyMe({ user: result.user, rings: result.rings, pendingCount: result.pendingCount });
       setStatus("signedIn");
     },
@@ -219,7 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (pendingToken: string, assertion: PasskeyAssertion) => {
       const result = await api.passkeyVerify(pendingToken, assertion);
       tokenRef.current = result.token;
-      await storage.setToken(result.token);
+      await storage.setToken(result.token, result.user.id);
       await applyMe({ user: result.user, rings: result.rings, pendingCount: result.pendingCount });
       setStatus("signedIn");
     },
@@ -230,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (pendingToken: string, proof: { code?: string; recoveryCode?: string }) => {
       const result = await api.totpVerify(pendingToken, proof);
       tokenRef.current = result.token;
-      await storage.setToken(result.token);
+      await storage.setToken(result.token, result.user.id);
       await applyMe({ user: result.user, rings: result.rings, pendingCount: result.pendingCount });
       setStatus("signedIn");
     },
@@ -240,7 +267,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithDevice = useCallback(async () => {
     const result = await loginWithDeviceKey(api);
     tokenRef.current = result.token;
-    await storage.setToken(result.token);
+    await storage.setToken(result.token, result.user.id);
     await applyMe({ user: result.user, rings: result.rings, pendingCount: result.pendingCount });
     setStatus("signedIn");
   }, [api, applyMe]);
@@ -249,7 +276,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (code: string) => {
       const result = await api.userReauth(code);
       tokenRef.current = result.token;
-      await storage.setToken(result.token);
+      await storage.setToken(result.token, currentUserRef.current ?? undefined);
     },
     [api]
   );
@@ -270,7 +297,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const result = await api.reauthPasskeyVerify(assertion);
     tokenRef.current = result.token;
-    await storage.setToken(result.token);
+    await storage.setToken(result.token, currentUserRef.current ?? undefined);
   }, [api]);
 
   const requestReauthCode = useCallback(async () => {
@@ -278,13 +305,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [api, me]);
 
   const signOut = useCallback(async () => {
-    const pushToken = (await storage.getPushToken()) ?? undefined;
+    signingOutRef.current = true;
     try {
-      await api.logout(pushToken);
-    } catch {
-      /* server niet bereikbaar: lokaal toch uitloggen; het pushtoken wordt later afgemeld */
-    }
-    await clearSession();
+      const pushToken = (await storage.getPushToken()) ?? undefined;
+      try {
+        await api.logout(pushToken);
+      } catch {
+        // Versleutelde intrekkingswachtrij; dit token wordt nooit meer voor appgegevens gebruikt.
+        if (tokenRef.current) await storage.queueLogout(tokenRef.current).catch(() => undefined);
+      }
+      const ref = await readDeviceKeyRef();
+      if (ref) await nativeDeviceKeys.remove(ref.tag).catch(() => undefined);
+      await storage.clearDeviceKey();
+      await storage.clearDeviceOfferDeclined();
+      await clearSession();
+    } finally { signingOutRef.current = false; }
   }, [api, clearSession]);
 
   const reloadMe = useCallback(async () => {

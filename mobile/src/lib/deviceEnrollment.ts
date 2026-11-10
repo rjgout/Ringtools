@@ -48,7 +48,7 @@ export async function enrollThisDevice(
   keys: DeviceKeyProvider = nativeDeviceKeys,
   platform: string = Capacitor.getPlatform()
 ): Promise<EnrollResult> {
-  if (!deviceLoginSupported(keys, platform)) return { ok: false, cancelled: false, message: "Inloggen met Face ID is alleen op iPhone beschikbaar." };
+  if (!deviceLoginSupported(keys, platform)) return { ok: false, cancelled: false, message: "Snel aanmelden is alleen beschikbaar in de iOS- en Android-app." };
   const previousRaw = await storage.getDeviceKey().catch(() => null);
   const previous: DeviceKeyRef | null = await readDeviceKeyRef();
   const installationId = randomHex(16);
@@ -63,12 +63,13 @@ export async function enrollThisDevice(
     try {
       signature = await keys.sign(tag, enrollMessage(ch.enrollmentId, ch.challenge, ch.userId, installationId)); // Face ID / toestelcode
     } catch {
-      throw new DeviceLoginError("Instellen is geannuleerd. Je kunt Face ID later instellen via je profiel.", "cancelled");
+      throw new DeviceLoginError("Instellen is geannuleerd. Je kunt snel aanmelden later instellen via je profiel.", "cancelled");
     }
     // Eerst lokaal vastleggen (voor welk account), dan pas de serverregistratie afronden: mislukt opslaan, dan ontstaat er op de server niets.
     await storage.setDeviceKey(JSON.stringify({ installationId, tag, userId: ch.userId, name: me.name }));
     stored = true;
-    await api.deviceEnrollComplete({ enrollmentId: ch.enrollmentId, publicKey, installationId, signature, platform: "IOS", label: "iPhone" });
+    await api.deviceEnrollComplete({ enrollmentId: ch.enrollmentId, publicKey, installationId, signature, platform: platform === "android" ? "ANDROID" : "IOS", label: platform === "android" ? "Android" : "iPhone/iPad" });
+    await storage.persistSession();
     if (previous && previous.tag !== tag) await keys.remove(previous.tag).catch(() => undefined); // pas na succes de oude lokale sleutel opruimen
     return { ok: true };
   } catch (err) {
@@ -80,7 +81,7 @@ export async function enrollThisDevice(
     }
     if (err instanceof DeviceLoginError) return { ok: false, cancelled: true, message: err.message };
     if (err instanceof ApiRequestError) {
-      if (err.code === "mfa-required") return { ok: false, cancelled: false, message: "Stel eerst extra verificatie in op de website. Daarna kun je Face ID instellen." };
+      if (err.code === "mfa-required") return { ok: false, cancelled: false, message: "Stel eerst extra verificatie in op de website. Daarna kun je snel aanmelden instellen." };
       return { ok: false, cancelled: false, message: err.message };
     }
     return { ok: false, cancelled: false, message: `Instellen is niet gelukt. ${RECOVERY_HINT}` };

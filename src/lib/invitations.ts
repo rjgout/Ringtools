@@ -9,7 +9,7 @@ import { sendMail, invitationEmail, SmtpDeadlineError } from "./mailer";
 import { rateLimit } from "./rateLimit";
 import { ROLE_LABELS } from "./format";
 import { AuthorizationError, RingError, assertCanManageRing, assertMembershipRole, lockRing, resolveFunctionAndAuthority } from "./rings";
-import { addParticipantToRunningRounds } from "./workflow";
+import { addParticipantToRunningRounds, addParticipantToRunningRoundsInTransaction } from "./workflow";
 
 /**
  * C5.1 – Uitnodigen en activeren.
@@ -376,7 +376,8 @@ export async function previewInvitation(rawToken: string): Promise<InvitationPre
 
 /** De uitnodiging is alleen geldig zolang de ring actief is en de uitnodiger nog bevoegd is (anders zou een uitnodiging méér rechten geven dan de uitnodiger nu heeft). */
 async function creatorStillAllowed(db: Prisma.TransactionClient | typeof prisma, inv: { ringId: string; createdById: string | null; ring: { active: boolean } }): Promise<boolean> {
-  if (!inv.ring.active || !inv.createdById) return false;
+  const ring = await db.ring.findUnique({ where: { id: inv.ringId }, select: { active: true } });
+  if (!ring?.active || !inv.createdById) return false;
   const creator = await db.user.findUnique({ where: { id: inv.createdById } });
   if (!creator || !creator.active) return false;
   if (creator.role === "ADMIN") return true;
@@ -456,7 +457,19 @@ export async function activateInvitation(credentials: Credentials, clientKey: st
       return { failed: "invalid" as const, commit: true };
     }
 
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${normalizeEmail(inv.email)}, 0))`;
+    let existing = await tx.user.findFirst({ where: { email: { equals: inv.email, mode: "insensitive" } } });
+    if (existing) {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${existing.id} FOR UPDATE`;
+      existing = await tx.user.findUnique({ where: { id: existing.id } });
+    }
     await lockRing(tx, inv.ringId);
+    await tx.$queryRaw`SELECT id FROM "RingInvitation" WHERE id = ${inv.id} FOR UPDATE`;
+    inv = await tx.ringInvitation.findUnique({ where: { id: inv.id }, include: { ring: true } });
+    if (!inv || !(await creatorStillAllowed(tx, inv))) return { failed: "invalid" as const };
+    if (tokenHash && inv.tokenHash !== tokenHash) return { failed: "invalid" as const };
+    if (codeEmail && (inv.codeHash !== hashCode(inv.id, code) || inv.codeAttempts >= INVITATION_CODE_MAX_ATTEMPTS)) return { failed: "invalid" as const };
+
     // Atomisch verbruiken: bij gelijktijdige verzoeken slaagt er precies één.
     const claimed = await tx.ringInvitation.updateMany({
       where: { id: inv.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
@@ -464,7 +477,7 @@ export async function activateInvitation(credentials: Credentials, clientKey: st
     });
     if (claimed.count !== 1) return { failed: "invalid" as const };
 
-    const existing = await tx.user.findFirst({ where: { email: { equals: inv.email, mode: "insensitive" } } });
+
     if (existing && (existing.role === "ADMIN" || !existing.active)) {
       // Geen overname van het beheerdersaccount of een gedeactiveerd account; de claim wordt teruggedraaid, het verzoek wordt wel vastgelegd.
       throw new RollbackWithAudit(inv.id);
@@ -547,4 +560,50 @@ export async function deleteOldInvitations(): Promise<number> {
     where: { OR: [{ expiresAt: { lt: cutoff } }, { acceptedAt: { lt: cutoff } }, { revokedAt: { lt: cutoff } }] },
   });
   return res.count;
+}
+
+/** Alleen binnen een transactie NA volledig bewezen identiteit aanroepen. Geen publiek activatiebewijs. */
+export async function acceptInvitationsForVerifiedUser(tx: Prisma.TransactionClient, userId: string) {
+  const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+  if (!user.active || user.role === "ADMIN") return;
+  const email = normalizeEmail(user.email);
+  const rows = await tx.ringInvitation.findMany({
+    where: { email, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+    include: { ring: true }, orderBy: [{ ringId: "asc" }, { id: "asc" }],
+  });
+  for (const candidate of rows) {
+    await lockRing(tx, candidate.ringId);
+    await tx.$queryRaw`SELECT id FROM "RingInvitation" WHERE id = ${candidate.id} FOR UPDATE`;
+    const inv = await tx.ringInvitation.findUnique({ where: { id: candidate.id }, include: { ring: true } });
+    if (!inv || !(await creatorStillAllowed(tx, inv))) continue;
+    const membership = await tx.ringMembership.findUnique({ where: { userId_ringId: { userId, ringId: inv.ringId } } });
+    // Een bewuste deactivering wordt nooit door een nieuwe login ongedaan gemaakt.
+    if (membership && !membership.active) continue;
+    const claimed = await tx.ringInvitation.updateMany({
+      where: { id: inv.id, email, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+      data: { acceptedAt: new Date(), acceptedById: userId },
+    });
+    if (claimed.count !== 1) continue;
+    if (!membership) {
+      let fn: Awaited<ReturnType<typeof resolveFunctionAndAuthority>>;
+      try {
+        fn = await resolveFunctionAndAuthority(tx, { ringId: inv.ringId, membershipId: null, role: inv.role, active: true, wantedFunction: inv.churchFunctionCode });
+      } catch (err) {
+        if (!(err instanceof RingError)) throw err;
+        fn = { churchFunctionCode: "ONBEKEND", appointAuthority: "NONE" };
+      }
+      const saved = await tx.ringMembership.create({ data: { userId, ringId: inv.ringId, role: inv.role, churchFunction: inv.churchFunction,
+        churchFunctionCode: fn.churchFunctionCode, appointAuthority: fn.appointAuthority, isRingManager: inv.isRingManager, active: true } });
+      await addParticipantToRunningRoundsInTransaction(tx, saved);
+    }
+    await audit(tx, inv.id, "ACCEPTED", userId, membership ? "was al lid; geen wijziging" : "via geverifieerde aanmelding");
+  }
+}
+
+/** Levert uitsluitend een nog bruikbare uitnodiging op; maakt of activeert niets. */
+export async function findLoginInvitation(email: string, db: Prisma.TransactionClient | typeof prisma = prisma) {
+  const rows = await db.ringInvitation.findMany({ where: { email: normalizeEmail(email), acceptedAt: null, revokedAt: null,
+    expiresAt: { gt: new Date() } }, include: { ring: true }, orderBy: { id: "asc" } });
+  for (const row of rows) if (await creatorStillAllowed(db, row)) return row;
+  return null;
 }
