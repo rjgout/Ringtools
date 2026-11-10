@@ -21,16 +21,19 @@ Branch: `feat/app-store-release-readiness`, gestart vanaf actuele `main` (`4a486
 | Controle | Resultaat |
 |---|---|
 | Volledige backend `npx vitest run` | **664 geslaagd**, 44 bestanden |
-| Laatste gerichte controle review/privacy + management + API | **42 geslaagd**, na aanscherping payload/receiptlimiet en credentialcascade |
+| Gerichte controle review/privacy + management + API | **42 geslaagd**, na aanscherping payload/receiptlimiet en credentialcascade |
+| Laatste controle legacy-adresherkenning bij gedeactiveerde gebruikers + gewone aanmelding | **26 geslaagd** |
 | Volledige mobiele `npm test` | **419 geslaagd**, 45 bestanden, inclusief 4 nieuwe UI-tests |
 | Root/mobile TypeScript, root ESLint | Geslaagd; geen lintwaarschuwingen in laatste controle |
 | Next-productiebuild en mobiele productiebuild/Capacitor sync | Geslaagd |
-| Prisma validate, migrate deploy op gescheiden lokale testdatabases | Geslaagd; schema-diff apart gecontroleerd |
+| Prisma validate, migrate deploy op gescheiden lokale testdatabases | Geslaagd; schema-diff: geen verschil |
 | Native configuratiecontrole | Geslaagd: bundle-ID, links, Face ID, privacy, opslag, entitlements en geen appgeheimen |
 | iOS-bundleverifier Python | **7 geslaagd** |
 | Lokale Android debug-build, JDK21/SDK36 | **BUILD SUCCESSFUL**, geen signing of publicatie |
 | Nieuwe browser-e2e | **3 geslaagd**: echte webbeheerprovisioning/reset, echte verwijderaanvraag/afhandeling/status zonder login, mobiele demo/privacy tegen draaiende backend |
 | Volledige browserregressie, functies aan | **71 geslaagd**, 7 verwachte vlagoverslagen; inclusief de 3 nieuwe browsercontroles |
+| Browserregressie met vlaggen uit | **21 geslaagd**, 9 verwachte overslagen (waaronder optionele mobiele browserrun); gewone webauth, publieke privacy, review en verwijderen meegenomen |
+| Browserregressie met alleen toestel-login, zonder automatische inrichting | **5 geslaagd** |
 | Native GitHub CI | Wordt na featurepush gecontroleerd; definitieve uitkomst volgt in dit bestand |
 
 ## Gevraagde regressies

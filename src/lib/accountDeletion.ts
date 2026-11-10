@@ -1,3 +1,4 @@
+import { findUserByLoginEmail } from "./auth";
 import { randomInt, randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
@@ -39,7 +40,7 @@ export async function getDeletionReceiptStatus(receipt: string) {
 export async function sendDeletionCode(email: string, clientKey: string) {
   email = email.trim().toLowerCase();
   if (!rateLimit(`deletion-mail:${email}`, 5, 15 * 60000).allowed || !rateLimit(`deletion-ip:${clientKey}`, 20, 15 * 60000).allowed) throw new AccountDeletionError("Te veel aanvragen. Probeer het later opnieuw.");
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await findUserByLoginEmail(email);
   if (!user || user.role === "ADMIN" || user.accountKind !== "NORMAL") return;
   const id = randomUUID(); const code = String(randomInt(0, 100000000)).padStart(8, "0");
   await prisma.accountDeletionChallenge.create({ data: { id, userId: user.id, emailSnapshot: email, codeHash: hashToken(`deletion:${id}:${code}`), expiresAt: new Date(Date.now() + 15 * 60000) } });

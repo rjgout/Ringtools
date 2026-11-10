@@ -174,15 +174,16 @@ it("actieve workflowverantwoordelijkheid blokkeert wissen zonder de procedure of
 });
 it("gedeactiveerd account kan verwijderen met eenmalige aparte code zonder sessie, activering of MFA-omzeiling", async () => {
   const { sendDeletionCode, confirmDeletionCode } = await import("@/lib/accountDeletion");
-  const u = await createTestUser("HOGERAAD", "Inactief");
+  const u = await createTestUser("HOGERAAD", "Inactief", { email: "  Inactief@Test.Ringapeldoorn.nl  " });
+  const email = u.email.trim().toLowerCase();
   await prisma.user.update({ where: { id: u.id }, data: { active: false, mfaEnabled: true } });
-  await sendDeletionCode(u.email, "inactive");
+  await sendDeletionCode(email, "inactive");
   const sent = mail.mock.calls[0] as unknown as [{ text: string }];
   const code = sent[0].text.match(/\b\d{8}\b/)![0];
-  expect(await confirmDeletionCode(u.email, "00000000" === code ? "11111111" : "00000000", "inactive")).toBeNull();
-  const result = await confirmDeletionCode(u.email, code, "inactive");
+  expect(await confirmDeletionCode(email, "00000000" === code ? "11111111" : "00000000", "inactive")).toBeNull();
+  const result = await confirmDeletionCode(email, code, "inactive");
   expect(result?.request.status).toBe("REQUESTED");
-  expect(await confirmDeletionCode(u.email, code, "inactive")).toBeNull();
+  expect(await confirmDeletionCode(email, code, "inactive")).toBeNull();
   expect(await prisma.session.count({ where: { userId: u.id } })).toBe(0);
   expect((await prisma.user.findUniqueOrThrow({ where: { id: u.id } })).active).toBe(false);
 });
