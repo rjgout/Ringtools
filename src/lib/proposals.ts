@@ -169,9 +169,6 @@ export async function assignTaskChecked(input: { actorId: string; callingId: str
   if (external && input.assigneeId) throw new WorkflowError("Kies óf een persoon uit de ring óf een externe persoon, niet beide.");
   if (external) {
     if (external.length < 2) throw new WorkflowError("Vul de naam van de externe persoon in.");
-    const field = input.task === "ROEPEN" ? "roepenExternalName" : "aanstellenExternalName";
-    const assignee = input.task === "ROEPEN" ? "roepenAssigneeId" : "aanstellenAssigneeId";
-    await prisma.calling.update({ where: { id: calling.id }, data: { [field]: external, [assignee]: null } });
     return { externalName: external };
   }
   return null;
@@ -183,9 +180,7 @@ export async function assignTaskChecked(input: { actorId: string; callingId: str
  */
 export async function assignTaskGuarded(input: { actorId: string; callingId: string; task: "ROEPEN" | "ONDERSTEUNEN" | "AANSTELLEN"; assigneeId: string | null; externalName?: string | null }) {
   const external = await assignTaskChecked(input);
-  if (external) return;
-  await assignTask({ callingId: input.callingId, task: input.task, assigneeId: input.assigneeId });
-  if (input.task === "ROEPEN" || input.task === "AANSTELLEN") await clearExternalName(input.callingId, input.task);
+  await assignTask({ callingId: input.callingId, task: input.task, assigneeId: input.assigneeId, externalName: external?.externalName ?? null });
 }
 
 /** Na een gekozen interne uitvoerder vervalt een eerder geregistreerde externe naam (er is steeds één uitvoerder per stap). */

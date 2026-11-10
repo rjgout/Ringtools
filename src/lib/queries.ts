@@ -25,15 +25,16 @@ export async function getStaffDashboardCounts(ringId: string) {
         where: {
           ...base,
           status: "APPROVED",
+          executionReleasedAt: { not: null },
           processedAt: null,
           roepenDoneAt: { not: null },
           ondersteunenDoneAt: { not: null },
           aanstellenDoneAt: { not: null },
         },
       }),
-      prisma.calling.count({ where: { ...base, status: "APPROVED", roepenDoneAt: null } }),
-      prisma.calling.count({ where: { ...base, status: "APPROVED", ondersteunenDoneAt: null } }),
-      prisma.calling.count({ where: { ...base, status: "APPROVED", aanstellenDoneAt: null } }),
+      prisma.calling.count({ where: { ...base, status: "APPROVED", executionReleasedAt: { not: null }, roepenDoneAt: null } }),
+      prisma.calling.count({ where: { ...base, status: "APPROVED", executionReleasedAt: { not: null }, ondersteunenDoneAt: null } }),
+      prisma.calling.count({ where: { ...base, status: "APPROVED", executionReleasedAt: { not: null }, aanstellenDoneAt: null } }),
       prisma.calling.count({ where: { ...base, status: "PRESIDIUM_APPROVED" } }),
     ]);
 
@@ -42,7 +43,7 @@ export async function getStaffDashboardCounts(ringId: string) {
 
 export async function listAttentionCallingsForStaff(ringId: string): Promise<Calling[]> {
   return prisma.calling.findMany({
-    where: { ringId, status: { in: ["PRESIDIUM_PAUSED", "HOGERAAD_PAUSED", "PRESIDIUM_APPROVED"] } },
+    where: { ringId, OR: [{ status: { in: ["PRESIDIUM_PAUSED", "HOGERAAD_PAUSED", "PRESIDIUM_APPROVED"] } }, { status: "APPROVED", executionReleasedAt: null }] },
     orderBy: { updatedAt: "desc" },
     take: 10,
   });
@@ -79,18 +80,22 @@ export async function listCallings(ringId: string, filter: CallingFilter = "alle
       where.status = "APPROVED";
       break;
     case "roepen":
+      where.executionReleasedAt = { not: null };
       where.status = "APPROVED";
       where.roepenDoneAt = null;
       break;
     case "ondersteunen":
+      where.executionReleasedAt = { not: null };
       where.status = "APPROVED";
       where.ondersteunenDoneAt = null;
       break;
     case "aanstellen":
+      where.executionReleasedAt = { not: null };
       where.status = "APPROVED";
       where.aanstellenDoneAt = null;
       break;
     case "verwerken":
+      where.executionReleasedAt = { not: null };
       where.status = "APPROVED";
       where.processedAt = null;
       where.roepenDoneAt = { not: null };
@@ -151,6 +156,7 @@ export async function getHogeraadOverview(userId: string, ringId: string) {
       where: {
         ringId,
         status: "APPROVED",
+        executionReleasedAt: { not: null },
         OR: [
           { roepenAssigneeId: userId, roepenDoneAt: null },
           { ondersteunenAssigneeId: userId, ondersteunenDoneAt: null },

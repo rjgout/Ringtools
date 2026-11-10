@@ -117,6 +117,9 @@ describe("Levenscyclus via de API", () => {
     // Uitvoering: taken pas na goedkeuring; verwerken pas als alle drie klaar zijn
     expect((await call("POST", `/callings/${id}/process`, { token: w.tokens.manager })).status).toBeGreaterThanOrEqual(400);
     const done = (task: string, extra: object = {}) => call("POST", `/callings/${id}/tasks/${task}/complete`, { token: w.tokens.manager, body: { doneAt: new Date().toISOString().slice(0, 10), ...extra } });
+    expect((await done("ROEPEN")).status).toBeGreaterThanOrEqual(400);
+    expect((await call("POST", `/callings/${id}/release-execution`, { token: w.tokens.ha })).status).toBe(403);
+    expect((await call("POST", `/callings/${id}/release-execution`, { token: w.tokens.manager })).status).toBe(200);
     expect((await done("ROEPEN")).status).toBe(200);
     expect((await done("ONDERSTEUNEN")).status).toBeGreaterThanOrEqual(400); // gelegenheid ontbreekt
     expect((await done("ONDERSTEUNEN", { ondersteunenContext: "RINGCONFERENTIE" })).status).toBe(200);
@@ -134,7 +137,7 @@ describe("Levenscyclus via de API", () => {
       expect(x.targetUrl).toMatch(/^\/[a-z0-9/_-]+$/i);
     }
     const list = await call("GET", `/notifications?ring=${w.ring.id}`, { token: w.tokens.president });
-    const unread = (await prisma.notification.count({ where: { userId: w.president.id, ringId: w.ring.id, readAt: null } }));
+    const unread = (await prisma.notification.count({ where: { ...await (await import("@/lib/notifications")).notificationVisibilityWhere(w.president.id, w.ring.id), readAt: null } }));
     expect(list.body.unread ?? list.body.unreadCount).toBe(unread);
     await call("POST", `/notifications/read?ring=${w.ring.id}`, { token: w.tokens.president, body: {} });
     expect(await prisma.notification.count({ where: { userId: w.president.id, ringId: w.ring.id, readAt: null } })).toBe(0);
@@ -149,6 +152,7 @@ describe("Rollen- en ringmatrix: directe API-aanroepen", () => {
     ["POST", `/callings/${id}/reinvite`, { userId: w.counselor.id }],
     ["POST", `/callings/${id}/remove-participant`, { userId: w.counselor.id }],
     ["POST", `/callings/${id}/release`, {}],
+    ["POST", `/callings/${id}/release-execution`, {}],
     ["POST", `/callings/${id}/process`, {}],
     ["POST", `/callings/${id}/tasks/ROEPEN/assign`, { assigneeId: w.president.id }],
     ["POST", `/callings/${id}/tasks/ROEPEN/complete`, { doneAt: "2026-11-01" }],

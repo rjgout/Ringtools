@@ -17,6 +17,7 @@ import {
   completeTask,
   markProcessed,
   releaseToHogeraad,
+  releaseForExecution,
   registerGroupDecision,
   WorkflowError,
   AuthorizationError,
@@ -137,6 +138,20 @@ export async function releaseToHogeraadAction(formData: FormData): Promise<void>
     if (err instanceof AuthorizationError) redirect("/geen-toegang");
     if (!(err instanceof WorkflowError)) throw err;
     query = "?melding=vrijgave-mislukt";
+  }
+  backToCalling(callingId, query);
+}
+
+export async function releaseExecutionAction(formData: FormData): Promise<void> {
+  const callingId = String(formData.get("callingId"));
+  const { user } = await requireStaffForCalling(callingId);
+  let query = "";
+  try {
+    await releaseForExecution({ callingId, actorId: user.id });
+  } catch (err) {
+    if (err instanceof AuthorizationError) redirect("/geen-toegang");
+    if (!(err instanceof WorkflowError)) throw err;
+    query = "?melding=uitvoering-vrijgave-mislukt";
   }
   backToCalling(callingId, query);
 }

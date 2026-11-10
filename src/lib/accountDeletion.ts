@@ -128,7 +128,7 @@ export async function completeAccountDeletion(actorId: string, requestId: string
       }
     }
     await tx.callingDraft.deleteMany({ where: { createdById: userId } });
-    for (const field of ["roepenAssigneeId", "ondersteunenAssigneeId", "aanstellenAssigneeId", "roepenDoneById", "ondersteunenDoneById", "aanstellenDoneById", "processedById", "hogeraadReleasedById", "procedureConfirmedById"] as const) {
+    for (const field of ["roepenAssigneeId", "ondersteunenAssigneeId", "aanstellenAssigneeId", "roepenDoneById", "ondersteunenDoneById", "aanstellenDoneById", "processedById", "hogeraadReleasedById", "procedureConfirmedById", "executionReleasedById"] as const) {
       await tx.calling.updateMany({ where: { [field]: userId }, data: { [field]: null } });
     }
     for (const field of ["roepenAssigneeId", "ondersteunenAssigneeId", "aanstellenAssigneeId"] as const) await tx.callingDraft.updateMany({ where: { [field]: userId }, data: { [field]: null } });

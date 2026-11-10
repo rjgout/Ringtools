@@ -88,6 +88,7 @@ enum NotificationType {
   SUPPORT_REMINDER
   // Presidiumakkoord is bereikt; het voorstel wacht op expliciete vrijgave aan de hoge raad (generiek, zonder namen).
   AWAITING_RELEASE
+  EXECUTION_AWAITING_RELEASE
   // Ontheffingen (Fase C4): bewust neutrale, generieke meldingen ("vertrouwelijk voorstel"), nooit met namen of functies.
   CONFIDENTIAL_PROPOSAL
   CONFIDENTIAL_HOGERAAD
@@ -109,6 +110,7 @@ enum DeletionRequestStatus {
 }
 
 model User {
+  taskNotifications TaskNotification[]
   accountKind AccountKind @default(NORMAL)
   reviewRingId String?
   reviewRing Ring? @relation("ReviewRing", fields: [reviewRingId], references: [id], onDelete: Restrict)
@@ -371,6 +373,11 @@ model SecurityEvent {
 }
 
 model Calling {
+  executionReleasedAt DateTime?
+  executionReleasedById String?
+  executionRevision Int @default(0)
+  executionGeneration Int @default(0)
+  taskNotifications TaskNotification[]
   id            String        @id @default(cuid())
   personName    String
   functionTitle String
@@ -545,6 +552,9 @@ model DevicePushToken {
 // altijd aangemaakt voor een relevante workflow-gebeurtenis, ongeacht of de
 // ontvanger push/e-mail heeft uitgeschakeld voor die gebeurtenis.
 model Notification {
+  deliveryKey String? @unique
+  taskNotificationId String? @unique
+  taskNotification TaskNotification? @relation(fields: [taskNotificationId], references: [id], onDelete: Cascade)
   id           String           @id @default(cuid())
   userId       String
   user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1117,4 +1127,30 @@ model AccountDeletionChallenge {
   attempts Int @default(0)
   createdAt DateTime @default(now())
   @@index([userId, expiresAt])
+}
+
+// Duurzame vrijgave-/toewijzingsgebeurtenis. CLAIMED wordt nooit automatisch opnieuw extern verzonden.
+enum TaskNotificationState {
+  PENDING
+  CLAIMED
+  SENT
+  CANCELLED
+  UNKNOWN
+}
+model TaskNotification {
+  id String @id @default(cuid())
+  callingId String
+  calling Calling @relation(fields: [callingId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task String
+  revision Int
+  releaseGeneration Int
+  state TaskNotificationState @default(PENDING)
+  createdAt DateTime @default(now())
+  claimedAt DateTime?
+  sentAt DateTime?
+  notification Notification?
+  @@unique([callingId, task, revision])
+  @@index([state, createdAt])
 }

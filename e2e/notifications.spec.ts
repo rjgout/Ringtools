@@ -36,15 +36,18 @@ test("de bel toont het juiste aantal ongelezen meldingen en werkt bij het openen
       ringId: user.ringId,
       createdById: user.id,
       status: "APPROVED",
+      approvedAt: new Date(), executionReleasedAt: new Date(), executionRevision: 1, executionGeneration: 1,
       roepenAssigneeId: user.id,
     },
   });
+  const delivery = await prisma.taskNotification.create({ data: { callingId: calling.id, userId: user.id, task: "ROEPEN", revision: 1, releaseGeneration: 1, state: "SENT", sentAt: new Date() } });
   await prisma.notification.createMany({
     data: [
       {
         userId: user.id,
         ringId: user.ringId,
         type: "TASK_ASSIGNED",
+        taskNotificationId: delivery.id,
         title: "Nieuwe taak toegewezen",
         message: "Er is een taak aan je toegewezen.",
         targetUrl: `/roepingen/${calling.id}`,
@@ -81,8 +84,8 @@ test("alle meldingen als gelezen markeren werkt", async ({ page }) => {
   const user = await loginAsFreshUser(page, `AllesGelezen${Date.now()}`);
   await prisma.notification.createMany({
     data: [
-      { userId: user.id, ringId: user.ringId, type: "TASK_ASSIGNED", title: "A", message: "a", targetUrl: "/dashboard" },
-      { userId: user.id, ringId: user.ringId, type: "TASK_COMPLETED", title: "B", message: "b", targetUrl: "/dashboard" },
+      { userId: user.id, ringId: user.ringId, type: "REMINDER_30_DAYS", title: "A", message: "a", targetUrl: "/dashboard" },
+      { userId: user.id, ringId: user.ringId, type: "REMINDER_30_DAYS", title: "B", message: "b", targetUrl: "/dashboard" },
     ],
   });
 
@@ -105,7 +108,7 @@ test.describe("Mobiele interface", () => {
   test("het meldingenpaneel is op mobiel bruikbaar als bottom sheet", async ({ page }) => {
     const user = await loginAsFreshUser(page, `Mobiel${Date.now()}`);
     await prisma.notification.create({
-      data: { userId: user.id, ringId: user.ringId, type: "TASK_ASSIGNED", title: "Mobiele melding", message: "test", targetUrl: "/dashboard" },
+      data: { userId: user.id, ringId: user.ringId, type: "REMINDER_30_DAYS", title: "Mobiele melding", message: "test", targetUrl: "/dashboard" },
     });
 
     await page.reload();

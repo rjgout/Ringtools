@@ -1,3 +1,4 @@
+import { executionIsReleased, isReleasedAssignee } from "@/lib/callingAccess";
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import { getActiveMembership, getRingContext } from "@/lib/ringContext";
@@ -11,12 +12,13 @@ import { TaskRow } from "@/components/TaskRow";
 import { WhatsAppShareButton } from "@/components/WhatsAppShareButton";
 import { RingSync } from "@/components/RingSync";
 import { DeleteCallingButton } from "@/components/DeleteCallingButton";
-import { markProcessedAction, releaseToHogeraadAction } from "@/lib/actions/calling.actions";
+import { markProcessedAction, releaseToHogeraadAction, releaseExecutionAction } from "@/lib/actions/calling.actions";
 import { GroupDecisionForm } from "@/components/GroupDecisionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { groupDecisionViews, hasGroupDecision, meetingStatusMap, meetingStatusOf } from "@/lib/api/service";
 
 const MELDINGEN: Record<string, (q: Record<string, string | undefined>) => string> = {
+  "uitvoering-vrijgave-mislukt": () => "Vrijgeven voor uitvoering is niet gelukt. Controleer of het voorstel definitief is goedgekeurd.",
   "vrijgave-mislukt": () => "Vrijgeven is niet gelukt. Controleer of er actieve hogeraadsleden zijn ingericht.",
   herinnering: (q) => {
     const sent = Number(q.verstuurd ?? 0);
@@ -64,8 +66,7 @@ export default async function CallingDetailPage({
 
   const isHogeraadParticipant = hogeraadEligible.some((e) => e.userId === user.id);
   const isPresidiumParticipant = presidiumEligible.some((e) => e.userId === user.id);
-  const isTaskAssignee =
-    calling.roepenAssigneeId === user.id || calling.ondersteunenAssigneeId === user.id || calling.aanstellenAssigneeId === user.id;
+  const isTaskAssignee = isReleasedAssignee(calling, user.id);
 
   if (!staff && !isHogeraadParticipant && !isPresidiumParticipant && !isTaskAssignee) {
     redirect("/geen-toegang");
@@ -147,6 +148,14 @@ export default async function CallingDetailPage({
           <input type="hidden" name="callingId" value={calling.id} />
           <p className="text-sm">Het presidium is akkoord. De hoge raad ontvangt pas een verzoek nadat je dit voorstel expliciet vrijgeeft.</p>
           <SubmitButton>Vrijgeven aan de hoge raad</SubmitButton>
+        </form>
+      )}
+
+      {staff && calling.status === "APPROVED" && !calling.executionReleasedAt && (
+        <form action={releaseExecutionAction} className="glass-card space-y-2">
+          <input type="hidden" name="callingId" value={calling.id} />
+          <p>Presidium en hoge raad zijn akkoord. Vooraf toegewezen taken geven pas toegang en meldingen nadat je de uitvoering expliciet vrijgeeft.</p>
+          <SubmitButton>Vrijgeven voor uitvoering</SubmitButton>
         </form>
       )}
 
@@ -237,7 +246,7 @@ export default async function CallingDetailPage({
             assigneeRole={calling.roepenAssigneeId ? roleByUserId.get(calling.roepenAssigneeId) : null}
             doneBy={calling.roepenDoneBy}
             doneAt={calling.roepenDoneAt}
-            canApproved={calling.status === "APPROVED"}
+            canApproved={executionIsReleased(calling)}
             canAssign={staff}
             canComplete={staff || calling.roepenAssigneeId === user.id}
             users={users}
@@ -251,7 +260,7 @@ export default async function CallingDetailPage({
             doneBy={calling.ondersteunenDoneBy}
             doneAt={calling.ondersteunenDoneAt}
             ondersteunenContext={calling.ondersteunenContext}
-            canApproved={calling.status === "APPROVED"}
+            canApproved={executionIsReleased(calling)}
             canAssign={staff}
             canComplete={staff || calling.ondersteunenAssigneeId === user.id}
             users={users.filter((u) => u.role !== "RINGSECRETARIS" && u.role !== "RINGADMINISTRATEUR")} // zij voeren in, maar begeleiden de steunverlening niet
@@ -264,7 +273,7 @@ export default async function CallingDetailPage({
             assigneeRole={calling.aanstellenAssigneeId ? roleByUserId.get(calling.aanstellenAssigneeId) : null}
             doneBy={calling.aanstellenDoneBy}
             doneAt={calling.aanstellenDoneAt}
-            canApproved={calling.status === "APPROVED"}
+            canApproved={executionIsReleased(calling)}
             canAssign={staff}
             canComplete={staff || calling.aanstellenAssigneeId === user.id}
             users={users}

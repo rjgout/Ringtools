@@ -1,169 +1,90 @@
-import type { NotificationType, User } from "@prisma/client";
+import type { NotificationType, Prisma, User } from "@prisma/client";
 import { prisma } from "./prisma";
 import { sendMail } from "./mailer";
 import { sendPushToUsers } from "./push";
-
+import { STAFF_ROLES, STAGE_ROLE } from "./rbac";
+import { canSeeCalling, executionIsReleased, participantCallingWhere, taskIsExecutable } from "./callingAccess";
+import { ACTION_PUSH, functionalActionEmail } from "./notificationText";
+import type { TaskKey } from "./status";
 export type NotificationEvent = NotificationType;
-
-/**
- * Generieke, niet-vertrouwelijke tekst per workflow-gebeurtenis. Wordt
- * gebruikt voor zowel het interne notificatiecentrum als pushmeldingen.
- * Bevat bewust NOOIT namen, functies, ondersteuningsresultaten of andere
- * persoonsgegevens: beide kunnen zichtbaar zijn op een vergrendeld scherm of
- * in een overzicht waar dat niet gewenst is. De e-mail (apart per aanroeper
- * opgebouwd via `buildEmail`) mag wél gedetailleerde inhoud bevatten, omdat
- * die alleen in de persoonlijke inbox van de ontvanger belandt.
- */
-const TEMPLATES: Record<NotificationEvent, { title: string; message: string }> = {
-  NEW_PROPOSAL: {
-    title: "Nieuw voorstel",
-    message: "Er staat een nieuw voorstel klaar waarvoor jouw ondersteuning wordt gevraagd.",
-  },
-  ADVANCED_TO_HOGERAAD: {
-    title: "Voorstel naar hoge raad",
-    message: "Er staat een voorstel klaar waarvoor jouw ondersteuning wordt gevraagd.",
-  },
-  REINVITE: {
-    title: "Opnieuw ondersteuning gevraagd",
-    message: "Je wordt opnieuw gevraagd om je ondersteuning kenbaar te maken.",
-  },
-  PAUSED: {
-    title: "Voorstel gepauzeerd",
-    message: "Een voorstel is gepauzeerd en vraagt aandacht.",
-  },
-  TASK_ASSIGNED: {
-    title: "Nieuwe taak toegewezen",
-    message: "Er is een taak aan je toegewezen.",
-  },
-  TASK_COMPLETED: {
-    title: "Taak afgerond",
-    message: "Een toegewezen taak is afgerond.",
-  },
-  SUPPORT_REMINDER: {
-    title: "Herinnering ondersteuningsverzoek",
-    message: "Er staat nog een ondersteuningsverzoek voor je open.",
-  },
-  // Bewust zonder naam of functie: alleen dat er iets op vrijgave wacht.
-  AWAITING_RELEASE: {
-    title: "Voorstel wacht op vrijgave",
-    message: "Een voorstel heeft het akkoord van het presidium en wacht op vrijgave aan de hoge raad.",
-  },
-  REMINDER_30_DAYS: {
-    title: "Nog te verwerken",
-    message: "Een roeping staat al 30 dagen open en is nog niet verwerkt.",
-  },
-  // Ontheffingen: bewust zonder het woord "ontheffing", namen of functies (vergrendeld scherm, vertrouwelijkheid).
-  CONFIDENTIAL_PROPOSAL: {
-    title: "Vertrouwelijk voorstel",
-    message: "Er staat een vertrouwelijk voorstel klaar dat jouw aandacht vraagt.",
-  },
-  CONFIDENTIAL_HOGERAAD: {
-    title: "Vertrouwelijk voorstel",
-    message: "Er staat een vertrouwelijk voorstel klaar waarvoor jouw ondersteuning wordt gevraagd.",
-  },
-  CONFIDENTIAL_PAUSED: {
-    title: "Vertrouwelijk voorstel",
-    message: "Een vertrouwelijk voorstel is gepauzeerd en vraagt aandacht.",
-  },
-  CONFIDENTIAL_REMINDER: {
-    title: "Vertrouwelijk voorstel",
-    message: "Een vertrouwelijk voorstel staat al langere tijd open en vraagt aandacht.",
-  },
-};
-
+/** Alleen broncompatibiliteit: callbacks worden nooit uitgevoerd of als externe inhoud gebruikt. */
 export type EmailBuilder = (user: User) => { subject: string; text: string } | Promise<{ subject: string; text: string }>;
+type Input = { userIds: string[]; ringId: string; event: NotificationEvent; url: string; callingId?: string; ontheffingId?: string; email?: boolean; buildEmail?: EmailBuilder; skipExisting?: boolean; taskDeliveryId?: string; dedupeKey?: string };
 
-/**
- * Centraal notificatieproces: voor elke (actieve) ontvanger wordt
- * 1) altijd een interne melding opgeslagen (ongeacht push-/e-mailvoorkeur),
- * 2) een generieke pushmelding verstuurd (als de ontvanger apparaten heeft),
- * 3) optioneel een gedetailleerde e-mail verstuurd (alleen als de ontvanger
- *    e-mailmeldingen aan heeft staan en de aanroeper een `buildEmail` meegeeft).
- *
- * Eén aanroep hiervan dekt dus altijd alle drie de kanalen tegelijk, zodat er
- * geen apart, onafhankelijk notificatiesysteem nodig is. Een mislukte
- * pushmelding of e-mail heeft geen invloed op de al opgeslagen interne
- * melding (die wordt altijd eerst, apart, vastgelegd).
- */
-export async function notify(params: {
-  userIds: string[];
-  /** De ring waartoe deze melding behoort; ontvangers moeten er actief lid van zijn. */
-  ringId: string;
-  event: NotificationEvent;
-  url: string;
-  callingId?: string;
-  /**
-   * Meldingen over een ontheffing: de betrokkenen van het dossier (tijdelijk gekoppelde accounts) krijgen NOOIT een melding, ook niet
-   * als de aanroeper ze per ongeluk meegeeft. Ontheffingen versturen bovendien nooit e-mail (geen `buildEmail`).
-   */
-  ontheffingId?: string;
-  buildEmail?: EmailBuilder;
-  /** Herhaalde levering: sla ontvangers over die voor dit voorstel al een melding van dit type hebben (geen dubbele meldingen). */
-  skipExisting?: boolean;
-}): Promise<void> {
-  const { userIds, ringId, event, url, callingId, ontheffingId, skipExisting } = params;
-  // Vertrouwelijke meldingen (ontheffingen) versturen NOOIT e-mail, ongeacht wat de aanroeper meegeeft.
-  const buildEmail = ontheffingId || event.startsWith("CONFIDENTIAL_") ? undefined : params.buildEmail;
-  if (userIds.length === 0) return;
+/** Actuele autorisatie bepaalt tevens zichtbaarheid van reeds bestaande meldingen, niet alleen nieuwe verzendingen. */
+export async function notificationVisibilityWhere(userId: string, ringId?: string): Promise<Prisma.NotificationWhereInput> {
+  const memberships = await prisma.ringMembership.findMany({ where: { userId, active: true, ...(ringId ? { ringId } : {}), user: { active: true }, ring: { active: true } } });
+  const { visibleWhere } = await import("./ontheffingen");
+  return { userId, AND: [
+    { OR: memberships.map(m => ({ ringId: m.ringId, OR: [
+      { callingId: null, ontheffingId: null },
+      { calling: { is: { ringId: m.ringId, ...(STAFF_ROLES.includes(m.role) ? {} : participantCallingWhere(userId)) } } },
+      { ontheffing: { is: visibleWhere(userId, m.ringId, m.role) } },
+    ] })) },
+    { OR: [
+      { type: { notIn: ["TASK_ASSIGNED", "TASK_COMPLETED"] } },
+      { type: "TASK_COMPLETED", calling: { is: { status: "APPROVED", executionReleasedAt: { not: null } } } },
+      { type: "TASK_ASSIGNED", taskNotification: { is: { userId, state: { in: ["CLAIMED", "SENT", "UNKNOWN"] } } }, calling: { is: { status: "APPROVED", executionReleasedAt: { not: null }, OR: [{ roepenAssigneeId: userId }, { ondersteunenAssigneeId: userId }, { aanstellenAssigneeId: userId }] } } },
+    ] },
+  ] };
+}
 
-  // Nooit naar gedeactiveerde gebruikers (ook niet intern) en nooit naar
-  // personen die geen actief lid van deze ring (meer) zijn: meldingen van
-  // verschillende ringen mogen nooit door elkaar lopen.
-  let users = await prisma.user.findMany({
-    where: { id: { in: userIds }, active: true, memberships: { some: { ringId, active: true } } },
-  });
-  if (ontheffingId && users.length > 0) {
-    const subjects = await prisma.ontheffingPerson.findMany({ where: { ontheffingId, userId: { in: users.map((u) => u.id) } }, select: { userId: true } });
-    const hidden = new Set(subjects.map((p) => p.userId));
-    users = users.filter((u) => !hidden.has(u.id));
+/** Hercontrole voor elk kanaal en iedere retry. Externe inhoud wordt uitsluitend hier bepaald. */
+export async function notify(params: Input): Promise<void> {
+  const { ringId, event, callingId, ontheffingId } = params;
+  if (callingId && ontheffingId) return;
+  const ring = await prisma.ring.findFirst({ where: { id: ringId, active: true } });
+  if (!ring || !params.userIds.length) return;
+  let users = await prisma.user.findMany({ where: { id: { in: [...new Set(params.userIds)] }, active: true, memberships: { some: { ringId, active: true } } }, include: { memberships: { where: { ringId, active: true } } } });
+  let url = "/dashboard";
+  if (callingId) {
+    const calling = await prisma.calling.findUnique({ where: { id: callingId }, include: { eligibleVoters: true, votes: true } });
+    if (!calling || calling.ringId !== ringId) return;
+    url = `/roepingen/${encodeURIComponent(calling.id)}`;
+    if (event === "TASK_ASSIGNED") {
+      if (!params.taskDeliveryId || !executionIsReleased(calling)) return;
+      const delivery = await prisma.taskNotification.findUnique({ where: { id: params.taskDeliveryId }, include: { notification: true } });
+      if (!delivery || delivery.state !== "CLAIMED" || !delivery.notification || delivery.callingId !== callingId || delivery.releaseGeneration !== calling.executionGeneration || !["ROEPEN", "ONDERSTEUNEN", "AANSTELLEN"].includes(delivery.task)) return;
+      users = users.filter(u => u.id === delivery.userId && taskIsExecutable(calling, delivery.task as TaskKey, u.id));
+    } else if (["NEW_PROPOSAL", "ADVANCED_TO_HOGERAAD", "REINVITE", "SUPPORT_REMINDER"].includes(event)) {
+      const stage = calling.status === "PRESIDIUM_VOTING" || calling.status === "PRESIDIUM_PAUSED" ? "PRESIDIUM" : calling.status === "HOGERAAD_VOTING" || calling.status === "HOGERAAD_PAUSED" ? "HOGERAAD" : null;
+      if (!stage || event === "NEW_PROPOSAL" && stage !== "PRESIDIUM" || event === "ADVANCED_TO_HOGERAAD" && stage !== "HOGERAAD") return;
+      users = users.filter(u => u.memberships[0]?.role === STAGE_ROLE[stage] && calling.eligibleVoters.some(v => v.userId === u.id && v.stage === stage));
+    } else {
+      if (event === "EXECUTION_AWAITING_RELEASE" && (calling.status !== "APPROVED" || calling.executionReleasedAt)) return;
+      if (event === "EXECUTION_AWAITING_RELEASE") users = users.filter(u => STAFF_ROLES.includes(u.memberships[0].role));
+      if (event === "AWAITING_RELEASE" && calling.status !== "PRESIDIUM_APPROVED") return;
+      if (event === "PAUSED" && !["PRESIDIUM_PAUSED", "HOGERAAD_PAUSED"].includes(calling.status)) return;
+      if (event === "TASK_COMPLETED" && !executionIsReleased(calling)) return;
+      if (event === "REMINDER_30_DAYS" && calling.status === "PROCESSED") return;
+      users = users.filter(u => canSeeCalling(calling, u.memberships[0].role, u.id, calling.eligibleVoters.some(v => v.userId === u.id)));
+    }
+  } else if (event === "TASK_ASSIGNED" || event === "TASK_COMPLETED") return;
+  if (ontheffingId) {
+    const { visibleWhere } = await import("./ontheffingen");
+    const permitted = await Promise.all(users.map(async u => (await prisma.ontheffing.count({ where: { id: ontheffingId, ...visibleWhere(u.id, ringId, u.memberships[0].role) } })) ? u.id : null));
+    users = users.filter(u => permitted.includes(u.id));
+    url = `/ontheffingen/${encodeURIComponent(ontheffingId)}`;
   }
-  if (skipExisting && (callingId || ontheffingId) && users.length > 0) {
-    const already = await prisma.notification.findMany({
-      where: { ...(ontheffingId ? { ontheffingId } : { callingId }), type: event, userId: { in: users.map((u) => u.id) } },
-      select: { userId: true },
-    });
-    const done = new Set(already.map((n) => n.userId));
-    users = users.filter((u) => !done.has(u.id));
+  if (params.skipExisting && (callingId || ontheffingId)) {
+    const existing = await prisma.notification.findMany({ where: { ...(ontheffingId ? { ontheffingId } : { callingId }), type: event, userId: { in: users.map(u => u.id) } }, select: { userId: true } });
+    users = users.filter(u => !existing.some(n => n.userId === u.id));
   }
-  if (users.length === 0) return;
-
-  const template = TEMPLATES[event];
-
-  // 1) Altijd intern opslaan, ongeacht push-/e-mailvoorkeuren.
-  await prisma.notification.createMany({
-    data: users.map((u) => ({
-      userId: u.id,
-      ringId,
-      type: event,
-      title: template.title,
-      message: template.message,
-      targetUrl: url,
-      callingId: callingId ?? null,
-      ontheffingId: ontheffingId ?? null,
-    })),
-  });
-
-  const sourceRing = await prisma.ring.findUnique({ where: { id: ringId }, select: { isDemo: true } });
-  if (sourceRing?.isDemo) return; // Demo: wel interne meldingen, nooit externe aflevering.
-
-  // 2) Pushmelding (sendPushToUsers stuurt vanzelf alleen naar wie
-  // geregistreerde apparaten heeft, en ruimt verlopen abonnementen op).
-  await sendPushToUsers(
-    users.map((u) => u.id),
-    { title: template.title, body: template.message, url, tag: event }
-  );
-
-  // 3) E-mail, alleen als de aanroeper gedetailleerde inhoud aanlevert én de
-  // ontvanger e-mailmeldingen voor de workflow aan heeft staan.
-  if (buildEmail) {
-    for (const user of users) {
-      if (!user.emailNotificationsEnabled) continue;
-      try {
-        const { subject, text } = await buildEmail(user);
-        await sendMail({ to: user.email, subject, text });
-      } catch (err) {
-        console.error(`[notify] E-mailaflevering mislukt (gebeurtenis ${event}; ${err instanceof Error ? err.name : "onbekend"}).`);
-      }
+  if (!users.length) return;
+  if (!params.taskDeliveryId) {
+    const inserted = await prisma.notification.createManyAndReturn({ skipDuplicates: true, select: { userId: true }, data: users.map(u => ({ userId: u.id, ringId, type: event, title: ACTION_PUSH.title, message: ACTION_PUSH.body, targetUrl: url, callingId: callingId ?? null, ontheffingId: ontheffingId ?? null, deliveryKey: params.dedupeKey ? `${params.dedupeKey}:${u.id}` : null })) });
+    users = users.filter(u => inserted.some(n => n.userId === u.id));
+  }
+  if (!users.length) return;
+  if (ring.isDemo) return;
+  await sendPushToUsers(users.map(u => u.id), { ...ACTION_PUSH, url, tag: "ringtools-action" });
+  // Vertrouwelijke ontheffingen behouden hun bestaande verbod op e-mail.
+  if (!ontheffingId && !event.startsWith("CONFIDENTIAL_") && (params.email || params.buildEmail)) for (const user of users) {
+    if (!user.emailNotificationsEnabled) continue;
+    try { await sendMail({ to: user.email, ...functionalActionEmail() }); }
+    catch {
+      if (params.taskDeliveryId) throw new Error("external-delivery-uncertain");
+      console.error("[notify] Functionele e-mail niet bevestigd.");
     }
   }
 }

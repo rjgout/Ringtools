@@ -1,5 +1,6 @@
 "use server";
 
+import { notificationVisibilityWhere } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { getRingContext } from "@/lib/ringContext";
@@ -13,7 +14,7 @@ import { getRingContext } from "@/lib/ringContext";
 export async function markNotificationReadAction(id: string): Promise<void> {
   const user = await requireUser();
   await prisma.notification.updateMany({
-    where: { id, userId: user.id, readAt: null },
+    where: { ...await notificationVisibilityWhere(user.id), id, readAt: null },
     data: { readAt: new Date() },
   });
 }
@@ -24,7 +25,7 @@ export async function markAllNotificationsReadAction(): Promise<void> {
   const ctx = await getRingContext();
   if (!ctx) return;
   await prisma.notification.updateMany({
-    where: { userId: user.id, ringId: ctx.ring.id, readAt: null },
+    where: { ...await notificationVisibilityWhere(user.id, ctx.ring.id), readAt: null },
     data: { readAt: new Date() },
   });
 }

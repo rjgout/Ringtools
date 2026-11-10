@@ -160,6 +160,13 @@ export function CallingDetail() {
               )}
             </section>
           )}
+          {data.canReleaseExecution && <section className="glass card stack" aria-label="Vrijgave voor uitvoering">
+            <strong>Definitief goedgekeurd – wacht op vrijgave voor uitvoering</strong>
+            <span className="muted">De vooraf aangewezen uitvoerders krijgen pas toegang en een generieke melding nadat je de uitvoering vrijgeeft.</span>
+            <button className="btn btn-primary" disabled={busy} onClick={() => void (async () => {
+              if (await confirm({ title: "Uitvoering vrijgeven?", message: "De roeping is definitief goedgekeurd. Open toegewezen taken worden nu zichtbaar voor de uitvoerders en zij ontvangen een generieke melding.", confirmLabel: "Vrijgeven voor uitvoering" })) await act(() => api.releaseExecution(id), "De uitvoering is vrijgegeven.");
+            })()}>Vrijgeven voor uitvoering</button>
+          </section>}
           {(data.groupDecisions ?? []).map((d) => (
             <section key={d.stage} className="glass card stack" aria-label={`Gezamenlijk besluit ${d.stage === "PRESIDIUM" ? "presidium" : "hoge raad"}`}>
               <strong>Gezamenlijk besluit {d.stage === "PRESIDIUM" ? "ringpresidium" : "hoge raad"} (vergadering)</strong>

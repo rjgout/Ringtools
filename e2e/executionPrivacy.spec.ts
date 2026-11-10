@@ -1,0 +1,66 @@
+import { test, expect } from "@playwright/test";
+import { randomBytes } from "node:crypto";
+import { prisma } from "../src/lib/prisma";
+import { createVerifiedSession, SESSION_COOKIE_NAME } from "../src/lib/auth";
+import { createCalling, castVote, releaseToHogeraad, assignTask } from "../src/lib/workflow";
+import { createE2eUser } from "./helpers/data";
+import { provisionReviewDemo, resetReviewDemo } from "../src/lib/reviewDemo";
+
+test("vooraf aangewezen uitvoerder ziet niets tot expliciete vrijgave; web en mobiele API volgen dezelfde grens", async ({ page, request }) => {
+  const stamp = Date.now();
+  const { user: p, ringId } = await createE2eUser("RINGPRESIDIUM", `Fictieve vrijgever ${stamp}`);
+  const { user: h } = await createE2eUser("HOGERAAD", `Fictieve beoordelaar ${stamp}`, { ringId });
+  const c = await createCalling({ ringId, personName: "Fictieve Afgeschermde Kandidaat", functionTitle: "Fictieve Afgeschermde Functie", createdById: p.id });
+  await castVote({ callingId: c.id, userId: p.id, support: true });
+  await releaseToHogeraad({ callingId: c.id, actorId: p.id });
+  await castVote({ callingId: c.id, userId: h.id, support: true });
+  // Dit lid is na het sluiten van de beoordelingsronde toegevoegd; toewijzing geeft geen beoordelingsrecht.
+  const { user: u } = await createE2eUser("HOGERAAD", `Fictieve uitvoerder ${stamp}`, { ringId });
+  await assignTask({ callingId: c.id, task: "ROEPEN", assigneeId: u.id });
+  const target = await createVerifiedSession(u.id);
+  const headers = { Authorization: `Bearer ${target.rawToken}` };
+  expect((await request.get(`/api/mobile/v1/callings/${c.id}`, { headers })).status()).toBe(403);
+  const dashboard = await (await request.get(`/api/mobile/v1/dashboard?ring=${ringId}`, { headers })).json();
+  expect(dashboard.myTasks).toEqual([]);
+  expect((await (await request.get(`/api/mobile/v1/notifications?ring=${ringId}`, { headers })).json()).unreadCount).toBe(0);
+  const url = test.info().project.use.baseURL as string;
+  await page.context().addCookies([{ name: SESSION_COOKIE_NAME, value: target.rawToken, url }]);
+  await page.goto(`/roepingen/${c.id}`);
+  await expect(page).toHaveURL(/geen-toegang/);
+  await expect(page.getByText(c.personName)).toHaveCount(0);
+  const staff = await createVerifiedSession(p.id);
+  await page.context().addCookies([{ name: SESSION_COOKIE_NAME, value: staff.rawToken, url }]);
+  await page.goto(`/roepingen/${c.id}`);
+  await page.getByRole("button", { name: "Vrijgeven voor uitvoering", exact: true }).click();
+  await expect.poll(async () => !!(await prisma.calling.findUniqueOrThrow({ where: { id: c.id } })).executionReleasedAt).toBe(true);
+  await page.context().addCookies([{ name: SESSION_COOKIE_NAME, value: target.rawToken, url }]);
+  await page.goto(`/roepingen/${c.id}`);
+  await expect(page.getByRole("heading", { name: c.personName, exact: true })).toBeVisible();
+  expect((await request.get(`/api/mobile/v1/callings/${c.id}`, { headers })).status()).toBe(200);
+  expect((await (await request.get(`/api/mobile/v1/dashboard?ring=${ringId}`, { headers })).json()).myTasks).toHaveLength(1);
+  await request.post(`/api/mobile/v1/callings/${c.id}/release-execution`, { headers: { Authorization: `Bearer ${staff.rawToken}` }, data: {} });
+  expect(await prisma.notification.count({ where: { callingId: c.id, userId: u.id, type: "TASK_ASSIGNED" } })).toBe(1);
+});
+
+test("mobiele client toont goedkeuring apart van bevestigde uitvoeringsvrijgave", async ({ page }) => {
+  test.skip(!process.env.E2E_MOBILE_URL, "Aanvullende browsercontrole vereist draaiende mobiele Vite-client.");
+  const admin = await prisma.user.findFirstOrThrow({ where: { role: "ADMIN", active: true } });
+  const passwords = [1,2,3].map(() => randomBytes(24).toString("base64url"));
+  const { ringId } = await provisionReviewDemo(admin.id, passwords); await resetReviewDemo(admin.id);
+  const c = await prisma.calling.findFirstOrThrow({ where: { ringId, status: "APPROVED", executionReleasedAt: null, roepenDoneAt: null } });
+  await page.setViewportSize({ width: 390, height: 844 }); await page.goto(process.env.E2E_MOBILE_URL!);
+  await page.getByRole("button", { name: "Demoaccount", exact: true }).click();
+  await page.getByLabel("E-mailadres").fill("apple.review1@ringtools.invalid");
+  await page.getByLabel("Wachtwoord", { exact: true }).fill(passwords[0]);
+  await page.getByRole("button", { name: "Aanmelden", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Ringtools Demo", exact: true })).toBeVisible();
+  await page.goto(`${process.env.E2E_MOBILE_URL!}/#/roepingen/${c.id}`);
+  await page.getByRole("button", { name: "Vrijgeven voor uitvoering", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Annuleren" }).click();
+  expect((await prisma.calling.findUniqueOrThrow({ where: { id: c.id } })).executionReleasedAt).toBeNull();
+  await page.getByRole("button", { name: "Vrijgeven voor uitvoering", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Vrijgeven voor uitvoering", exact: true }).click();
+  await expect.poll(async () => !!(await prisma.calling.findUniqueOrThrow({ where: { id: c.id } })).executionReleasedAt).toBe(true);
+  await expect(page.getByRole("button", { name: "Vrijgeven voor uitvoering", exact: true })).toHaveCount(0);
+  expect(await prisma.taskNotification.count({ where: { callingId: c.id } })).toBe(3);
+});

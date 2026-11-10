@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { resetDatabase, createTestUser, createCalling, getTestRing } from "./setup";
+import { resetDatabase, createTestUser, createCalling, getTestRing, approveCallingFully } from "./setup";
 
 const sendNotification = vi.fn();
 const setVapidDetails = vi.fn();
@@ -110,6 +110,7 @@ describe("Geen vertrouwelijke gegevens in pushmeldingen", () => {
     ] as const) {
       sendNotification.mockClear();
       await notify({ ringId: (await getTestRing()).id, userIds: [user.id], event, url: "/roepingen/abc123" });
+      if (event === "TASK_ASSIGNED" || event === "TASK_COMPLETED") { expect(sendNotification).not.toHaveBeenCalled(); continue; }
       const body = JSON.parse(sendNotification.mock.calls[0][1] as string) as { title: string; body: string };
       for (const term of vertrouwelijkeTermen) {
         expect(body.title).not.toContain(term);
@@ -140,6 +141,7 @@ describe("Pushmeldingen in de workflow", () => {
     });
 
     const calling = await createCalling({ personName: "Jan Jansen", functionTitle: "Hogeraadslid", createdById: presidium.id });
+    await approveCallingFully(calling.id);
     sendNotification.mockClear();
     await assignTask({ callingId: calling.id, task: "ROEPEN", assigneeId: assignee.id });
 

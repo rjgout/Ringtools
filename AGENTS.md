@@ -5,6 +5,10 @@ Lees dit bestand volledig vóór je iets wijzigt. Bij tegenstrijdigheid met een 
 tenzij de eigenaar uitdrukkelijk anders heeft opgedragen. (Bij de invoering van dit bestand bestonden er geen andere
 `AGENTS.md`/`CLAUDE.md`; voeg bij een nieuw instructiebestand de inhoud hier samen i.p.v. een tweede bron te maken.)
 
+## Privacy van notificaties en uitvoering (opdracht eigenaar)
+
+Vooraf toewijzen geeft geen uitvoeringsrecht. Uitvoering vereist bestaande status `APPROVED` én expliciete `executionReleasedAt`; beide frontends gebruiken dezelfde serverhandeling. Sole taaktoewijzing geeft vóór vrijgave geen detail-/lijst-/dashboard-/notificatie-/deeplinktoegang; onafhankelijke beoordelingsrollen behouden hun rechten. Functionele externe tekst is uitsluitend `notificationText.ts`, zonder namen/functies/ringen, dossierdetails of authenticatietokens. Auth-, uitnodigings- en beveiligingscommunicatie blijft beperkt tot haar noodzakelijke doel. Taakgebeurtenissen worden transactioneel ontdubbeld; vóór verzending actuele vrijgave/toewijzing hercontroleren. Bij onbekende externe afleverstatus geen automatische herverzending. APNs-transport/configuratie behouden. Zie `docs/NOTIFICATIE-PRIVACY-UITVOERING.md`. Werk hiervoor op `fix/notificatie-privacy-uitvoering`; geen automatische merge, deploy of upload.
+
 ## App Store-review en privacy (opdracht eigenaar)
 
 Expliciete REVIEW-accounts mogen uitsluitend met een eigen bcrypt-reviewcredential aanmelden in de getagde fictieve Ringtools Demo. Gewone accounts/webmin behouden hun bestaande verificatie. REVIEW is nooit ADMIN/ringbeheerder en nooit lid van een gewone ring; NORMAL nooit van de demo. Prisma-checks/triggers plus serverbeleid bewaken dit. Demo verstuurt geen externe uitnodigingen, e-mail of push. Provisioning/reset/wachtwoordrotatie alleen beveiligde webmin met recente MFA, nooit automatisch in productie. Accountverwijdering betreft alle ringen en heeft een echte beheerwachtrij; AUDIT is uitsluitend een niet-authenticeerbaar tijdelijk historisch pseudoniem, geen behouden gebruikersaccount. Geen verzonnen juridische grondslagen. Eigenaarcontact: Raphael Gout, raphael@ringapeldoorn.nl. Zie `docs/app-store/RELEASEPAKKET.md` en `docs/STORE-PRIVACY.md`. Nieuwe opdracht werkt op `feat/app-store-release-readiness`; geen automatische merge, deploy, TestFlight-upload of Unlisted-aanvraag.
@@ -61,7 +65,7 @@ Legenda: ✅ aanwezig · 🔧 in uitvoering/gepland (fase) · — bewust niet ·
 | Webmin-login: wachtwoord + verplichte TOTP | — (verwijderd, systeembeheer alleen via de website) | — (verwijderd) | — | ✅ (alleen website) |
 | Roepingen bekijken, ondersteunen (stemmen) | ✅ | ✅ | ✅ web (blijvend) | — |
 | Nieuw voorstel, verantwoordelijken, herinneren, opnieuw vragen, rondes beheren | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ✅ web (blijvend) | — |
-| Taken toewijzen/afronden, verwerken, definitief verwijderen | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ✅ web (blijvend) | — |
+| Taken vooraf toewijzen, na definitief akkoord expliciet vrijgeven voor uitvoering, afronden/verwerken/verwijderen | ✅ A (toesteltest open) | ✅ A (toesteltest open) | ✅ web (blijvend) | — |
 | Gezamenlijk akkoord (presidium/hoge raad) vastleggen, expliciet vrijgeven aan de hoge raad, melding "Voorstel wacht op vrijgave" aan ringstaf | ✅ C1 (toesteltest open) | ✅ C1 (toesteltest open) | ✅ E: ringstaf op een laptop (zelfde `workflow.ts`; secretaris/administrateur legt vast, is nooit ondersteuner) | — |
 | Gebruikersbeheer binnen eigen ring (ringbeheerder) | ✅ B (toesteltest open) | ✅ B (toesteltest open) | ✅ web (blijvend) | — |
 | Ringbeheer: ringen aanmaken/wijzigen/(de)activeren (alleen webmin) | — (verwijderd uit de app) | — (verwijderd uit de app) | — | ✅ aanmaken/wijzigen op de website; (de)activeren heeft nu geen ingang (open punt) |
