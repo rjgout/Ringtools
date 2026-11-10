@@ -1,4 +1,5 @@
 import "server-only";
+import { accountCanUseRing } from "./accountPolicy";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Ring, RingMembership, Role, User } from "@prisma/client";
@@ -25,11 +26,11 @@ export type RingContext = {
  * cookie kan dus nooit toegang tot een andere ring geven.
  */
 async function resolveContext(user: User): Promise<RingContext | null> {
-  const memberships = await prisma.ringMembership.findMany({
+  const memberships = (await prisma.ringMembership.findMany({
     where: { userId: user.id, active: true, ring: { active: true } },
     include: { ring: true },
     orderBy: { createdAt: "asc" },
-  });
+  })).filter(m => accountCanUseRing(user, m.ring));
   if (memberships.length === 0) return null;
 
   const store = await cookies();
@@ -70,8 +71,8 @@ export async function requireRingManager(): Promise<RingContext> {
 
 /** Zet de actieve ring (alleen toegestaan voor een ring waarvan de gebruiker actief lid is). */
 export async function setActiveRing(userId: string, ringId: string): Promise<boolean> {
-  const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, ring: { active: true } } });
-  if (!membership) return false;
+  const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, user: { active: true }, ring: { active: true } }, include: { user: true, ring: true } });
+  if (!membership || !accountCanUseRing(membership.user, membership.ring)) return false;
   const store = await cookies();
   store.set(RING_COOKIE_NAME, ringId, {
     httpOnly: true,
@@ -86,5 +87,7 @@ export async function setActiveRing(userId: string, ringId: string): Promise<boo
 /** Lidmaatschap van een gebruiker in een specifieke ring (voor autorisatie per voorstel, onafhankelijk van de actieve ring). */
 export async function getActiveMembership(userId: string, ringId: string): Promise<RingMembership | null> {
   // Een gedeactiveerde ring of een gedeactiveerd account geeft nergens toegang (alleen de webmin beheert de ring).
-  return prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, user: { active: true }, ring: { active: true } } });
+  const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, user: { active: true }, ring: { active: true } }, include: { user: true, ring: true } });
+  if (!membership || !accountCanUseRing(membership.user, membership.ring)) return null;
+  return { id: membership.id, userId: membership.userId, ringId: membership.ringId, role: membership.role, churchFunction: membership.churchFunction, churchFunctionCode: membership.churchFunctionCode, appointAuthority: membership.appointAuthority, isRingManager: membership.isRingManager, active: membership.active, createdAt: membership.createdAt, updatedAt: membership.updatedAt };
 }

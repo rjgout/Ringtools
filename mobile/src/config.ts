@@ -3,9 +3,9 @@ const raw = (import.meta.env.VITE_API_URL as string | undefined) ?? "https://rin
 
 export const API_URL = raw.replace(/\/+$/, "");
 export const API_HOST = new URL(API_URL).host;
-export const API_BASE = `${API_URL}/api/mobile/v1`;
 /** In de browser-dev-server proxyt Vite /api naar de backend; native gebruikt de volledige URL. */
 export const IS_DEV_BROWSER = import.meta.env.DEV;
+export const API_BASE = IS_DEV_BROWSER && typeof window !== "undefined" ? `${window.location.origin}/api/mobile/v1` : `${API_URL}/api/mobile/v1`;
 export const APP_VERSION = "1.0.0";
 /** Korte build-ID (git-commit) uit de build; toont op het inlogscherm welke bundel er draait. Niet geheim. */
 declare const __RINGTOOLS_BUILD_ID__: string;

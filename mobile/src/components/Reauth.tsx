@@ -11,6 +11,7 @@ import { ApiRequestError } from "../lib/api";
 export function useReauth() {
   const { reauth, reauthWithPasskey, requestReauthCode, me, api } = useAuth();
   // Accounts met verplichte MFA (passkey) bevestigen met een passkey; een e-mailcode alleen is voor hen nooit genoeg (de server weigert dat).
+  const review = !!me?.user.reviewAccount;
   const mfaUser = !!me?.user.mfaEnabled;
   // Functievlag op de server: accounts met een authenticator-app bevestigen in de app met een 6-cijferige code (nooit met een e-mailcode alleen).
   const [totpServer, setTotpServer] = useState(false);
@@ -83,7 +84,7 @@ export function useReauth() {
     setBusy(true);
     setError(null);
     try {
-      await reauth(code.replace(/\s+/g, ""));
+      await reauth(review ? code : code.replace(/\s+/g, ""));
       setOpen(false);
       waiter.current?.resolve();
     } catch (err) {
@@ -101,7 +102,7 @@ export function useReauth() {
   const dialog = open ? (
     <div className="sheet-backdrop"><div className="glass card stack sheet" role="dialog" aria-modal="true" aria-label="Bevestig je identiteit">
       <strong>Bevestig je identiteit</strong>
-      {usesPasskey ? (
+      {review ? <span className="muted">Bevestig met het wachtwoord van je demoaccount.</span> : usesPasskey ? (
         <span className="muted">Voor jouw account is extra verificatie met een passkey nodig. Volg de aanwijzingen van je toestel.</span>
       ) : usesTotp ? (
         <span className="muted">Vul de huidige 6-cijferige code uit je authenticator-app in.</span>
@@ -112,12 +113,12 @@ export function useReauth() {
       )}
       {usesPasskey ? (
         <button className="btn btn-primary" disabled={busy} onClick={() => void submitPasskey()}>{busy ? "Even geduld…" : "Verifiëren met passkey"}</button>
-      ) : !usesTotp && !codeSent ? (
+      ) : !review && !usesTotp && !codeSent ? (
         <button className="btn btn-primary" disabled={busy} onClick={sendCode}>Stuur code</button>
       ) : (
         <form className="stack" onSubmit={submit}>
-          <input aria-label="Code" className="code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(digitsOnly(e.target.value, usesTotp ? 6 : 8))} autoFocus required />
-          <button className="btn btn-primary" disabled={busy || code.replace(/\s+/g, "").length !== (usesTotp ? 6 : 8)}>Bevestigen</button>
+          <input aria-label={review ? "Wachtwoord" : "Code"} type={review ? "password" : "text"} className={review ? "" : "code"} inputMode={review ? "text" : "numeric"} autoComplete={review ? "current-password" : "one-time-code"} value={code} onChange={(e) => setCode(review ? e.target.value : digitsOnly(e.target.value, usesTotp ? 6 : 8))} autoFocus required />
+          <button className="btn btn-primary" disabled={busy || (review ? !code : code.replace(/\s+/g, "").length !== (usesTotp ? 6 : 8))}>Bevestigen</button>
         </form>
       )}
       {error && <div className="error" role="alert">{error}</div>}

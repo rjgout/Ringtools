@@ -99,7 +99,8 @@ async function findLiveSession(rawToken: string | undefined | null): Promise<Ses
       include: { user: true },
     });
   }
-  if (!session) return null;
+  if (!session || session.user.accountKind === "AUDIT") return null;
+  if (session.user.accountKind === "REVIEW" && !(await prisma.ring.findFirst({ where: { id: session.user.reviewRingId ?? "", isDemo: true, active: true, demoResetting: false } }))) return null;
   const now = Date.now();
   if (session.expiresAt.getTime() < now || session.createdAt.getTime() + SESSION_ABSOLUTE_TTL_MS < now) {
     await prisma.session.delete({ where: { id: session.id } }).catch(() => {});
@@ -346,7 +347,7 @@ export async function previewMagicLinkToken(rawToken: string): Promise<MagicLink
     where: { tokenHash: hashToken(rawToken) },
     include: { user: true },
   });
-  if (!token || token.usedAt || token.expiresAt.getTime() < Date.now() || !token.user.active) {
+  if (!token || token.usedAt || token.expiresAt.getTime() < Date.now() || !token.user.active || token.user.accountKind !== "NORMAL") {
     return { valid: false };
   }
   return { valid: true, name: token.user.name };
@@ -362,7 +363,7 @@ export async function previewMagicLinkToken(rawToken: string): Promise<MagicLink
 export async function consumeMagicLinkToken(rawToken: string): Promise<User | null> {
   const tokenHash = hashToken(rawToken);
   const token = await prisma.magicLinkToken.findUnique({ where: { tokenHash }, include: { user: true } });
-  if (!token || token.usedAt || token.expiresAt.getTime() < Date.now() || !token.user.active) {
+  if (!token || token.usedAt || token.expiresAt.getTime() < Date.now() || !token.user.active || token.user.accountKind !== "NORMAL") {
     return null;
   }
   const claimed = await prisma.magicLinkToken.updateMany({
@@ -392,7 +393,7 @@ export async function findUserByLoginEmail(email: string): Promise<User | null> 
 
 export async function consumeLoginCode(email: string, code: string): Promise<User | null> {
   const user = await findUserByLoginEmail(email);
-  if (!user || !user.active || !/^\d{8}$/.test(code)) return null;
+  if (!user || !user.active || user.accountKind !== "NORMAL" || !/^\d{8}$/.test(code)) return null;
 
   const tokens = await prisma.magicLinkToken.findMany({
     where: {

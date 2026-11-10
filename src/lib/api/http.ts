@@ -1,3 +1,4 @@
+import { AccountDeletionError } from "../accountDeletion";
 import { SessionNoLongerValidError } from "../auth";
 /** Fout met een HTTP-status en een Nederlandse melding, voor de JSON-API van de native app. */
 export class ApiError extends Error {
@@ -19,6 +20,7 @@ export function jsonResponse(body: unknown, status = 200, headers: Record<string
 export function errorResponse(err: unknown): Response {
   // Een gelijktijdig verzoek was ons voor: de sessie is al verbruikt. Gewoon als verlopen sessie behandelen (geen 500).
   if (err instanceof SessionNoLongerValidError) return jsonResponse({ error: "Je inlogsessie is verlopen. Log opnieuw in.", code: "unauthenticated" }, 401);
+  if (err instanceof AccountDeletionError) return jsonResponse({ error: err.message, code: "deletion" }, 400);
   if (err instanceof ApiError) {
     return jsonResponse({ error: err.message, code: err.code ?? null }, err.status);
   }

@@ -28,7 +28,7 @@ export async function sendLoginMail(email: string, redirectTo: string | null, op
     await sendInvitationLoginCode(email);
     return generic;
   }
-  if (!user.active || user.role === "ADMIN") {
+  if (!user.active || user.accountKind !== "NORMAL" || user.role === "ADMIN") {
     return generic;
   }
 

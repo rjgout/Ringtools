@@ -7,10 +7,10 @@ import type { Prisma } from "@prisma/client";
  * ofwel een mislukte inlog, ofwel een sessie die door de latere intrekking weer wordt verwijderd. Nooit een geldige sessie bij een ingetrokken toestel.
  */
 export type LockedDevice = { userId: string; revokedAt: Date | null; loginEnabledAt: Date | null };
-export type LockResult = { user: { active: boolean; role: string } | null; device: LockedDevice | null };
+export type LockResult = { user: { active: boolean; role: string; accountKind: string } | null; device: LockedDevice | null };
 
 export async function lockUserThenDevice(tx: Prisma.TransactionClient, userId: string, deviceId: string): Promise<LockResult> {
-  const users = await tx.$queryRaw<{ active: boolean; role: string }[]>`SELECT "active", "role"::text AS "role" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+  const users = await tx.$queryRaw<{ active: boolean; role: string; accountKind: string }[]>`SELECT "active", "role"::text AS "role", "accountKind"::text AS "accountKind" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
   const devices = await tx.$queryRaw<LockedDevice[]>`SELECT "userId", "revokedAt", "loginEnabledAt" FROM "TrustedDevice" WHERE "id" = ${deviceId} FOR UPDATE`;
   return { user: users[0] ?? null, device: devices[0] ?? null };
 }

@@ -13,6 +13,7 @@ const PUSH = "ringtools.pushToken";
 const DEVICE = "ringtools.deviceId";
 const DEVICE_KEY = "ringtools.deviceKey";
 const DEVICE_OFFER = "ringtools.deviceOfferDeclined";
+const DELETION_RECEIPT = "ringtools.deletionReceipt";
 const PENDING_LOGOUTS = "ringtools.pendingLogouts";
 const PENDING_UNREGISTER = "ringtools.pendingPushUnregister";
 
@@ -33,7 +34,7 @@ function init(): Promise<void> {
     const previous = await SecureStorage.get("ringtools.installation");
     if (previous !== id) {
       // Geen token of toestelsleutel uit een vorige installatie hergebruiken.
-      for (const key of [TOKEN, RING, MODE, PUSH, DEVICE, DEVICE_KEY, DEVICE_OFFER, PENDING_UNREGISTER, PENDING_LOGOUTS]) await SecureStorage.remove(key);
+      for (const key of [TOKEN, RING, MODE, PUSH, DEVICE, DEVICE_KEY, DEVICE_OFFER, DELETION_RECEIPT, PENDING_UNREGISTER, PENDING_LOGOUTS]) await SecureStorage.remove(key);
       await SecureStorage.set("ringtools.installation", id);
     }
     if (!(await SecureStorage.get(DEVICE_KEY))) await SecureStorage.remove(TOKEN);
@@ -59,6 +60,8 @@ async function remove(key: string): Promise<void> {
 }
 
 export const storage = {
+  getDeletionReceipt: () => get(DELETION_RECEIPT),
+  setDeletionReceipt: (v: string) => set(DELETION_RECEIPT, v),
   /** Bestaat er een opgeslagen sessie? Controleert ALLEEN of de sleutel bestaat; de waarde (het token) wordt niet gelezen (geen token lezen vóór ontgrendelen). */
   async hasSession(): Promise<boolean> {
     if (!native) return memory.has(TOKEN);

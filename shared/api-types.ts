@@ -7,7 +7,7 @@ export type Role = "RINGPRESIDIUM" | "RINGSECRETARIS" | "RINGADMINISTRATEUR" | "
 export type RingInfo = { id: string; name: string; role: Role; churchFunction: string; isRingManager: boolean };
 
 export type Me = {
-  user: { id: string; name: string; email: string; emailNotificationsEnabled: boolean; mfaEnabled: boolean };
+  user: { id: string; name: string; email: string; emailNotificationsEnabled: boolean; mfaEnabled: boolean; reviewAccount?: boolean };
   rings: RingInfo[];
   pendingCount: number;
 };

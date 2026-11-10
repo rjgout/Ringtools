@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
-import { env } from "@/lib/env";
 import { PublicShell } from "@/components/public/PublicShell";
 
 export const metadata: Metadata = { title: "Ringtools – contact", description: "Hulp en contact voor gebruikers van Ringtools." };
 export const dynamic = "force-dynamic";
 
 export default function ContactPage() {
-  const email = env.contactEmail;
+  const email = "raphael@ringapeldoorn.nl";
   return (
     <PublicShell>
       <section className="glass-card space-y-3">
@@ -17,7 +16,7 @@ export default function ContactPage() {
         </p>
         {email ? (
           <p className="text-sm">
-            Technische vragen of een privacyverzoek kun je mailen naar{" "}
+            Contactpersoon Raphael Gout. Technische vragen of een privacyverzoek kun je mailen naar{" "}
             <a className="underline" href={`mailto:${email}`}>
               {email}
             </a>
