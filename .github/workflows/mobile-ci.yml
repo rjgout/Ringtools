@@ -142,6 +142,9 @@ jobs:
           tests/proposals.test.ts tests/ontheffingen.test.ts tests/release.test.ts tests/catalog.test.ts
           tests/ringsetup.test.ts tests/management.test.ts tests/workflow.test.ts tests/churchfunctions.test.ts
           tests/invitations.test.ts tests/nativeMfa.test.ts tests/mailer.test.ts
+          tests/simpleLogin.test.ts tests/nativeTotpLogin.test.ts tests/webTotp.test.ts
+          tests/trustedDevices.test.ts tests/deviceLogin.test.ts tests/deviceLoginConcurrency.test.ts
+          tests/deviceEnrollment.test.ts tests/deviceAuthorization.test.ts
 
   client:
     name: Client en native configuratie
