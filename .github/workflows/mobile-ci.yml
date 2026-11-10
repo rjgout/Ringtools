@@ -29,6 +29,12 @@ on:
       - "src/lib/push.ts"
       - "src/lib/pushEndpoint.ts"
       - "src/lib/notifications.ts"
+      - "src/lib/notificationText.ts"
+      - "src/lib/executionNotifications.ts"
+      - "src/lib/callingAccess.ts"
+      - "src/lib/status.ts"
+      - "src/lib/actions/calling.actions.ts"
+      - "src/app/api/notifications/**"
       - "src/lib/openLinks.ts"
       - "src/lib/invitationLogin.ts"
       - "src/lib/loginMail.ts"
@@ -81,6 +87,12 @@ on:
       - "src/lib/push.ts"
       - "src/lib/pushEndpoint.ts"
       - "src/lib/notifications.ts"
+      - "src/lib/notificationText.ts"
+      - "src/lib/executionNotifications.ts"
+      - "src/lib/callingAccess.ts"
+      - "src/lib/status.ts"
+      - "src/lib/actions/calling.actions.ts"
+      - "src/app/api/notifications/**"
       - "src/lib/openLinks.ts"
       - "src/lib/invitationLogin.ts"
       - "src/lib/loginMail.ts"
@@ -145,7 +157,7 @@ jobs:
       - run: npx prisma migrate deploy
       - name: Backend-tests die de mobiele apps raken
         run: >-
-          npx vitest run tests/reviewReadiness.test.ts
+          npx vitest run tests/reviewReadiness.test.ts tests/notificationPrivacy.test.ts tests/workflowLifecycleApi.test.ts tests/awaitingRelease.test.ts
           tests/api.test.ts tests/nativePush.test.ts tests/wellknown.test.ts tests/push.test.ts
           tests/sessions.test.ts tests/openlinks.test.ts tests/mfa.test.ts tests/mfaProof.test.ts
           tests/rings.test.ts tests/hardening.test.ts tests/notifications.test.ts

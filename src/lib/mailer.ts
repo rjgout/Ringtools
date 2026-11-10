@@ -1,3 +1,4 @@
+import { functionalActionEmail } from "./notificationText";
 import nodemailer from "nodemailer";
 import { prisma } from "./prisma";
 import { decryptSecret } from "./crypto";
@@ -133,76 +134,23 @@ export function supportInviteEmail(opts: {
   link: string;
   isReinvite?: boolean;
 }) {
-  const intro = opts.isReinvite
-    ? "Je wordt opnieuw gevraagd om je ondersteuning voor het volgende voorstel kenbaar te maken:"
-    : "Er is een nieuw voorstel waarvoor jouw steun wordt gevraagd:";
-  return {
-    subject: opts.isReinvite
-      ? "Ringtools – opnieuw ondersteuning gevraagd"
-      : "Ringtools – ondersteuning gevraagd voor een nieuw voorstel",
-    text: [
-      `Beste ${opts.name},`,
-      "",
-      intro,
-      "",
-      `Naam: ${opts.personName}`,
-      `Roeping: ${opts.functionTitle}`,
-      "",
-      "Open de onderstaande persoonlijke link om je ondersteuning uit te brengen:",
-      opts.link,
-      "",
-      "Deze link is persoonlijk en 72 uur geldig. Hij logt je niet automatisch in: je kiest op de pagina hoe je verdergaat (inloggen in de browser, of een melding naar je Ringtools-app laten sturen).",
-    ].join("\n"),
-  };
+  void opts; // Broncompatibiliteit; vertrouwelijke velden worden nooit opgenomen.
+  return functionalActionEmail();
 }
 
 export function taskAssignedEmail(opts: { name: string; taskLabel: string; personName: string; functionTitle: string; link: string }) {
-  return {
-    subject: `Ringtools – taak toegewezen: ${opts.taskLabel}`,
-    text: [
-      `Beste ${opts.name},`,
-      "",
-      `Aan jou is de volgende taak toegewezen: ${opts.taskLabel}.`,
-      `Het betreft de roeping van: ${opts.personName} (${opts.functionTitle}).`,
-      "",
-      "Open Ringtools om de details te bekijken (persoonlijke link, 72 uur geldig):",
-      opts.link,
-    ].join("\n"),
-  };
+  void opts; // Broncompatibiliteit; vertrouwelijke velden worden nooit opgenomen.
+  return functionalActionEmail();
 }
 
 export function reminder30Email(opts: { name: string; personName: string; functionTitle: string; phaseLabel: string; link: string }) {
-  return {
-    subject: "Ringtools – herinnering: roeping nog niet verwerkt",
-    text: [
-      `Beste ${opts.name},`,
-      "",
-      `De roeping van ${opts.personName} (${opts.functionTitle}) staat al 30 dagen open en is nog niet verwerkt.`,
-      `Huidige fase: ${opts.phaseLabel}.`,
-      "",
-      "Bekijk de roeping in Ringtools (persoonlijke link, 72 uur geldig):",
-      opts.link,
-    ].join("\n"),
-  };
+  void opts; // Broncompatibiliteit; vertrouwelijke velden worden nooit opgenomen.
+  return functionalActionEmail();
 }
 
 export function supportReminderEmail(opts: { name: string; personName: string; functionTitle: string; link: string }) {
-  return {
-    subject: "Ringtools – herinnering: ondersteuning gevraagd",
-    text: [
-      `Beste ${opts.name},`,
-      "",
-      "Dit is een herinnering: er staat nog een ondersteuningsverzoek voor je open voor het volgende voorstel:",
-      "",
-      `Naam: ${opts.personName}`,
-      `Roeping: ${opts.functionTitle}`,
-      "",
-      "Open de onderstaande persoonlijke link om je ondersteuning uit te brengen:",
-      opts.link,
-      "",
-      "Deze link is persoonlijk en 72 uur geldig. Hij logt je niet automatisch in: je kiest op de pagina hoe je verdergaat (inloggen in de browser, of een melding naar je Ringtools-app laten sturen).",
-    ].join("\n"),
-  };
+  void opts; // Broncompatibiliteit; vertrouwelijke velden worden nooit opgenomen.
+  return functionalActionEmail();
 }
 
 /** Uitnodiging voor een nieuwe of bestaande gebruiker. Bewust zonder rol- of functiegegevens en zonder namen van anderen. */

@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/session";
 import { getRingContext } from "@/lib/ringContext";
+import { notificationVisibilityWhere } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -12,7 +13,7 @@ export async function GET() {
   // Server-side afgedwongen: uitsluitend meldingen van de ingelogde
   // gebruiker zelf én van de actieve ring, nooit van iemand anders of van
   // een andere ring.
-  const where = { userId: user.id, ringId: ctx.ring.id };
+  const where = await notificationVisibilityWhere(user.id, ctx.ring.id);
   const [notifications, unreadCount] = await Promise.all([
     prisma.notification.findMany({ where, orderBy: { createdAt: "desc" }, take: 30 }),
     prisma.notification.count({ where: { ...where, readAt: null } }),

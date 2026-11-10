@@ -1,3 +1,5 @@
+import { canSeeCalling, executionIsReleased, isReleasedAssignee, participantCallingWhere } from "../callingAccess";
+import { notificationVisibilityWhere } from "../notifications";
 import { accountCanUseRing } from "../accountPolicy";
 import type { Calling, OndersteuningContext, Role } from "@prisma/client";
 import { prisma } from "../prisma";
@@ -22,6 +24,7 @@ import {
   completeTask,
   markProcessed,
   releaseToHogeraad,
+  releaseForExecution,
   registerGroupDecision,
   TASK_LABELS,
   WorkflowError,
@@ -132,6 +135,7 @@ export async function getDashboard(userId: string, ringId: string) {
       where: {
         ringId,
         status: "APPROVED",
+        executionReleasedAt: { not: null },
         OR: [
           { roepenAssigneeId: userId, roepenDoneAt: null },
           { ondersteunenAssigneeId: userId, ondersteunenDoneAt: null },
@@ -175,12 +179,7 @@ export async function listCallingsFor(userId: string, ringId: string, filterRaw:
       where: {
         ringId,
         status: { not: "PROCESSED" },
-        OR: [
-          { eligibleVoters: { some: { userId } } },
-          { roepenAssigneeId: userId },
-          { ondersteunenAssigneeId: userId },
-          { aanstellenAssigneeId: userId },
-        ],
+        ...participantCallingWhere(userId),
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -205,8 +204,8 @@ export async function getCallingView(userId: string, callingId: string) {
   const presidiumEligible = calling.eligibleVoters.filter((e) => e.stage === "PRESIDIUM");
   const hogeraadEligible = calling.eligibleVoters.filter((e) => e.stage === "HOGERAAD");
   const isParticipant = calling.eligibleVoters.some((e) => e.userId === userId);
-  const isAssignee = (Object.values(TASK_ASSIGNEE_FIELD) as (keyof typeof calling)[]).some((f) => calling[f] === userId);
-  if (!staff && !isParticipant && !isAssignee) throw new ApiError(403, "Je hebt geen toegang tot dit voorstel.", "forbidden");
+  const isAssignee = isReleasedAssignee(calling, userId);
+  if (!canSeeCalling(calling, membership.role, userId, isParticipant)) throw new ApiError(403, "Je hebt geen toegang tot dit voorstel.", "forbidden");
 
   const [presidiumInvolved, hogeraadInvolved, assignable] = await Promise.all([
     getStillInvolvedUserIds(calling.ringId, "PRESIDIUM"),
@@ -269,7 +268,7 @@ export async function getCallingView(userId: string, callingId: string) {
           doneBy: doneBy?.name ?? null,
           ondersteunenContext: task === "ONDERSTEUNEN" ? calling.ondersteunenContext : null,
           canAssign: staff && calling.status !== "PROCESSED",
-          canComplete: calling.status === "APPROVED" && (staff || assigneeId === userId),
+          canComplete: executionIsReleased(calling) && (staff || assigneeId === userId),
         };
       })
     : [];
@@ -303,6 +302,8 @@ export async function getCallingView(userId: string, callingId: string) {
     eligibleAssignees: await eligibleAssigneesFor(calling),
     awaitingRelease: calling.status === "PRESIDIUM_APPROVED",
     canRelease: staff && calling.status === "PRESIDIUM_APPROVED",
+    executionReleasedAt: calling.executionReleasedAt?.toISOString() ?? null,
+    canReleaseExecution: staff && calling.status === "APPROVED" && !calling.executionReleasedAt,
     groupDecisions: staff ? await groupDecisionViews(calling.id) : [],
     canRegisterGroupDecision: {
       PRESIDIUM: staff && (calling.status === "PRESIDIUM_VOTING" || calling.status === "PRESIDIUM_PAUSED") && !(await hasGroupDecision(calling.id, "PRESIDIUM")),
@@ -431,7 +432,7 @@ export async function completeTaskFor(userId: string, callingId: string, taskRaw
   const membership = await prisma.ringMembership.findFirst({ where: { userId, ringId: calling.ringId, active: true, ring: { active: true } } });
   if (!membership) throw new ApiError(404, "Niet gevonden.", "not-found");
   // Staf registreert elke taak; anderen alleen de aan henzelf toegewezen taak.
-  if (!isStaff(membership.role) && calling[TASK_ASSIGNEE_FIELD[task]] !== userId) {
+  if (!isStaff(membership.role) && (!executionIsReleased(calling) || calling[TASK_ASSIGNEE_FIELD[task]] !== userId)) {
     throw new ApiError(403, "Je hebt hiervoor geen bevoegdheid.", "forbidden");
   }
   const doneAt = typeof body.doneAt === "string" && !Number.isNaN(Date.parse(body.doneAt)) ? new Date(body.doneAt) : new Date();
@@ -439,6 +440,12 @@ export async function completeTaskFor(userId: string, callingId: string, taskRaw
   const ondersteunenContext = ctx === "AVONDMAALSVERGADERING" || ctx === "RINGCONFERENTIE" ? (ctx as OndersteuningContext) : undefined;
   await mapErrors(() => completeTask({ callingId, task, doneById: userId, doneAt, ondersteunenContext }));
   return { ok: true };
+}
+
+export async function releaseExecutionFor(userId: string, callingId: string) {
+  await staffForCalling(userId, callingId);
+  const result = await mapErrors(() => releaseForExecution({ callingId, actorId: userId }));
+  return { ok: true, released: result.released, alreadyReleased: result.alreadyReleased };
 }
 
 export async function releaseFor(userId: string, callingId: string) {
@@ -482,7 +489,7 @@ export async function markProcessedFor(userId: string, callingId: string) {
 
 export async function listNotificationsFor(userId: string, ringId: string) {
   await requireMembership(userId, ringId);
-  const where = { userId, ringId };
+  const where = await notificationVisibilityWhere(userId, ringId);
   const [notifications, unreadCount] = await Promise.all([
     prisma.notification.findMany({ where, orderBy: { createdAt: "desc" }, take: 50 }),
     prisma.notification.count({ where: { ...where, readAt: null } }),
@@ -506,7 +513,7 @@ export async function markNotificationsRead(userId: string, ringId: string, id: 
   await requireMembership(userId, ringId);
   // Altijd begrensd op de eigen meldingen in deze ring.
   await prisma.notification.updateMany({
-    where: { userId, ringId, readAt: null, ...(id ? { id } : {}) },
+    where: { ...await notificationVisibilityWhere(userId, ringId), readAt: null, ...(id ? { id } : {}) },
     data: { readAt: new Date() },
   });
   return { ok: true };

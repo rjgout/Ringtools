@@ -49,7 +49,7 @@ describe("C1: melding 'Voorstel wacht op vrijgave'", () => {
     const n = await rows(s.calling.id);
     expect(n.map((r) => r.userId).sort()).toEqual([s.president.id, s.counselor.id, s.secretary.id, s.administrator.id].sort());
     for (const r of n) {
-      expect(r).toMatchObject({ title: "Voorstel wacht op vrijgave", targetUrl: `/roepingen/${s.calling.id}`, ringId: s.ring.id });
+      expect(r).toMatchObject({ title: "Ringtools", message: "Er staat een handeling voor je klaar.", targetUrl: `/roepingen/${s.calling.id}`, ringId: s.ring.id });
       expect(`${r.title} ${r.message} ${r.targetUrl}`).not.toMatch(/Voorbeeld|Persoon|Leraar/);
     }
     expect(n.map((r) => r.userId)).not.toContain(s.hogeraad.id);

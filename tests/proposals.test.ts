@@ -439,7 +439,7 @@ describe("C3-correcties: vastgelegde procedure en herstelbare meldingen", () => 
   it("slaagt het indienen maar mislukt het versturen van meldingen, dan blijft het voorstel bestaan en herstelt een herhaling zonder dubbele meldingen", async () => {
     const s = await setup();
     const d = await draft(s, base(s, { ondersteunenAssigneeId: s.ha2.id }));
-    const spy = vi.spyOn(prisma.notification, "createMany").mockRejectedValueOnce(new Error("tijdelijke storing"));
+    const spy = vi.spyOn(prisma.notification, "createManyAndReturn").mockRejectedValueOnce(new Error("tijdelijke storing"));
     const first = await submit(d.body.id, s.token);
     spy.mockRestore();
     expect(first.status).toBe(200); // het voorstel is aangemaakt
@@ -460,33 +460,26 @@ describe("C3-correcties: vastgelegde procedure en herstelbare meldingen", () => 
     expect(retry.body).toMatchObject({ id, alreadySubmitted: true, notificationsDelivered: true });
     const after = await countNotes(id);
     expect(after).toEqual([
-      `NEW_PROPOSAL:${s.president.id}:1`, `NEW_PROPOSAL:${s.counselor.id}:1`, `TASK_ASSIGNED:${s.ha2.id}:1`,
+      `NEW_PROPOSAL:${s.president.id}:1`, `NEW_PROPOSAL:${s.counselor.id}:1`,
     ].sort());
     // en verder herhalen verandert niets meer
     expect((await submit(d.body.id, s.token)).body.notificationsDelivered).toBe(true);
     expect(await countNotes(id)).toEqual(after);
   });
 
-  it("een gedeeltelijk gelukte levering wordt aangevuld zonder de al verstuurde meldingen te herhalen", async () => {
+  it("herhaald indienen en de achtergrondtaak leveren geen voortijdige taakmeldingen", async () => {
     const s = await setup();
     const d = await draft(s, base(s, { ondersteunenAssigneeId: s.ha2.id }));
-    const real = prisma.notification.createMany.bind(prisma.notification);
-    let calls = 0;
-    const spy = vi.spyOn(prisma.notification, "createMany").mockImplementation(((args: Parameters<typeof real>[0]) => {
-      calls++;
-      return calls === 1 ? real(args) : Promise.reject(new Error("storing bij taakmelding"));
-    }) as unknown as typeof prisma.notification.createMany);
     const first = await submit(d.body.id, s.token);
-    spy.mockRestore();
     const id = first.body.id as string;
-    expect(first.body.notificationsDelivered).toBe(false);
-    expect(await prisma.notification.count({ where: { callingId: id, type: "NEW_PROPOSAL" } })).toBe(2); // presidium kreeg al bericht
+    expect(first.body.notificationsDelivered).toBe(true);
+    expect(await prisma.notification.count({ where: { callingId: id, type: "NEW_PROPOSAL" } })).toBe(2);
     expect(await prisma.notification.count({ where: { callingId: id, type: "TASK_ASSIGNED" } })).toBe(0);
-
-    await prisma.calling.update({ where: { id }, data: { creationNotifyClaimedAt: new Date(Date.now() - 5 * 60 * 1000) } });
     expect((await submit(d.body.id, s.token)).body.notificationsDelivered).toBe(true);
-    expect(await prisma.notification.count({ where: { callingId: id, type: "NEW_PROPOSAL" } })).toBe(2); // niet opnieuw
-    expect(await prisma.notification.count({ where: { callingId: id, type: "TASK_ASSIGNED" } })).toBe(1);
+    const { retryPendingCreationNotifications } = await import("@/lib/workflow");
+    await retryPendingCreationNotifications();
+    expect(await prisma.notification.count({ where: { callingId: id, type: "NEW_PROPOSAL" } })).toBe(2);
+    expect(await prisma.notification.count({ where: { callingId: id, type: "TASK_ASSIGNED" } })).toBe(0);
   });
 
   it("de achtergrondtaak levert meldingen af van een voorstel dat nooit is verstuurd (crash tussen opslaan en versturen)", async () => {

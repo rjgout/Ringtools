@@ -1,3 +1,5 @@
+import { canSeeCalling } from "./callingAccess";
+import { ACTION_PUSH } from "./notificationText";
 import { prisma } from "./prisma";
 import { env } from "./env";
 import { generateRawToken, hashToken } from "./crypto";
@@ -30,14 +32,14 @@ export type OpenLinkInfo = { valid: false } | { valid: true; callingId: string; 
 export async function resolveOpenLink(rawToken: string): Promise<OpenLinkInfo> {
   const token = await prisma.openLinkToken.findUnique({
     where: { tokenHash: hashToken(rawToken) },
-    include: { user: true, calling: { select: { id: true, ringId: true } } },
+    include: { user: true, calling: { include: { eligibleVoters: true } } },
   });
   if (!token || token.expiresAt.getTime() < Date.now() || !token.user.active) return { valid: false };
   const member = await prisma.ringMembership.findFirst({
     where: { userId: token.userId, ringId: token.calling.ringId, active: true, ring: { active: true } },
-    select: { id: true },
+    select: { id: true, role: true },
   });
-  if (!member) return { valid: false };
+  if (!member || !canSeeCalling(token.calling, member.role, token.userId, token.calling.eligibleVoters.some(v => v.userId === token.userId))) return { valid: false };
   return { valid: true, callingId: token.callingId, path: `/roepingen/${token.callingId}` };
 }
 
@@ -73,10 +75,9 @@ export async function sendOpenLinkPush(rawToken: string): Promise<OpenLinkPushRe
   if (claimed.count !== 1) return "throttled";
 
   const delivered = await sendPushToUser(token.userId, {
-    title: "Ringtools",
-    body: "Er staat een melding voor je klaar. Tik om Ringtools te openen.",
+    ...ACTION_PUSH,
     url: info.path,
-    tag: "open-link",
+    tag: "ringtools-action",
   });
   return delivered > 0 ? "sent" : "no-devices";
 }

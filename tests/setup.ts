@@ -100,5 +100,6 @@ export async function approveCallingFully(callingId: string) {
     const hogeraad = await prisma.eligibleVoter.findMany({ where: { callingId, stage: "HOGERAAD" } });
     for (const v of hogeraad) calling = await castVote({ callingId, userId: v.userId, support: true });
   }
+  if (calling.status === "APPROVED") calling = (await (await import("@/lib/workflow")).releaseForExecution({ callingId, actorId: presidium[0].userId })).calling;
   return calling;
 }

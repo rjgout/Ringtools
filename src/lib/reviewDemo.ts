@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { AuthorizationError } from "./workflow";
 import { createDraft, submitDraft } from "./proposals";
-import { castVote, releaseToHogeraad, completeTask, markProcessed } from "./workflow";
+import { castVote, releaseToHogeraad, completeTask, markProcessed, releaseForExecution } from "./workflow";
 
 export const REVIEW_ACCOUNTS = [
   { name: "Apple Review 1", email: "apple.review1@ringtools.invalid", role: "RINGPRESIDIUM", churchFunctionCode: "RINGPRESIDENT" },
@@ -108,6 +108,7 @@ export async function resetReviewDemo(actorId: string) {
     if (step === 3) continue;
     await castVote({ callingId: calling.id, userId: council.id, support: step !== 4 });
     if (step <= 5) continue;
+    await releaseForExecution({ callingId: calling.id, actorId: presidium.id });
     for (const task of ["ROEPEN", "ONDERSTEUNEN", "AANSTELLEN"] as const) {
       await completeTask({ callingId: calling.id, task, doneById: task === "ONDERSTEUNEN" ? council.id : presidium.id, doneAt: new Date(), ondersteunenContext: "AVONDMAALSVERGADERING" });
     }

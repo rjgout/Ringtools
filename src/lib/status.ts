@@ -13,7 +13,7 @@ export function allTasksDone(calling: Calling): boolean {
 }
 
 export function isReadyToProcess(calling: Calling): boolean {
-  return calling.status === "APPROVED" && allTasksDone(calling) && !calling.processedAt;
+  return calling.status === "APPROVED" && !!calling.executionReleasedAt && allTasksDone(calling) && !calling.processedAt;
 }
 
 /** Nederlandse weergavenaam voor de huidige procesfase, gebruikt in UI en e-mails. */
@@ -30,6 +30,7 @@ export function phaseLabel(calling: Calling): string {
     case "HOGERAAD_PAUSED":
       return "Gepauzeerd – hoge raad ondersteunt niet";
     case "APPROVED":
+      if (!calling.executionReleasedAt) return "Goedgekeurd – wacht op vrijgave voor uitvoering";
       if (calling.processedAt) return "Verwerkt";
       if (isReadyToProcess(calling)) return "Te verwerken";
       return "Goedgekeurd – uitvoering";

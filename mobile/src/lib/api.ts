@@ -282,6 +282,9 @@ export class ApiClient {
     return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/remove-participant`, { userId });
   }
   /** Geeft een voorstel met presidiumakkoord expliciet vrij aan de hoge raad (idempotent). */
+  releaseExecution(id: string) {
+    return this.request<{ ok: boolean; released: boolean; alreadyReleased: boolean }>("POST", `/callings/${encodeURIComponent(id)}/release-execution`, {});
+  }
   release(id: string) {
     return this.request<{ ok: boolean; released: boolean; alreadyReleased: boolean }>("POST", `/callings/${encodeURIComponent(id)}/release`, {});
   }

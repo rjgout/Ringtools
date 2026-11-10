@@ -1,7 +1,7 @@
-import type { Calling, CallingStatus, OndersteuningContext, Prisma, Role, User } from "@prisma/client";
+import { executionIsReleased } from "./callingAccess";
+import { queueExecutionNotifications, dispatchExecutionNotifications, notifyAwaitingExecution } from "./executionNotifications";
+import type { Calling, CallingStatus, OndersteuningContext, Prisma, Role } from "@prisma/client";
 import { prisma } from "./prisma";
-import { createOpenLink } from "./openLinks";
-import { supportInviteEmail, supportReminderEmail, taskAssignedEmail, reminder30Email } from "./mailer";
 import { allTasksDone, isReadyToProcess, phaseLabel, type TaskKey } from "./status";
 import { notify } from "./notifications";
 import { STAFF_ROLES, STAGE_ROLE } from "./rbac";
@@ -70,7 +70,7 @@ async function lockCalling(tx: Db, callingId: string): Promise<void> {
  * Stuurt ondersteuningsverzoeken naar (een deel van) de deelnemers van een
  * ronde via het centrale notificatieproces: een interne melding, een
  * generieke pushmelding, en (als de ontvanger dat aan heeft staan) een
- * gedetailleerde e-mail met een persoonlijke koppeling naar het voorstel (/open/<token>).
+ * generieke e-mail zonder persoonsgegevens of toegangstokens.
  */
 async function notifyParticipants(
   calling: Calling,
@@ -84,42 +84,18 @@ async function notifyParticipants(
     event: opts.event,
     url: callingPath(calling.id),
     callingId: calling.id,
-    buildEmail: async (user: User) => {
-      const link = await createOpenLink(user.id, calling.id);
-      if (opts.event === "SUPPORT_REMINDER") {
-        return supportReminderEmail({ name: user.name, personName: calling.personName, functionTitle: calling.functionTitle, link });
-      }
-      return supportInviteEmail({
-        name: user.name,
-        personName: calling.personName,
-        functionTitle: calling.functionTitle,
-        link,
-        isReinvite: opts.event === "REINVITE",
-      });
-    },
+    email: true,
   });
 }
 
-export async function notifyTaskAssignee(callingId: string, task: TaskKey, assigneeId: string, opts: { skipExisting?: boolean } = {}) {
-  const calling = await prisma.calling.findUniqueOrThrow({ where: { id: callingId } });
-  const label = TASK_LABELS[task];
-
-  await notify({
-    skipExisting: opts.skipExisting,
-    userIds: [assigneeId],
-    ringId: calling.ringId,
-    event: "TASK_ASSIGNED",
-    url: callingPath(calling.id),
-    callingId: calling.id,
-    buildEmail: async (user) =>
-      taskAssignedEmail({
-        name: user.name,
-        taskLabel: label,
-        personName: calling.personName,
-        functionTitle: calling.functionTitle,
-        link: await createOpenLink(user.id, calling.id),
-      }),
+export async function notifyTaskAssignee(callingId: string, task: TaskKey, assigneeId: string, _opts: { skipExisting?: boolean } = {}) {
+  void _opts;
+  await prisma.$transaction(async tx => {
+    await lockCalling(tx, callingId);
+    const c = await tx.calling.findUniqueOrThrow({ where: { id: callingId } });
+    if (c[`${TASK_FIELD_PREFIX[task]}AssigneeId`] === assigneeId) await queueExecutionNotifications(tx, c, task);
   });
+  await dispatchExecutionNotifications(callingId);
 }
 
 /** Informeert het ringpresidium van de ring (generieke tekst) dat een voorstel is gepauzeerd. */
@@ -227,16 +203,9 @@ export async function createCallingInTx(tx: Db, input: CreateCallingInput): Prom
   return { calling, presidiumIds };
 }
 
-/** Meldingen na het aanmaken: uitnodiging aan het ringpresidium en bericht aan de gekozen taakverantwoordelijken. */
+/** Aanmaken activeert uitsluitend de beoordeling door het presidium, nooit uitvoeringstaken. */
 export async function afterCallingCreated(calling: Calling, presidiumIds: string[], opts: { skipExisting?: boolean } = {}): Promise<void> {
   await notifyParticipants(calling, presidiumIds, { event: "NEW_PROPOSAL", skipExisting: opts.skipExisting });
-  for (const [task, assigneeId] of [
-    ["ROEPEN", calling.roepenAssigneeId],
-    ["ONDERSTEUNEN", calling.ondersteunenAssigneeId],
-    ["AANSTELLEN", calling.aanstellenAssigneeId],
-  ] as const) {
-    if (assigneeId) await notifyTaskAssignee(calling.id, task, assigneeId, { skipExisting: opts.skipExisting });
-  }
 }
 
 /** Hoe lang één aanroep de levering van de aanmaakmeldingen "claimt" voordat een andere aanroep het mag overnemen. */
@@ -272,8 +241,8 @@ export async function deliverCreationNotifications(callingId: string, now: Date 
     }
     await prisma.calling.update({ where: { id: callingId }, data: { creationNotifiedAt: new Date() } });
     return "sent";
-  } catch (err) {
-    console.error(`[meldingen] Aanmaakmeldingen voor voorstel ${callingId} mislukt; wordt opnieuw geprobeerd:`, err);
+  } catch {
+    console.error("[meldingen] Aanmaakmelding niet opgeslagen; wordt opnieuw geprobeerd.");
     return "failed";
   }
 }
@@ -329,8 +298,8 @@ export async function deliverReleaseNotifications(callingId: string, now: Date =
     }
     await prisma.calling.update({ where: { id: callingId }, data: { releaseNotifiedAt: new Date() } });
     return "sent";
-  } catch (err) {
-    console.error(`[meldingen] Melding 'wacht op vrijgave' voor voorstel ${callingId} mislukt; wordt opnieuw geprobeerd:`, err);
+  } catch {
+    console.error("[meldingen] Vrijgavemelding niet opgeslagen; wordt opnieuw geprobeerd.");
     return "failed";
   }
 }
@@ -459,6 +428,7 @@ async function recomputeCallingState(callingId: string): Promise<Calling> {
   }
   // Presidiumakkoord bereikt: de ringstaf krijgt (eenmalig, herstelbaar) een melding dat het voorstel op vrijgave wacht.
   if (calling.status === "PRESIDIUM_APPROVED") await deliverReleaseNotifications(calling.id);
+  if (calling.status === "APPROVED") await notifyAwaitingExecution(calling.id);
 
   return calling;
 }
@@ -559,6 +529,7 @@ export type GroupDecisionInput = {
 export async function registerGroupDecision(input: GroupDecisionInput): Promise<{ calling: Calling; alreadyRegistered: boolean }> {
   const result = await registerGroupDecisionTx(input);
   if (result.calling.status === "PRESIDIUM_APPROVED") await deliverReleaseNotifications(result.calling.id);
+  if (result.calling.status === "APPROVED") await notifyAwaitingExecution(result.calling.id);
   return result;
 }
 
@@ -882,27 +853,46 @@ export async function assertNotSecretariat(ringId: string, userId: string): Prom
   if (m) throw new WorkflowError("De ringsecretaris en ringadministrateur begeleiden de steunverlening niet. Kies een ander lid.");
 }
 
-export async function assignTask(input: { callingId: string; task: TaskKey; assigneeId: string | null }): Promise<Calling> {
-  const calling = await prisma.calling.findUniqueOrThrow({ where: { id: input.callingId } });
-  if (calling.status === "PROCESSED") {
-    throw new WorkflowError("Deze roeping is al verwerkt.");
-  }
-  if (input.assigneeId) {
-    await assertActiveRingMembers(prisma, calling.ringId, [input.assigneeId]);
-    if (input.task === "ONDERSTEUNEN") await assertNotSecretariat(calling.ringId, input.assigneeId);
-  }
-  const dbField = `${TASK_FIELD_PREFIX[input.task]}AssigneeId`;
-
-  const updated = await prisma.calling.update({
-    where: { id: input.callingId },
-    data: { [dbField]: input.assigneeId } as Prisma.CallingUpdateInput,
+/** Toewijzen is administratief; de vrijgave en open taak bepalen of er een meldingsgebeurtenis ontstaat. */
+export async function assignTask(input: { callingId: string; task: TaskKey; assigneeId: string | null; externalName?: string | null }): Promise<Calling> {
+  const updated = await prisma.$transaction(async tx => {
+    await lockCalling(tx, input.callingId);
+    const c = await tx.calling.findUniqueOrThrow({ where: { id: input.callingId } });
+    if (c.status === "PROCESSED") throw new WorkflowError("Deze roeping is al verwerkt.");
+    if (input.assigneeId) {
+      await assertActiveRingMembers(tx, c.ringId, [input.assigneeId]);
+      if (input.task === "ONDERSTEUNEN") await assertNotSecretariat(c.ringId, input.assigneeId);
+    }
+    const field = `${TASK_FIELD_PREFIX[input.task]}AssigneeId` as const;
+    const externalField = input.task === "ROEPEN" ? "roepenExternalName" : input.task === "AANSTELLEN" ? "aanstellenExternalName" : null;
+    const externalName = input.externalName?.trim() || null;
+    if (externalName && (input.assigneeId || !externalField)) throw new WorkflowError("Kies één interne of externe uitvoerder.");
+    if (c[field] === input.assigneeId && (!externalField || c[externalField] === externalName)) return c;
+    await tx.taskNotification.updateMany({ where: { callingId: c.id, task: input.task, state: { in: ["PENDING", "CLAIMED", "SENT", "UNKNOWN"] } }, data: { state: "CANCELLED" } });
+    const next = await tx.calling.update({ where: { id: c.id }, data: { [field]: input.assigneeId, ...(externalField ? { [externalField]: externalName } : {}), executionRevision: { increment: 1 } } });
+    await queueExecutionNotifications(tx, next, input.task);
+    return next;
   });
-
-  if (input.assigneeId) {
-    await notifyTaskAssignee(input.callingId, input.task, input.assigneeId);
-  }
-
+  await dispatchExecutionNotifications(updated.id);
   return updated;
+}
+
+/** Extra expliciete vrijgave binnen APPROVED; geen tweede goedkeuringsstatus. */
+export async function releaseForExecution(input: { callingId: string; actorId: string }) {
+  const out = await prisma.$transaction(async tx => {
+    await lockCalling(tx, input.callingId);
+    const c = await tx.calling.findUniqueOrThrow({ where: { id: input.callingId } });
+    await requireRingStaff(input.actorId, c.ringId);
+    if (c.status !== "APPROVED") throw new WorkflowError("Vrijgeven voor uitvoering kan pas na definitief akkoord van presidium en hoge raad.");
+    if (c.executionReleasedAt) return { calling: c, released: false, alreadyReleased: true };
+    await tx.taskNotification.updateMany({ where: { callingId: c.id }, data: { state: "CANCELLED" } });
+    const next = await tx.calling.update({ where: { id: c.id }, data: { executionReleasedAt: new Date(), executionReleasedById: input.actorId, executionRevision: { increment: 1 }, executionGeneration: { increment: 1 } } });
+    await tx.callingAudit.create({ data: { callingId: c.id, actorId: input.actorId, type: "EXECUTION_RELEASED" } });
+    await queueExecutionNotifications(tx, next);
+    return { calling: next, released: true, alreadyReleased: false };
+  });
+  await dispatchExecutionNotifications(input.callingId);
+  return out;
 }
 
 export async function completeTask(input: {
@@ -917,9 +907,11 @@ export async function completeTask(input: {
   const { updated, wasAlreadyDone } = await prisma.$transaction(async (tx) => {
     await lockCalling(tx, input.callingId);
     const calling = await tx.calling.findUniqueOrThrow({ where: { id: input.callingId } });
-    if (calling.status !== "APPROVED") {
-      throw new WorkflowError("Taken kunnen alleen worden afgerond nadat de roeping volledig is goedgekeurd.");
+    if (!executionIsReleased(calling)) {
+      throw new WorkflowError("Taken kunnen pas worden afgerond na definitieve goedkeuring én expliciete vrijgave voor uitvoering.");
     }
+    const member = await tx.ringMembership.findFirst({ where: { ringId: calling.ringId, userId: input.doneById, active: true, user: { active: true }, ring: { active: true } } });
+    if (!member || !STAFF_ROLES.includes(member.role) && calling[`${prefix}AssigneeId`] !== input.doneById) throw new AuthorizationError();
     if (input.task === "ONDERSTEUNEN" && !input.ondersteunenContext) {
       throw new WorkflowError("Geef aan of de ondersteuning in een avondmaalsvergadering of ringconferentie plaatsvond.");
     }
@@ -991,14 +983,7 @@ export async function sendDue30DayReminders(): Promise<number> {
         event: "REMINDER_30_DAYS",
         url: callingPath(calling.id),
         callingId: calling.id,
-        buildEmail: async (user) =>
-          reminder30Email({
-            name: user.name,
-            personName: calling.personName,
-            functionTitle: calling.functionTitle,
-            phaseLabel: phaseLabel(calling),
-            link: await createOpenLink(user.id, calling.id),
-          }),
+        email: true,
       });
     } catch (err) {
       await prisma.calling.updateMany({ where: { id: calling.id }, data: { reminder30SentAt: null } });

@@ -226,7 +226,7 @@ describe("Indienen", () => {
   it("slaagt het indienen maar mislukken de meldingen, dan herstelt een herhaling zonder dubbele meldingen", async () => {
     const s = await setup();
     const c = await concept(s, full(s));
-    const spy = vi.spyOn(prisma.notification, "createMany").mockRejectedValueOnce(new Error("storing"));
+    const spy = vi.spyOn(prisma.notification, "createManyAndReturn").mockRejectedValueOnce(new Error("storing"));
     const first = await submit(c.body.id, s.t.manager);
     spy.mockRestore();
     expect(first.status).toBe(200);

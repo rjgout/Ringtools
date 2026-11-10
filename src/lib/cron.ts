@@ -1,3 +1,4 @@
+import { dispatchExecutionNotifications, notifyAwaitingExecution } from "./executionNotifications";
 import { cleanupDeletionData } from "./accountDeletion";
 import cron from "node-cron";
 import { env } from "./env";
@@ -38,6 +39,8 @@ export function startBackgroundJobs(): void {
   cron.schedule(
     "*/10 * * * *",
     () => {
+      notifyAwaitingExecution().catch(() => console.error("[cron] Vrijgavemeldingen verwerken mislukt."));
+      dispatchExecutionNotifications().catch(() => console.error("[cron] Uitvoeringstaakmeldingen verwerken mislukt."));
       retryPendingCreationNotifications().catch((err) => console.error("[cron] Herhalen van aanmaakmeldingen mislukt:", err));
       retryPendingReleaseNotifications().catch((err) => console.error("[cron] Herhalen van meldingen 'wacht op vrijgave' mislukt:", err));
       retryPendingOntheffingNotifications().catch((err) => console.error("[cron] Herhalen van meldingen mislukt:", err));
@@ -51,6 +54,8 @@ export function startBackgroundJobs(): void {
 }
 
 async function runOnce(): Promise<void> {
+  await notifyAwaitingExecution();
+  await dispatchExecutionNotifications();
   const reminders = await sendDue30DayReminders();
   if (reminders > 0) console.log(`[cron] ${reminders} herinnering(en) verstuurd.`);
 

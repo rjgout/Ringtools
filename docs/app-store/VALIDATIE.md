@@ -34,7 +34,7 @@ Branch: `feat/app-store-release-readiness`, gestart vanaf actuele `main` (`4a486
 | Volledige browserregressie, functies aan | **71 geslaagd**, 7 verwachte vlagoverslagen; inclusief de 3 nieuwe browsercontroles |
 | Browserregressie met vlaggen uit | **21 geslaagd**, 9 verwachte overslagen (waaronder optionele mobiele browserrun); gewone webauth, publieke privacy, review en verwijderen meegenomen |
 | Browserregressie met alleen toestel-login, zonder automatische inrichting | **5 geslaagd** |
-| Native GitHub CI | Wordt na featurepush gecontroleerd; definitieve uitkomst volgt in dit bestand |
+| Native GitHub CI van de App Store-implementatie | **Alle vier jobs geslaagd**: backend, client, Android debug en iOS simulator + unsigned device archive/configuraties. [Run 42839215603](https://github.com/rjgout/Ringtools/actions/runs/42839215603), implementatie `7ccace3`, daarna door eigenaar opgenomen in main `681141c`. De opvolgende notificatiecorrectie heeft eigen tests/CI. |
 
 ## Gevraagde regressies
 

@@ -1,5 +1,6 @@
 import { getRingContext } from "@/lib/ringContext";
 import { getCurrentUser } from "@/lib/session";
+import { notificationVisibilityWhere } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 
 // Lichtgewicht endpoint, bedoeld om met een korte interval gepolld te
@@ -14,6 +15,6 @@ export async function GET() {
   const ctx = await getRingContext();
   if (!ctx) return Response.json({ count: 0 });
 
-  const count = await prisma.notification.count({ where: { userId: user.id, ringId: ctx.ring.id, readAt: null } });
+  const count = await prisma.notification.count({ where: { ...await notificationVisibilityWhere(user.id, ctx.ring.id), readAt: null } });
   return Response.json({ count });
 }

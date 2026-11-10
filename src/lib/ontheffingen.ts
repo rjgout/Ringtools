@@ -78,7 +78,7 @@ async function requireStaffAccess(userId: string, id: string) {
 }
 
 /** Prisma-filter voor alles wat een gebruiker in deze ring mag zien; gebruikt voor lijsten én aantallen (nooit apart opnieuw bedacht). */
-function visibleWhere(userId: string, ringId: string, role: Role): Prisma.OntheffingWhereInput {
+export function visibleWhere(userId: string, ringId: string, role: Role): Prisma.OntheffingWhereInput {
   const notSubject: Prisma.OntheffingWhereInput = { persons: { none: { userId } } };
   if (STAFF_ROLES.includes(role)) {
     return { ringId, ...notSubject, OR: [{ status: { not: "CONCEPT" } }, { status: "CONCEPT", createdById: userId }] };
@@ -352,8 +352,8 @@ export async function deliverOntheffingNotifications(id: string, now: Date = new
     }
     await prisma.ontheffing.updateMany({ where: { id, notifyEvent: event }, data: { notifyEvent: null, notifyClaimedAt: null } });
     return "sent";
-  } catch (err) {
-    console.error(`[ontheffingen] Meldingen voor dossier ${id} mislukt; wordt opnieuw geprobeerd:`, err);
+  } catch {
+    console.error("[ontheffingen] Melding niet opgeslagen; wordt opnieuw geprobeerd.");
     return "failed";
   }
 }
@@ -845,8 +845,8 @@ async function notifyPresidium(id: string, ringId: string): Promise<boolean> {
     const staff = await prisma.ringMembership.findMany({ where: { ringId, role: "RINGPRESIDIUM", active: true, user: { active: true } }, select: { userId: true } });
     await notify({ userIds: staff.map((s) => s.userId), ringId, ontheffingId: id, event: "CONFIDENTIAL_REMINDER", url: `/ontheffingen/${id}` });
     return true;
-  } catch (err) {
-    console.error(`[ontheffingen] Herinnering voor dossier ${id} mislukt:`, err);
+  } catch {
+    console.error("[ontheffingen] Herinnering niet opgeslagen.");
     return false;
   }
 }

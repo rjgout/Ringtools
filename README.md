@@ -497,8 +497,9 @@ willekeurig token (de database bewaart er uitsluitend de hash van).
 
 ### E-maillinks naar een voorstel
 
-E-mails over een voorstel bevatten een **persoonlijke koppeling** `/open/<token>`
-(72 uur geldig, alleen de hash wordt bewaard). Die koppeling logt **niet** in en toont
+Functionele e-mails bevatten uitsluitend een generieke actieboodschap, geen namen, roepingen, dossierdetails of persoonlijke tokens. Open de app voor de bevoegde handeling. Vooraf toegewezen taken worden pas na definitieve goedkeuring én expliciete uitvoeringsvrijgave zichtbaar en gemeld. Zie [de privacycorrectie](docs/NOTIFICATIE-PRIVACY-UITVOERING.md).
+
+Eerder verzonden persoonlijke koppelingen `/open/<token>` blijven maximaal 72 uur bruikbaar, uitsluitend als de gekoppelde gebruiker nu werkelijk dossierbevoegd is; een voorafgaande taaktoewijzing zonder uitvoeringsvrijgave volstaat niet. Alleen de hash wordt bewaard. Zo’n oude koppeling logt **niet** in en toont
 **geen gegevens** over het voorstel. De pagina biedt:
 
 1. **Inloggen en openen in de browser** (`/login?next=…`): de bestemming blijft behouden;

@@ -250,3 +250,6 @@ Zie [het implementatie- en migratieoverzicht](AANMELDEN-RELEASE-1.md) voor autom
 
 
 App Store-review, fictieve demoaccounts en volledige accountverwijdering: zie [releasepakket](app-store/RELEASEPAKKET.md). Gewone aanmelding/MFA en lokale appvergrendeling blijven behouden. Productieprovisioning en storepublicatie zijn handmatige eigenaarstappen.
+
+
+Uitvoeringstaken worden na `APPROVED` afzonderlijk door ringstaf vrijgegeven met **Vrijgeven voor uitvoering**. Vooraf toewijzen geeft geen extra toegang of melding. De iOS-/Android-client gebruikt dezelfde API als de beveiligde website; functionele externe meldingen zijn uitsluitend generiek. [Beleid, migratie, incidentbeoordeling en fysieke acceptatie](NOTIFICATIE-PRIVACY-UITVOERING.md).

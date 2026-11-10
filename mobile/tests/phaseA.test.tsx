@@ -143,3 +143,20 @@ describe("C1: vrijgave en gezamenlijk akkoord", () => {
     await waitFor(() => expect(api.groupDecision).toHaveBeenCalledWith("c1", expect.objectContaining({ stage: "HOGERAAD", presidingUserId: "p1", presentUserIds: ["h1"], absentUserIds: ["h2"] })));
   });
 });
+
+describe("Privacy: expliciete vrijgave voor uitvoering", () => {
+  it("vraagt bevestiging en geeft pas daarna uitvoering vrij", async () => {
+    const api = renderDetail({ releaseExecution: vi.fn(async () => ({ ok: true, released: true, alreadyReleased: false })) }, detail({ status: "APPROVED", canReleaseExecution: true, executionReleasedAt: null, tasks: [task({ canComplete: false })] })) as Record<string, ReturnType<typeof vi.fn>>;
+    const button = await screen.findByRole("button", { name: "Vrijgeven voor uitvoering" });
+    expect(api.releaseExecution).not.toHaveBeenCalled();
+    fireEvent.click(button); answerDialog("Annuleren");
+    expect(api.releaseExecution).not.toHaveBeenCalled();
+    fireEvent.click(button); answerDialog("Vrijgeven voor uitvoering");
+    await waitFor(() => expect(api.releaseExecution).toHaveBeenCalledExactlyOnceWith("c1"));
+  });
+  it("geen vrijgaveknop voor een niet-bevoegde uitvoerder", async () => {
+    renderDetail({}, detail({ status: "APPROVED", canReleaseExecution: false, me: { role: "HOGERAAD", isStaff: false }, tasks: [] }));
+    await screen.findByText("Jan");
+    expect(screen.queryByRole("button", { name: "Vrijgeven voor uitvoering" })).toBeNull();
+  });
+});

@@ -125,6 +125,8 @@ export type CallingDetail = {
   /** Presidium akkoord; wacht op een expliciete vrijgave aan de hoge raad. */
   awaitingRelease: boolean;
   canRelease: boolean;
+  executionReleasedAt?: string | null;
+  canReleaseExecution?: boolean;
   groupDecisions: GroupDecisionView[];
   /** Per fase: mag nu een gezamenlijk besluit worden vastgelegd (open fase, nog geen besluit, ringstaf)? */
   canRegisterGroupDecision: { PRESIDIUM: boolean; HOGERAAD: boolean };
