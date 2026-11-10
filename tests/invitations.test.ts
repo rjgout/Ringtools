@@ -16,6 +16,7 @@ const sendMailMock = vi.fn();
 vi.mock("@/lib/mailer", async (original) => ({
   ...(await original<typeof import("@/lib/mailer")>()),
   sendMail: (...args: unknown[]) => sendMailMock(...args),
+  invitationEmail: (opts: { link: string; code: string; ringName: string }) => ({ subject: "Legacy-uitnodiging (test)", text: `${opts.ringName}\n${opts.link}\n${opts.code}` }),
 }));
 
 const { handleApi } = await import("@/lib/api/router");

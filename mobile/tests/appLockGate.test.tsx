@@ -33,6 +33,7 @@ const storage = vi.hoisted(() => ({
   setRing: vi.fn(async () => {}),
   getPushToken: vi.fn(async () => null),
   setPendingUnregister: vi.fn(async () => {}),
+  getPendingLogouts: vi.fn(async () => []), queueLogout: vi.fn(async () => {}), removeQueuedLogout: vi.fn(async () => {}),
   getPendingUnregister: vi.fn(async () => null),
   clearPendingUnregister: vi.fn(async () => {}),
   clearSession: vi.fn(async () => {}),

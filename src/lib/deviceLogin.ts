@@ -16,7 +16,7 @@ import { lockUserThenDevice, runHook } from "./deviceLocks";
  * vraagt per handtekening Face ID of toestelcode), maar de server ziet dat niet. Daarom: alleen na expliciete activering, alleen iOS, en
  * een sessie via deze route telt NIET als recente MFA (zie `createDeviceSession`).
  *
- * Android staat bewust uit: de plug-in geeft de sleutel daar een authenticatievenster van 5 s na elke ontgrendeling, geen verificatie per handtekening.
+ * Nieuwe Android-registraties (protocol 2) vragen expliciet lokale verificatie vóór iedere ondertekening. Het OS-venster blijft 5 s; oude Android-registraties blijven uitgesloten.
  */
 export const LOGIN_CONTEXT = "ringtools-device-login-v1";
 export const ACTIVATE_CONTEXT = "ringtools-device-login-activate-v1";
@@ -48,7 +48,7 @@ async function findDevice(installationId: string) {
 }
 
 function loginEligible(d: NonNullable<Awaited<ReturnType<typeof findDevice>>>): boolean {
-  return !d.revokedAt && !!d.loginEnabledAt && d.platform === "IOS" && d.user.active && d.user.role !== "ADMIN";
+  return !d.revokedAt && !!d.loginEnabledAt && (d.platform === "IOS" || (d.platform === "ANDROID" && d.loginProtocol >= 2)) && d.user.active && d.user.role !== "ADMIN";
 }
 
 async function throttle(deviceId: string) {
@@ -87,7 +87,7 @@ async function checkProof(purpose: Purpose, device: { id: string; installationId
 async function ownedActivatableDevice(userId: string, installationId: string) {
   const d = await findDevice(installationId);
   if (!d || d.userId !== userId || d.revokedAt || !d.user.active || d.user.role === "ADMIN" || !d.user.mfaEnabled) throw unavailable();
-  if (d.platform !== "IOS") throw new TrustedDeviceError(403, "Wachtwoordloos inloggen is alleen op iPhone beschikbaar.", "platform-not-supported");
+  if (!(d.platform === "IOS" || (d.platform === "ANDROID" && d.loginProtocol >= 2))) throw new TrustedDeviceError(403, "Wachtwoordloos inloggen is alleen op iPhone beschikbaar.", "platform-not-supported");
   return d;
 }
 
@@ -162,5 +162,5 @@ export async function loginWithDevice(input: { installationId: string; challenge
 export async function deviceLoginStatus(userId: string, installationId: string): Promise<{ registered: boolean; loginEnabled: boolean }> {
   const d = await findDevice(installationId);
   if (!d || d.userId !== userId || d.revokedAt) return { registered: false, loginEnabled: false };
-  return { registered: true, loginEnabled: !!d.loginEnabledAt && d.platform === "IOS" };
+  return { registered: true, loginEnabled: !!d.loginEnabledAt && (d.platform === "IOS" || (d.platform === "ANDROID" && d.loginProtocol >= 2)) };
 }

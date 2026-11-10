@@ -766,32 +766,35 @@ export async function remindParticipants(input: {
  * dezelfde ring, en stuurt een persoonlijk ondersteuningsverzoek. Afgeronde
  * rondes worden niet aangeraakt. Bestaande reacties blijven behouden.
  */
-export async function addParticipantToRunningRounds(membership: { userId: string; ringId: string; role: Role }): Promise<number> {
+export async function addParticipantToRunningRoundsInTransaction(tx: Prisma.TransactionClient, membership: { userId: string; ringId: string; role: Role }): Promise<string[]> {
   const stage: Stage | null =
     membership.role === STAGE_ROLE.PRESIDIUM ? "PRESIDIUM" : membership.role === STAGE_ROLE.HOGERAAD ? "HOGERAAD" : null;
+  if (!stage) return [];
+
+  const callings = await tx.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "Calling"
+    WHERE "ringId" = ${membership.ringId} AND "status"::text = ANY(${STAGE_STATUSES[stage] as string[]})
+    FOR UPDATE`;
+
+  const addedCallingIds: string[] = [];
+  for (const { id } of callings) {
+    const existing = await tx.eligibleVoter.findUnique({
+      where: { callingId_stage_userId: { callingId: id, stage, userId: membership.userId } },
+    });
+    if (existing) continue;
+    await tx.eligibleVoter.create({
+      data: { callingId: id, stage, userId: membership.userId, lastInvitedAt: new Date() },
+    });
+    addedCallingIds.push(id);
+  }
+  return addedCallingIds;
+}
+
+export async function addParticipantToRunningRounds(membership: { userId: string; ringId: string; role: Role }): Promise<number> {
+  const stage: Stage | null = membership.role === STAGE_ROLE.PRESIDIUM ? "PRESIDIUM" : membership.role === STAGE_ROLE.HOGERAAD ? "HOGERAAD" : null;
   if (!stage) return 0;
-
-  const added = await prisma.$transaction(async (tx) => {
-    const callings = await tx.$queryRaw<{ id: string }[]>`
-      SELECT "id" FROM "Calling"
-      WHERE "ringId" = ${membership.ringId} AND "status"::text = ANY(${STAGE_STATUSES[stage] as string[]})
-      FOR UPDATE`;
-
-    const addedCallingIds: string[] = [];
-    for (const { id } of callings) {
-      const existing = await tx.eligibleVoter.findUnique({
-        where: { callingId_stage_userId: { callingId: id, stage, userId: membership.userId } },
-      });
-      if (existing) continue;
-      await tx.eligibleVoter.create({
-        data: { callingId: id, stage, userId: membership.userId, lastInvitedAt: new Date() },
-      });
-      addedCallingIds.push(id);
-    }
-    return addedCallingIds;
-  });
-
-  if (added.length === 0) return 0;
+  const added = await prisma.$transaction(tx => addParticipantToRunningRoundsInTransaction(tx, membership));
+  if (!added.length) return 0;
   const callings = await prisma.calling.findMany({ where: { id: { in: added } } });
   for (const calling of callings) {
     await notifyParticipants(calling, [membership.userId], {

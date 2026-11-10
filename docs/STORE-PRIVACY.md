@@ -76,3 +76,8 @@ Leg in App Store Connect (App Review Information → Notes) en Play Console (App
 ## E2.3 – toestelsleutels (alleen bij `TRUSTED_DEVICES_ENABLED`)
 
 Een gekoppeld toestel bewaart een ECDSA-privésleutel uitsluitend in de beveiligde hardware (niet exporteerbaar). Naar de server gaan alleen de publieke sleutel, een zelfgekozen toestellabel ("iPhone"/"Android-toestel"), het platform en een willekeurig installatie-ID (geen hardware-ID). Geen nieuwe gegevenscategorie voor tracking of analytics; geen camera. De plug-in voegt Android-afhankelijkheden toe (`androidx.biometric`, `androidx.credentials`, Play Services Auth); controleer vóór een storerelease het samengevoegde manifest en de Data Safety-verklaring. Geen wijziging van privacy-, opslag- of versleutelingsarchitectuur.
+
+
+## Vereenvoudigde aanmelding release 1.0
+
+Zie [het implementatie- en migratieoverzicht](AANMELDEN-RELEASE-1.md) voor automatische uitnodigingsacceptatie, lokale sessiekeuze, toestelregistratie en vereiste fysieke acceptatietests. Deze wijziging introduceert geen analytics of biometrische gegevens op de server; alleen publieke sleutels en beveiligingsmetadata worden geregistreerd.

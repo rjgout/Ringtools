@@ -15,6 +15,7 @@ import {
 import { setSessionCookie, clearSessionCookie, getSessionCookieValue, safeInternalPath, getRequestUserAgent } from "@/lib/session";
 import { rateLimit } from "@/lib/rateLimit";
 import { emailSchema } from "@/lib/validation";
+import { loginInvitedPerson } from "@/lib/invitationLogin";
 import { sendLoginMail } from "@/lib/loginMail";
 
 export type ActionResult = { ok: boolean; message: string };
@@ -37,18 +38,18 @@ export async function previewMagicLinkAction(token: string) {
  * sessie; anders volgt de passkeystap. Alleen de sessie van DEZE browser wordt
  * vervangen; sessies op andere apparaten (bijv. de geïnstalleerde app) blijven bestaan.
  */
-async function completeLogin(user: User, redirectTo: string): Promise<never> {
+async function completeLogin(user: User, redirectTo: string, verifiedEmail?: string): Promise<never> {
   const previous = await getSessionCookieValue();
   if (previous) await destroySession(previous);
 
   if (!mfaRequired(user)) {
     // Passkey-verificatie is optioneel en staat voor deze gebruiker uit:
     // de magic link geeft meteen volledige toegang.
-    const full = await createVerifiedSession(user.id, await getRequestUserAgent());
+    const full = await createVerifiedSession(user.id, await getRequestUserAgent(), verifiedEmail);
     await setSessionCookie(full.rawToken);
     redirect(redirectTo);
   }
-  const { rawToken } = await createSession(user.id, await getRequestUserAgent());
+  const { rawToken } = await createSession(user.id, await getRequestUserAgent(), verifiedEmail);
   await setSessionCookie(rawToken, true);
   redirect(`/mfa/passkey?redirect=${encodeURIComponent(redirectTo)}`);
 }
@@ -79,8 +80,16 @@ export async function loginWithCodeAction(_prev: ActionResult | null, formData: 
   if (!allowed) return { ok: false, message: "Te veel pogingen. Probeer het later opnieuw." };
 
   const user = await consumeLoginCode(parsed.data, code);
-  if (!user || user.role === "ADMIN") return failure;
-  await completeLogin(user, redirectTo);
+  if (!user) {
+    const invited = await loginInvitedPerson(parsed.data, code, (await getRequestUserAgent()) ?? "Browser");
+    if (!invited) return failure;
+    const previous = await getSessionCookieValue();
+    if (previous) await destroySession(previous);
+    await setSessionCookie(invited.token);
+    redirect(redirectTo);
+  }
+  if (user.role === "ADMIN") return failure;
+  await completeLogin(user, redirectTo, parsed.data);
   return failure; // onbereikbaar: completeLogin stuurt altijd door
 }
 

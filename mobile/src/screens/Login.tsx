@@ -1,16 +1,15 @@
+import logo from "../../resources/icon.png";
 import { digitsOnly } from "../lib/codeInput";
 import { useEffect, useState } from "react";
 import { useAuth } from "../lib/auth";
-import { nativeDeviceKeys } from "../lib/deviceKey";
 import { ApiRequestError } from "../lib/api";
 import { useServerCapabilities } from "../lib/useServerCapabilities";
 import { deviceLoginMessage, deviceLoginSupported, readDeviceKeyRef } from "../lib/deviceLogin";
-import { API_HOST, APP_VERSION, BUILD_ID } from "../config";
 import { nativeCapabilities } from "../lib/buildProfile";
 import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError, PasskeyError, passkeysUsable } from "../lib/passkeys";
 
 /** Inloggen met e-mail + 8-cijferige code uit de e-mail. De link in de mail opent deze app direct (universele link). */
-export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { initialEmail?: string; onHaveInvitation?: () => void; onLinkDevice?: () => void }) {
+export function Login({ initialEmail = "" }: { initialEmail?: string; onHaveInvitation?: () => void; onLinkDevice?: () => void }) {
   const { api, signIn, finishMfa, finishMfaTotp, signInWithDevice } = useAuth();
   const [email, setEmail] = useState(initialEmail);
   const [code, setCode] = useState("");
@@ -23,7 +22,6 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
   const [info, setInfo] = useState<string | null>(null);
   // Servercapaciteiten uit GET /meta: met automatische herpogingen (ook als de aanvraag tijdens de ontgrendeling werd geblokkeerd).
   const caps = useServerCapabilities(api);
-  const trustedDevices = caps.caps.trustedDevices;
   // E2.4a: knop "Inloggen met Face ID" alleen als de server het aanbiedt, dit een iPhone is en er een lokale toestelsleutel bestaat.
   const [hasDeviceKey, setHasDeviceKey] = useState(false);
   const [deviceOwner, setDeviceOwner] = useState<string | null>(null);
@@ -50,8 +48,9 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
     setBusy(true);
     setError(null);
     try {
-      const res = await api.requestCode(email.trim());
-      setInfo(res.message);
+      await api.requestCode(email.trim());
+      setInfo("We hebben een code naar je e-mailadres gestuurd.");
+      setCode("");
       setStep("code");
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Er ging iets mis.");
@@ -145,13 +144,14 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
     <main className="page center">
       <form className="glass card stack card-narrow" onSubmit={step === "email" ? request : step === "code" ? login : step === "totp" ? totp : (e) => { e.preventDefault(); if (pendingToken) void passkey(pendingToken); }}>
         <div>
+          <img src={logo} alt="Ringtools-logo" width="64" height="64" />
           <h1>Ringtools</h1>
-          <span className="muted">Log in met je e-mailadres. Je ontvangt een code van 8 cijfers.</span>
+          <span className="muted">Welkom bij Ringtools. Vul je e-mailadres in om verder te gaan.</span>
         </div>
         {step === "email" && deviceLoginAvailable && (
           <div className="stack">
-            <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={() => void loginWithDevice()}>{busy ? "Even geduld…" : "Inloggen met Face ID of toestelcode"}</button>
-            <span className="muted">{deviceOwner ? `Voor het account van ${deviceOwner}. ` : ""}Je bevestigt met Face ID of, als je toestel dat toestaat, met je toestelcode.</span>
+            <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={() => void loginWithDevice()}>{busy ? "Even geduld…" : "Inloggen met de beveiliging van je telefoon"}</button>
+            <span className="muted">{deviceOwner ? `Voor het account van ${deviceOwner}. ` : ""}Bevestig met de beveiliging van je telefoon.</span>
             <strong>Of log in met een e-mailcode</strong>
           </div>
         )}
@@ -177,12 +177,12 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
             <label htmlFor="code">Inlogcode uit de e-mail</label>
             <input id="code" className="code" inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={(e) => setCode(digitsOnly(e.target.value, 8))} autoFocus />
             {info && <p className="muted">{info}</p>}
-            <p className="muted">Geen code ontvangen? Controleer de spammap en of het e-mailadres klopt. Heb je nog nooit ingelogd? Activeer dan eerst je uitnodiging via &lsquo;Ik heb een uitnodiging&rsquo; (kies &lsquo;Ander e-mailadres&rsquo; om terug te gaan).</p>
+            <p className="muted">Geen code ontvangen? Controleer ook je spammap.</p>
           </div>
         )}
         {error && <div className="error" role="alert">{error}</div>}
         <button className="btn btn-primary btn-block" disabled={busy || (step === "code" && code.replace(/\s+/g, "").length !== 8) || (step === "totp" && totpCode.replace(/\s+/g, "").length < (useRecovery ? 10 : 6))}>
-          {busy ? "Even geduld…" : step === "email" ? "Stuur code" : step === "passkey" ? "Verifiëren met passkey" : "Inloggen"}
+          {busy ? "Even geduld…" : step === "email" ? "Verder" : step === "passkey" ? "Verifiëren met passkey" : "Inloggen"}
         </button>
         {step === "totp" && (
           <button type="button" className="btn btn-ghost btn-block" onClick={() => { setUseRecovery((v) => !v); setTotpCode(""); setError(null); }}>
@@ -192,19 +192,18 @@ export function Login({ initialEmail = "", onHaveInvitation, onLinkDevice }: { i
         {(step === "passkey" || step === "totp") && (
           <button type="button" className="btn btn-ghost btn-block" onClick={() => void leavePasskey(null)}>Annuleren</button>
         )}
+        {step === "code" && <button type="button" className="btn btn-ghost btn-block" disabled={busy} onClick={() => void request({ preventDefault() {} } as React.FormEvent)}>Opnieuw een code aanvragen</button>}
         {step === "code" && (
           <button type="button" className="btn btn-ghost btn-block" onClick={() => { setStep("email"); setCode(""); setError(null); }}>
             Ander e-mailadres
           </button>
         )}
-        {onHaveInvitation && step === "email" && <button type="button" className="btn btn-ghost btn-block" onClick={onHaveInvitation}>Ik heb een uitnodiging</button>}
-        {onLinkDevice && trustedDevices && step === "email" && nativeDeviceKeys.available() && <button type="button" className="btn btn-ghost btn-block" onClick={onLinkDevice}>Toestel koppelen met een code</button>}
         {caps.status === "unavailable" && (
           <p className="muted" role="status">
             Sommige inlogopties konden niet worden opgehaald. <button type="button" className="btn btn-ghost" onClick={caps.retry}>Opnieuw proberen</button>
           </p>
         )}
-        <p className="muted muted-small" data-testid="build-info">Versie {APP_VERSION} · build {BUILD_ID} · server {API_HOST}</p>
+
       </form>
     </main>
   );

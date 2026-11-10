@@ -98,8 +98,8 @@ describe("Inlogscherm: hulp bij een ontbrekende code (voor iedereen gelijk, geen
     const { Login } = await import("../src/screens/Login");
     renderUi(<Login onHaveInvitation={() => {}} />);
     fireEvent.change(await screen.findByLabelText("E-mailadres"), { target: { value: "lid@example.nl" } });
-    fireEvent.click(screen.getByRole("button", { name: "Stuur code" }));
-    expect(await screen.findByText(/Geen code ontvangen\? Controleer de spammap/)).toBeTruthy();
-    expect(screen.getByText(/Ik heb een uitnodiging/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Verder" }));
+    expect(await screen.findByText(/Geen code ontvangen\? Controleer ook je spammap/)).toBeTruthy();
+    expect(screen.queryByText(/Ik heb een uitnodiging/)).toBeNull();
   });
 });

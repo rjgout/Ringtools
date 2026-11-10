@@ -1,8 +1,9 @@
+import { sendInvitationLoginCode } from "./invitationLogin";
 import { env } from "./env";
 import type { User } from "@prisma/client";
 import { createMagicLinkToken, findUserByLoginEmail } from "./auth";
 import { rateLimit } from "./rateLimit";
-import { sendMail, magicLinkEmail } from "./mailer";
+import { sendMail, magicLinkEmail, loginCodeEmail } from "./mailer";
 
 export type LoginMailResult = { ok: boolean; message: string };
 
@@ -11,7 +12,7 @@ export type LoginMailResult = { ok: boolean; message: string };
  * webapp en de native app. Geeft bewust hetzelfde antwoord voor onbekende, inactieve en
  * beheerdersadressen (voorkomt account enumeration); de beheerder logt nooit via e-mail in.
  */
-export async function sendLoginMail(email: string, redirectTo: string | null): Promise<LoginMailResult> {
+export async function sendLoginMail(email: string, redirectTo: string | null, options: { codeOnly?: boolean } = {}): Promise<LoginMailResult> {
   const generic: LoginMailResult = {
     ok: true,
     message: "Als dit e-mailadres bekend is bij Ringtools, is er een inloglink naar verstuurd. Controleer je mailbox.",
@@ -23,11 +24,15 @@ export async function sendLoginMail(email: string, redirectTo: string | null): P
   }
 
   const user = await findUserByLoginEmail(email);
-  if (!user || !user.active || user.role === "ADMIN") {
+  if (!user) {
+    await sendInvitationLoginCode(email);
+    return generic;
+  }
+  if (!user.active || user.role === "ADMIN") {
     return generic;
   }
 
-  if (!(await deliverLoginMail(user, redirectTo))) {
+  if (!(await deliverLoginMail(user, redirectTo, options))) {
     return {
       ok: false,
       message: "Er ging iets mis bij het versturen van de inloglink. Probeer het later opnieuw of neem contact op met het ringpresidium.",
@@ -40,13 +45,13 @@ export async function sendLoginMail(email: string, redirectTo: string | null): P
  * Maakt een inlogcode + link en verstuurt die uitsluitend naar het geregistreerde adres van het account. Geeft `false` bij
  * een mislukte verzending. Logt nooit de code, de link of de mailinhoud: alleen het type fout.
  */
-export async function deliverLoginMail(user: Pick<User, "id" | "name" | "email">, redirectTo: string | null): Promise<boolean> {
+export async function deliverLoginMail(user: Pick<User, "id" | "name" | "email">, redirectTo: string | null, options: { codeOnly?: boolean } = {}): Promise<boolean> {
   try {
     const { rawToken, code } = await createMagicLinkToken(user.id, { withCode: true });
     const link = redirectTo
       ? `${env.appBaseUrl}/auth/magic/${rawToken}?redirect=${encodeURIComponent(redirectTo)}`
       : `${env.appBaseUrl}/auth/magic/${rawToken}`;
-    const { subject, text } = magicLinkEmail(user.name, link, code);
+    const { subject, text } = options.codeOnly ? loginCodeEmail(user.name, code!) : magicLinkEmail(user.name, link, code);
     await sendMail({ to: user.email.trim(), subject, text });
     return true;
   } catch (err) {

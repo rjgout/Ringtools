@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { startEnrollment, completeEnrollment, enrollmentMessage, ENROLL_TTL_MS } from "@/lib/deviceEnrollment";
 import { revokeTrustedDevice, MAX_ACTIVE_DEVICES } from "@/lib/trustedDevices";
 import { deviceChallengeMessage, loginChallenge, loginWithDevice } from "@/lib/deviceLogin";
-import { createVerifiedSession } from "@/lib/auth";
+import { createVerifiedSession, destroySessionById } from "@/lib/auth";
 import { resetDatabase, createTestUser } from "./setup";
 
 // E2.5: automatische Face ID-inrichting vanuit een ingelogde sessie (recente MFA), achter NATIVE_DEVICE_AUTO_ENROLL_ENABLED.
@@ -42,6 +42,24 @@ beforeEach(async () => {
 });
 
 describe("Automatische Face ID-inrichting", () => {
+  it.each(["IOS", "ANDROID"])("gewoon account: %s registreert, vernieuwt verlopen sessie en respecteert intrekking", async platform => {
+    const u = await mfaUser(false);
+    const a = await enrol(u.id);
+    const original = await createVerifiedSession(u.id, "synthetisch");
+    const session = await prisma.session.findFirstOrThrow({ where: { userId: u.id } });
+    const result = await completeEnrollment(u.id, { ...a.input, platform }, session.id);
+    const d = await prisma.trustedDevice.findUniqueOrThrow({ where: { id: result.deviceId } });
+    expect(d.loginProtocol).toBe(2);
+    await prisma.session.update({ where: { id: session.id }, data: { expiresAt: new Date(0) } });
+    const c = await loginChallenge(a.installationId);
+    const signature = sign(a.kp.privateKey, deviceChallengeMessage("LOGIN", { id: c.challengeId, challenge: c.challenge }, d));
+    const renewed = await loginWithDevice({ installationId: a.installationId, challengeId: c.challengeId, signature });
+    expect(renewed.token).not.toBe(original.rawToken);
+    const active = await prisma.session.findFirstOrThrow({ where: { userId: u.id, expiresAt: { gt: new Date() } } });
+    await destroySessionById(u.id, active.id);
+    await expect(loginChallenge(a.installationId)).rejects.toMatchObject({ code: "device-login-unavailable" });
+  });
+
   it("volledig pad: challenge → sleutelbezit → toestel is in één stap geregistreerd én geactiveerd; daarna inloggen met Face ID werkt", async () => {
     const u = await mfaUser();
     const a = await enrol(u.id);
@@ -65,9 +83,9 @@ describe("Automatische Face ID-inrichting", () => {
     await expect(startEnrollment(u.id)).rejects.toMatchObject({ code: "not-available" });
   });
 
-  it("account zonder verplichte MFA of het beheerdersaccount: geen inrichting (alleen e-mailcodebezit is nooit genoeg)", async () => {
+  it("gewoon account kan na verse verificatie inrichten; beheerdersaccount blijft uitgesloten", async () => {
     const plain = await mfaUser(false);
-    await expect(startEnrollment(plain.id)).rejects.toMatchObject({ code: "mfa-required" });
+    expect((await startEnrollment(plain.id)).userId).toBe(plain.id);
     const admin = await mfaUser(true, "ADMIN");
     await expect(startEnrollment(admin.id)).rejects.toMatchObject({ code: "forbidden" });
     expect(await prisma.trustedDevice.count()).toBe(0);
@@ -108,7 +126,7 @@ describe("Automatische Face ID-inrichting", () => {
     await expect(completeEnrollment(u.id, a.input)).rejects.toMatchObject({ code: "invalid-enrollment" });
     const b = await enrol(u.id);
     await expect(completeEnrollment(other.id, b.input)).rejects.toMatchObject({ code: "invalid-enrollment" });
-    const c = await enrol(u.id, { platform: "ANDROID" });
+    const c = await enrol(u.id, { platform: "WEB" });
     await expect(completeEnrollment(u.id, c.input)).rejects.toMatchObject({ code: "platform-not-supported" });
     expect(await prisma.trustedDevice.count()).toBe(0);
     expect(ENROLL_TTL_MS).toBeLessThanOrEqual(5 * 60 * 1000);
@@ -126,10 +144,10 @@ describe("Automatische Face ID-inrichting", () => {
     await expect(completeEnrollment(other.id, steal.input)).rejects.toMatchObject({ code: "key-reused" });
   });
 
-  it("MFA tussentijds uitgezet: voltooien geweigerd, geen toestel", async () => {
+  it("account tussentijds gedeactiveerd: voltooien geweigerd, geen toestel", async () => {
     const u = await mfaUser();
     const a = await enrol(u.id);
-    await prisma.user.update({ where: { id: u.id }, data: { mfaEnabled: false } });
+    await prisma.user.update({ where: { id: u.id }, data: { active: false } });
     await expect(completeEnrollment(u.id, a.input)).rejects.toBeTruthy();
     expect(await prisma.trustedDevice.count()).toBe(0);
   });

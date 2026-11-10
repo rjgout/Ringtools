@@ -32,7 +32,7 @@ function setup(methods: ("passkey" | "totp")[] | null = ["totp"], over: Record<s
 async function toTotpStep() {
   render(<Login />);
   fireEvent.change(screen.getByLabelText("E-mailadres"), { target: { value: "eva@example.nl" } });
-  fireEvent.click(screen.getByRole("button", { name: "Stuur code" }));
+  fireEvent.click(screen.getByRole("button", { name: "Verder" }));
   fireEvent.change(await screen.findByLabelText("Inlogcode uit de e-mail"), { target: { value: "12345678" } });
   fireEvent.click(screen.getByRole("button", { name: "Inloggen" }));
 }
@@ -137,7 +137,7 @@ describe("Inloggen met e-mailcode + authenticator-app in de app", () => {
     await waitFor(() => expect(api.meta).toHaveBeenCalled());
     expect(screen.queryByText(/authenticator-app\? Na de inlogcode/)).toBeNull();
     expect(screen.queryByText(/Accounts met passkey-verificatie/)).toBeNull();
-    expect(screen.getByTestId("build-info").textContent).toMatch(/build .* · server /);
+    expect(screen.queryByTestId("build-info")).toBeNull();
   });
 });
 

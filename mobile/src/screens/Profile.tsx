@@ -10,6 +10,7 @@ import { ActionMenu, MENU_ICONS } from "../components/Menu";
 import { useConfirm } from "../components/Dialog";
 import { activateDeviceLoginKey, deviceLoginMessage, deviceLoginSupported, readDeviceKeyRef } from "../lib/deviceLogin";
 import { describeDevice, enrollThisDevice, type DeviceState } from "../lib/deviceEnrollment";
+import { nativeDeviceKeys } from "../lib/deviceKey";
 import { storage } from "../lib/storage";
 import { useServerCapabilities } from "../lib/useServerCapabilities";
 
@@ -19,7 +20,7 @@ export function Profile() {
   const caps = nativeCapabilities();
   const sessions = useLoad(() => api.sessions(), []);
   const devices = useLoad(() => api.devices(), []);
-  // Inloggen met Face ID (E2.4a/E2.5): status van dit toestel voor dit account; instellen, activeren of uitzetten. De server beslist (recente tweede factor).
+  // Snel aanmelden (E2.4a/E2.5): status van dit toestel voor dit account; instellen, activeren of uitzetten. De server beslist (recente tweede factor).
   const server = useServerCapabilities(api);
   const { run, dialog } = useReauth();
   const [deviceState, setDeviceState] = useState<DeviceState>({ kind: "unknown" });
@@ -27,8 +28,7 @@ export function Profile() {
   const [deviceBusy, setDeviceBusy] = useState(false);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const supported = server.caps.deviceLogin && deviceLoginSupported() && !!me;
-  const showDeviceLogin = supported && !!me?.user.mfaEnabled;
-  const needsMfa = supported && !me?.user.mfaEnabled;
+  const showDeviceLogin = supported;
   const meId = me?.user.id;
   async function refreshDevice() {
     if (meId) setDeviceState(await describeDevice(api, meId));
@@ -53,7 +53,7 @@ export function Profile() {
       }
       await storage.clearDeviceOfferDeclined().catch(() => undefined);
       setConfirmReplace(false);
-      setDeviceMessage("Inloggen met Face ID staat aan.");
+      setDeviceMessage("Snel aanmelden staat aan.");
       await refreshDevice();
     } catch (err) {
       setDeviceMessage(deviceLoginMessage(err));
@@ -64,7 +64,7 @@ export function Profile() {
 
   const confirm = useConfirm();
   async function turnOffFaceId() {
-    const ok = await confirm({ title: "Inloggen met Face ID uitzetten?", message: "Op dit toestel log je daarna weer in met een e-mailcode en je tweede factor.", confirmLabel: "Uitzetten", danger: true });
+    const ok = await confirm({ title: "Snel aanmelden uitzetten?", message: "Op dit toestel log je daarna weer in met een e-mailcode en je tweede factor.", confirmLabel: "Uitzetten", danger: true });
     if (!ok) return;
     const ref = await readDeviceKeyRef();
     if (!ref) return;
@@ -72,7 +72,10 @@ export function Profile() {
     setDeviceMessage(null);
     try {
       await run(() => api.deviceDisable(ref.installationId));
-      setDeviceMessage("Inloggen met Face ID is uitgezet voor dit toestel.");
+      await nativeDeviceKeys.remove(ref.tag).catch(() => undefined);
+      await storage.clearDeviceKey();
+      await storage.forgetPersistentSession();
+      setDeviceMessage("Snel aanmelden is uitgezet voor dit toestel.");
       await refreshDevice();
     } catch (err) {
       setDeviceMessage(deviceLoginMessage(err));
@@ -122,24 +125,27 @@ export function Profile() {
         ))}
       </section>
 
-      {(showDeviceLogin || needsMfa) && (
-        <section className="glass card stack" aria-label="Inloggen met Face ID">
-          <h2>Inloggen met Face ID</h2>
-          {needsMfa ? (
-            <span className="muted">Om Face ID te gebruiken stel je eerst extra verificatie in op de website (Beveiliging).</span>
-          ) : deviceState.kind === "enabled" ? (
+      {showDeviceLogin && (
+        <section className="glass card stack" aria-label="Snel aanmelden">
+          <h2>Aanmelden en beveiliging</h2>
+          <label className="row between">
+            <span>Snel aanmelden op dit toestel</span>
+            <input type="checkbox" role="switch" checked={deviceState.kind === "enabled"}
+              disabled={deviceBusy || deviceState.kind === "unknown" || (deviceState.kind === "conflict" && !confirmReplace) || (!server.caps.deviceAutoEnroll && deviceState.kind !== "registered" && deviceState.kind !== "enabled")}
+              onChange={() => void (deviceState.kind === "enabled" ? turnOffFaceId() : setUpFaceId())} />
+          </label>
+          {deviceState.kind === "enabled" ? (
             <>
-              <span>Ingeschakeld op dit toestel. Je bevestigt met Face ID of, als je toestel dat toestaat, met je toestelcode.</span>
-              <button className="btn btn-ghost" disabled={deviceBusy} onClick={() => void turnOffFaceId()}>Uitschakelen</button>
+              <span>Ingeschakeld op dit toestel. Je bevestigt met de beveiliging van je telefoon.</span>
               <span className="muted">Vertrouwde toestellen beheer je op de website onder Beveiliging.</span>
             </>
           ) : deviceState.kind === "conflict" && !confirmReplace ? (
             <>
-              <span className="muted">Face ID is op dit toestel al ingesteld voor {deviceState.ownerName ? `het account van ${deviceState.ownerName}` : "een ander account"}.</span>
+              <span className="muted">de beveiliging van je telefoon is op dit toestel al ingesteld voor {deviceState.ownerName ? `het account van ${deviceState.ownerName}` : "een ander account"}.</span>
               <button className="btn btn-primary" onClick={() => setConfirmReplace(true)}>Overzetten naar mijn account…</button>
             </>
           ) : !server.caps.deviceAutoEnroll && deviceState.kind !== "registered" ? (
-            <span className="muted">Koppel dit toestel eerst met een code van de website (Beveiliging → Vertrouwde toestellen). Kies daarna hier voor instellen.</span>
+            <span className="muted">Snel aanmelden is nog niet beschikbaar. Je kunt je e-mailcode blijven gebruiken.</span>
           ) : deviceState.kind === "unknown" ? (
             <span className="muted">De status kon niet worden opgehaald.</span>
           ) : (
@@ -147,9 +153,8 @@ export function Profile() {
               <span className="muted">
                 {deviceState.kind === "conflict"
                   ? "Weet je het zeker? De instelling voor het andere account wordt op dit toestel vervangen; dat account kan nog inloggen met e-mailcode en tweede factor."
-                  : "Log voortaan in met Face ID of toestelcode, zonder e-mailcode. Je moet hiervoor eerst opnieuw je tweede factor bevestigen."}
+                  : "Log voortaan in met de beveiliging van je telefoon of toestelcode, zonder e-mailcode. Bevestig zo nodig opnieuw je identiteit."}
               </span>
-              <button className="btn btn-primary" disabled={deviceBusy} onClick={() => void setUpFaceId()}>{deviceBusy ? "Even geduld…" : "Inloggen met Face ID instellen"}</button>
             </>
           )}
           {deviceMessage && <div role="status">{deviceMessage}</div>}

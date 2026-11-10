@@ -4,8 +4,7 @@ import { nativeDeviceKeys, type DeviceKeyProvider } from "./deviceKey";
 import { storage } from "./storage";
 
 /**
- * Wachtwoordloos inloggen met een geactiveerd vertrouwd toestel (E2.4a). Alleen iPhone/iPad: op Android blijft dit uit omdat de sleutel daar een
- * authenticatievenster van 5 s heeft in plaats van verificatie per handtekening. De server beslist; deze module ondertekent alleen een
+ * Wachtwoordloos inloggen met een geactiveerd vertrouwd toestel (E2.4a). iOS en Android: Android-protocol 2 gebruikt een verplichte expliciete native prompt vóór ondertekening; het OS-authenticatievenster blijft 5 s. De server beslist; deze module ondertekent alleen een
  * serverchallenge. Er is GEEN automatische herregistratie en GEEN terugval naar een zwakkere methode.
  * Logt nooit challenges, berichten, handtekeningen of sleutels.
  */
@@ -24,7 +23,7 @@ export class DeviceLoginError extends Error {
   }
 }
 
-export const RECOVERY_HINT = "Lukt het niet? Log in met je e-mailcode en authenticator-app en koppel dit toestel opnieuw.";
+export const RECOVERY_HINT = "Lukt het niet? Log opnieuw in met je e-mailcode en, indien nodig, je extra verificatie.";
 
 /** Lokale verwijzing naar de toestelsleutel. `userId`/`name` (optioneel, niet geheim) leggen vast voor wélk account Face ID hier is ingesteld. */
 export type DeviceKeyRef = { installationId: string; tag: string; userId?: string; name?: string };
@@ -44,7 +43,7 @@ export async function readDeviceKeyRef(): Promise<DeviceKeyRef | null> {
 
 /** Alleen iPhone/iPad met native toestelsleutels. */
 export function deviceLoginSupported(keys: DeviceKeyProvider = nativeDeviceKeys, platform: string = Capacitor.getPlatform()): boolean {
-  return platform === "ios" && keys.available();
+  return (platform === "ios" || platform === "android") && keys.available();
 }
 
 async function signChallenge(keys: DeviceKeyProvider, ref: DeviceKeyRef, message: string): Promise<string> {
@@ -57,7 +56,7 @@ async function signChallenge(keys: DeviceKeyProvider, ref: DeviceKeyRef, message
 }
 
 export async function loginWithDeviceKey(api: ApiClient, keys: DeviceKeyProvider = nativeDeviceKeys, platform: string = Capacitor.getPlatform()) {
-  if (!deviceLoginSupported(keys, platform)) throw new DeviceLoginError("Inloggen met dit toestel is alleen op iPhone beschikbaar.", "unsupported");
+  if (!deviceLoginSupported(keys, platform)) throw new DeviceLoginError("Snel aanmelden is alleen beschikbaar in de iOS- en Android-app.", "unsupported");
   const ref = await readDeviceKeyRef();
   if (!ref) throw new DeviceLoginError(`Dit toestel is nog niet gekoppeld. ${RECOVERY_HINT}`, "no-key");
   const ch = await api.deviceChallenge(ref.installationId);
@@ -66,7 +65,7 @@ export async function loginWithDeviceKey(api: ApiClient, keys: DeviceKeyProvider
 }
 
 export async function activateDeviceLoginKey(api: ApiClient, keys: DeviceKeyProvider = nativeDeviceKeys, platform: string = Capacitor.getPlatform()): Promise<void> {
-  if (!deviceLoginSupported(keys, platform)) throw new DeviceLoginError("Inloggen met dit toestel is alleen op iPhone beschikbaar.", "unsupported");
+  if (!deviceLoginSupported(keys, platform)) throw new DeviceLoginError("Snel aanmelden is alleen beschikbaar in de iOS- en Android-app.", "unsupported");
   const ref = await readDeviceKeyRef();
   if (!ref) throw new DeviceLoginError(`Dit toestel is nog niet gekoppeld. ${RECOVERY_HINT}`, "no-key");
   const ch = await api.deviceActivateChallenge(ref.installationId);

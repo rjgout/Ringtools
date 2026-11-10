@@ -77,10 +77,10 @@ test("inrichting: bereikbaar alleen met de automatische vlag; volledig pad en in
   expect((await prisma.trustedDevice.findUniqueOrThrow({ where: { id: d.id } })).loginEnabledAt).toBeNull();
 });
 
-test("account zonder verplichte MFA kan geen toestel inrichten (server beslist, ongeacht de interface)", async ({ request }) => {
+test("account zonder verplichte MFA kan na verse aanmelding inrichten als de automatische functie aanstaat", async ({ request }) => {
   const { user, token } = await seed("Toestel Zonder Mfa", false);
-  expect((await post(request, "/auth/device/enroll/challenge", token)).ok()).toBe(false);
-  expect(await prisma.deviceEnrollment.count({ where: { userId: user.id } })).toBe(0);
+  expect((await post(request, "/auth/device/enroll/challenge", token)).ok()).toBe(MODE === "auto");
+  expect(await prisma.deviceEnrollment.count({ where: { userId: user.id } })).toBe(MODE === "auto" ? 1 : 0);
 });
 
 test("inloggen met toestel: route volgt de login-vlag; onbekend toestel krijgt geen challenge-uitkomst die iets verraadt", async ({ request }) => {
