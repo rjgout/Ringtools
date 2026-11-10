@@ -11,12 +11,17 @@ on:
       - "src/lib/api/**"
       - "src/lib/actions/auth.actions.ts"
       - "src/lib/auth.ts"
+      - "src/lib/reviewAuth.ts"
+      - "src/lib/reviewDemo.ts"
+      - "src/lib/accountPolicy.ts"
+      - "src/lib/accountDeletion.ts"
       - "src/lib/session.ts"
       - "src/lib/mfa.ts"
       - "src/lib/mfaMethods.ts"
       - "src/lib/autoMfa.ts"
       - "src/lib/trustedDevices.ts"
       - "src/lib/deviceLogin.ts"
+      - "src/lib/deviceLocks.ts"
       - "src/lib/deviceEnrollment.ts"
       - "src/lib/mfaActor.ts"
       - "src/lib/webauthn.ts"
@@ -58,12 +63,17 @@ on:
       - "src/lib/api/**"
       - "src/lib/actions/auth.actions.ts"
       - "src/lib/auth.ts"
+      - "src/lib/reviewAuth.ts"
+      - "src/lib/reviewDemo.ts"
+      - "src/lib/accountPolicy.ts"
+      - "src/lib/accountDeletion.ts"
       - "src/lib/session.ts"
       - "src/lib/mfa.ts"
       - "src/lib/mfaMethods.ts"
       - "src/lib/autoMfa.ts"
       - "src/lib/trustedDevices.ts"
       - "src/lib/deviceLogin.ts"
+      - "src/lib/deviceLocks.ts"
       - "src/lib/deviceEnrollment.ts"
       - "src/lib/mfaActor.ts"
       - "src/lib/webauthn.ts"
@@ -135,7 +145,7 @@ jobs:
       - run: npx prisma migrate deploy
       - name: Backend-tests die de mobiele apps raken
         run: >-
-          npx vitest run
+          npx vitest run tests/reviewReadiness.test.ts
           tests/api.test.ts tests/nativePush.test.ts tests/wellknown.test.ts tests/push.test.ts
           tests/sessions.test.ts tests/openlinks.test.ts tests/mfa.test.ts tests/mfaProof.test.ts
           tests/rings.test.ts tests/hardening.test.ts tests/notifications.test.ts

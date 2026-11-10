@@ -80,7 +80,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
     where: { id: userId },
     include: { pushSubscriptions: true, devicePushTokens: true },
   });
-  if (!user || !user.active) return 0;
+  if (!user || !user.active || user.accountKind !== "NORMAL") return 0;
 
   // Alleen interne doelpaden: een push kan nooit naar een externe site verwijzen.
   const safe = { ...payload, url: safeInternalPath(payload.url) ?? "/dashboard" };
@@ -113,7 +113,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
         if (statusCode === 404 || statusCode === 410) {
           await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
         } else {
-          console.error(`[push] Versturen naar abonnement van ${user.email} mislukt:`, err);
+          console.error(`[push] Aflevering mislukt (${statusCode ?? "transport"}).`);
         }
       }
     })

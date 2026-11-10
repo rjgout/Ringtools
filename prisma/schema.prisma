@@ -95,7 +95,26 @@ enum NotificationType {
   CONFIDENTIAL_REMINDER
 }
 
+enum AccountKind {
+  NORMAL
+  REVIEW
+  AUDIT
+}
+
+enum DeletionRequestStatus {
+  REQUESTED
+  IN_REVIEW
+  BLOCKED
+  COMPLETED
+}
+
 model User {
+  accountKind AccountKind @default(NORMAL)
+  reviewRingId String?
+  reviewRing Ring? @relation("ReviewRing", fields: [reviewRingId], references: [id], onDelete: Restrict)
+  reviewCredential ReviewCredential?
+  deletionRequest AccountDeletionRequest?
+  deletionChallenges AccountDeletionChallenge[]
   id                        String    @id @default(cuid())
   name                      String
   email                     String    @unique
@@ -308,6 +327,14 @@ model RecoveryCode {
 }
 
 enum SecurityEventType {
+  REVIEW_LOGIN
+  REVIEW_LOGIN_FAILED
+  REVIEW_PASSWORD_CHANGED
+  REVIEW_DISABLED
+  DEMO_PROVISIONED
+  DEMO_RESET
+  ACCOUNT_DELETION_REQUESTED
+  ACCOUNT_DELETION_COMPLETED
   TOTP_ENROLLED
   TOTP_RESET
   TOTP_FAILED_ATTEMPT
@@ -545,6 +572,10 @@ model Notification {
 // Een ring is de tenant-grens: voorstellen, ondersteuningsrondes, taken en
 // meldingen horen altijd bij precies één ring.
 model Ring {
+  isDemo Boolean @default(false)
+  demoResetting Boolean @default(false)
+  demoKey String? @unique
+  reviewUsers User[] @relation("ReviewRing")
   id        String   @id @default(cuid())
   name      String   @unique
   // Een gedeactiveerde ring blijft bewaard maar is voor niemand meer toegankelijk
@@ -1047,4 +1078,43 @@ model InvitationLoginCode {
   attempts Int @default(0)
   createdAt DateTime @default(now())
   @@index([email, expiresAt])
+}
+
+// Geen reviewwachtwoorden in User.passwordHash: die kolom blijft uitsluitend voor webmin.
+model ReviewCredential {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passwordHash String
+  failedAttempts Int @default(0)
+  lockedUntil DateTime?
+  updatedAt DateTime @updatedAt
+}
+
+model AccountDeletionRequest {
+  id String @id @default(cuid())
+  userId String? @unique
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  status DeletionRequestStatus @default(REQUESTED)
+  receiptHash String @unique
+  requestedAt DateTime @default(now())
+  dueAt DateTime
+  reviewedAt DateTime?
+  completedAt DateTime?
+  handledById String?
+  retentionReason String?
+  blockerCount Int @default(0)
+  @@index([status, dueAt])
+}
+
+model AccountDeletionChallenge {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailSnapshot String
+  codeHash String
+  expiresAt DateTime
+  usedAt DateTime?
+  attempts Int @default(0)
+  createdAt DateTime @default(now())
+  @@index([userId, expiresAt])
 }

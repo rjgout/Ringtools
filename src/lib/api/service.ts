@@ -1,3 +1,4 @@
+import { accountCanUseRing } from "../accountPolicy";
 import type { Calling, OndersteuningContext, Role } from "@prisma/client";
 import { prisma } from "../prisma";
 import { isStaff, canVotePresidium, canVoteHogeraad } from "../rbac";
@@ -48,7 +49,8 @@ export async function requireMembership(userId: string, ringId: string) {
   const membership = ringId
     ? await prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, user: { active: true }, ring: { active: true } }, include: { ring: true } })
     : null;
-  if (!membership) throw new ApiError(404, "Niet gevonden.", "not-found");
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!membership || !user || !accountCanUseRing(user, membership.ring)) throw new ApiError(404, "Niet gevonden.", "not-found");
   return membership;
 }
 
@@ -86,8 +88,8 @@ export async function getMe(userId: string) {
     orderBy: { createdAt: "asc" },
   });
   return {
-    user: { id: user.id, name: user.name, email: user.email, emailNotificationsEnabled: user.emailNotificationsEnabled, mfaEnabled: user.mfaEnabled },
-    rings: memberships.map((m) => ({
+    user: { id: user.id, name: user.name, email: user.email, emailNotificationsEnabled: user.emailNotificationsEnabled, mfaEnabled: user.mfaEnabled, reviewAccount: user.accountKind === "REVIEW" },
+    rings: memberships.filter(m => accountCanUseRing(user, m.ring)).map((m) => ({
       id: m.ringId,
       name: m.ring.name,
       role: m.role,
@@ -515,6 +517,8 @@ const DEVICE_TOKEN = /^[A-Za-z0-9_:.\-=]{20,4096}$/;
 const DEVICE_ID = /^[A-Za-z0-9_-]{8,64}$/;
 
 export async function registerDevice(userId: string, token: string, platform: string, deviceId?: string) {
+  const account = await prisma.user.findUnique({ where: { id: userId }, select: { accountKind: true } });
+  if (account?.accountKind !== "NORMAL") throw new ApiError(403, "Externe meldingen zijn niet beschikbaar voor demoaccounts.", "demo-restricted");
   if (!DEVICE_TOKEN.test(token) || (platform !== "ios" && platform !== "android")) {
     throw new ApiError(400, "Ongeldig apparaattoken.", "validation");
   }

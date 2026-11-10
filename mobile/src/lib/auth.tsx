@@ -24,6 +24,7 @@ type AuthValue = {
   api: ApiClient;
   /** Webmin is ingelogd (beheergedeelte); er is dan geen ring of voorstel. */
   /** Geeft `{ pendingToken }` terug als er nog een passkey-verificatie nodig is (verplichte MFA); dan bestaat er nog géén sessie. */
+  signInReview: (email: string, password: string) => Promise<void>;
   signIn: (email: string, code: string) => Promise<{ pendingToken: string; methods: ("passkey" | "totp")[] } | void>;
   /** Neemt de sessie over die een geslaagde uitnodigingsactivatie (zonder verplichte MFA) uitgaf; het token gaat direct naar Keychain/Keystore. */
   finishActivation: (result: LoginResult) => Promise<void>;
@@ -242,6 +243,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [applyMe]
   );
 
+  const signInReview = useCallback(async (email: string, password: string) => {
+    const result = await api.reviewLogin(email, password);
+    // Pas na geslaagde demoaanmelding: voorkom automatisch hervatten van een eerder gewoon account.
+    const previousKey = await readDeviceKeyRef();
+    if (previousKey) await nativeDeviceKeys.remove(previousKey.tag).catch(() => undefined);
+    await storage.clearDeviceKey();
+    await storage.forgetPersistentSession();
+    await finishActivation(result);
+  }, [api, finishActivation]);
+
   const finishMfa = useCallback(
     async (pendingToken: string, assertion: PasskeyAssertion) => {
       const result = await api.passkeyVerify(pendingToken, assertion);
@@ -274,11 +285,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const reauth = useCallback(
     async (code: string) => {
-      const result = await api.userReauth(code);
+      const result = me?.user.reviewAccount ? await api.reviewReauth(code) : await api.userReauth(code);
       tokenRef.current = result.token;
       await storage.setToken(result.token, currentUserRef.current ?? undefined);
     },
-    [api]
+    [api, me?.user.reviewAccount]
   );
 
   const reauthWithPasskey = useCallback(async () => {
@@ -336,8 +347,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const ring = me?.rings.find((r) => r.id === ringId) ?? null;
   const value = useMemo<AuthValue>(
-    () => ({ status, startupError, retryStartup, me, ring, api, signIn, finishMfa, finishMfaTotp, signInWithDevice, finishActivation, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
-    [status, startupError, retryStartup, me, ring, api, signIn, finishMfa, finishMfaTotp, signInWithDevice, finishActivation, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
+    () => ({ status, startupError, retryStartup, me, ring, api, signIn, signInReview, finishMfa, finishMfaTotp, signInWithDevice, finishActivation, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush }),
+    [status, startupError, retryStartup, me, ring, api, signIn, signInReview, finishMfa, finishMfaTotp, signInWithDevice, finishActivation, reauth, reauthWithPasskey, requestReauthCode, signOut, reloadMe, selectRing, enablePush]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -1,83 +1,73 @@
-# Privacy- en storevereisten (voorbereiding)
+# Privacy en storeverklaringen
 
-> Dit is een voorbereiding, geen juridisch advies. **Controleer de actuele eisen van Apple (App Review Guidelines, Privacy
-> Nutrition Labels) en Google (Data Safety, beleid voor accountverwijdering) vlak vóór de release.** Concepttekst hieronder
-> moet door de eigenaar/verwerkingsverantwoordelijke worden beoordeeld en aangevuld.
+Bijgewerkt 10 november 2026. Feitelijke implementatie; geen verklaring dat alle juridische releasevoorwaarden al zijn vervuld. Verwerkingsverantwoordelijke: **Raphael Gout, raphael@ringapeldoorn.nl** (opgegeven door de eigenaar). Publieke teksten: `/privacy`, `/accountverwijdering`, `/contact`. De app toont Profiel → Account en privacy.
 
-## Doel en doelgroep
-Ringtools ondersteunt een kerkelijke ring bij het ondersteunen van roepingen (aanstellingen). Toegang uitsluitend **op uitnodiging**
-(gebruikers worden door een ringbeheerder of de beheerder aangemaakt); er is geen openbare registratie en geen advertentie- of
-trackingfunctionaliteit.
+## Inventaris en technische bewaartermijnen
 
-## Gegevensverwerking (inventaris)
-| Gegeven | Doel | Waar | Bewaartermijn |
-|---|---|---|---|
-| Naam, e-mailadres, rol/functie, ringlidmaatschap | Account, autorisatie, notificaties | PostgreSQL (self-hosted) | Zolang lidmaatschap actief; verwijdering op verzoek |
-| Roepingsvoorstellen (naam kandidaat, functie), stemmen/ondersteuning, taken | Kernfunctie | PostgreSQL | Verwerkte voorstellen worden 30 dagen na verwerking verwijderd |
-| Ontheffingsdossiers (namen betrokkenen en raadgevers, functie, wijk/gemeente, besluitregistratie, tijdelijke accountkoppeling) | Procedure ontheffing | PostgreSQL | Verwerkt: 30 dagen na verwerking verwijderd (inclusief de accountkoppeling); concept: 30 dagen na laatste wijziging; lopende dossiers: nooit automatisch, wel herinnering na 30 en beoordeling na 90 dagen zonder activiteit. Alleen zichtbaar voor ringstaf en deelnemers van de lopende ronde; nooit voor de betrokkene zelf; geen e-mail, geen namen in push |
-| Sessietoken (gehasht op server; Keychain/Keystore op toestel), apparaatnaam/user-agent | Ingelogd blijven, apparaten beheren | PostgreSQL / toestel | 60 dagen inactiviteit, 180 dagen absoluut |
-| Pushtoken (APNs/FCM), platform, installatie-ID | Pushmeldingen | PostgreSQL | Tot uitloggen/uitschakelen of ongeldig token |
-| Web-push-abonnement (PWA) | Pushmeldingen web | PostgreSQL | Tot afmelden |
-| Uitnodigingen (naam, e-mailadres, rol/functie, status; token en code alleen als hash) en audittrail | Accountactivatie | PostgreSQL | Tot 90 dagen na activatie/verlopen/intrekken; daarna automatisch verwijderd |
-| Native passkey-plug-in (`@capawesome/capacitor-passkeys`): geen eigen opslag, geen netwerkverkeer, geen analytics; gebruikt uitsluitend het systeem (iOS `AuthenticationServices`, Android Credential Manager). Geen nieuwe permissies; iOS: Associated Domains `webcredentials:` (alleen productie-entitlements) | Passkey-verificatie | Alleen toestel/systeem; op de server alleen de publieke sleutel (zie hieronder) | Zolang account |
-| Appvergrendeling (E3; `@aparajita/capacitor-biometric-auth`, `@capacitor-community/privacy-screen`): uitsluitend lokale systeemverificatie (iOS `LocalAuthentication`, Android `BiometricPrompt`). **Geen biometrische gegevens** worden door Ringtools opgeslagen, gelezen of verzonden; de plug-ins hebben geen netwerkverkeer, geen opslag en geen analytics. Nieuwe toestemmingen: iOS `NSFaceIDUsageDescription` (tekst), Android `USE_BIOMETRIC` | Extra lokale toegangscontrole | Alleen toestel/systeem | n.v.t. |
-| Passkey-publieke sleutels, TOTP-geheim (versleuteld), herstelcodes (gehasht), beveiligingslogboek | MFA | PostgreSQL | Zolang account |
-| E-mails (inlogcodes/-links, meldingen) | Communicatie | Eigen SMTP | Volgens mailprovider |
+| Gegevens | Doel / opslag | Feitelijke termijn |
+|---|---|---|
+| Naam, e-mail, gebruikers-ID, rol, kerkelijke functie, ring/wijklidmaatschap | Account en autorisatie; eigen PostgreSQL | Zolang account bestaat, ook na deactiveren; volledige verwijdering op verzoek |
+| Kandidaat/betrokkene, functie, wijk, steun/reacties, besluiten/notities, deelnemers, taken/tijdstippen, audit | Roepingen en vertrouwelijke ontheffingen; PostgreSQL | Verwerkt: 30 dagen; concepten: 30 dagen. Lopende dossiers niet automatisch wissen. Ontheffingen: herinnering na 30, beoordeling na 90 dagen zonder activiteit |
+| Uitnodiging: naam, e-mail, rol, status, audit; code/token uitsluitend hashes | Activering; PostgreSQL, verificatiemail via SMTP | 90 dagen na activatie/verlopen/intrekken |
+| Sessietokens (server hashes), user-agent/toestellabel | Aanmelding; PostgreSQL en Keychain/versleutelde Android-opslag | 60 dagen inactiviteit, 180 dagen absoluut; ingetrokken/verwijderd eerder |
+| Installatie-ID, platform, publieke sleutels, sleutelprotocollen/challenges, beveiligingsgebeurtenissen | Toestelaanmelding en beveiliging | Registraties tot intrekken/verwijderen; korte challenges volgens protocol. Geen vaste algemene logretentie geïmplementeerd |
+| Passkey-publieke sleutels, versleuteld TOTP-geheim, hashes herstelcodes | MFA | Tot verwijderen van methode/account |
+| APNs-/FCM-token, webpushabonnement | Functionele push via Apple/Google | Tot afmelden, verwijderen, ongeldige providerregistratie; generieke tekst en intern doelpad |
+| Interne notificaties, status/readAt | Workflow | Account-/dossiercascade waar gekoppeld; geen algemene losse notificatieretentie |
+| Reviewcredential bcrypt-hash, mislukte pogingen en slot | Expliciete REVIEW-accounts, alleen fictieve demo | Tot accountverwijdering; rotatie trekt sessies in; nooit plaintext |
+| Verwijdercode (hash), e-mailsnapshot, pogingen | Ook voor gedeactiveerde gebruikers; nooit een login | Code 15 min geldig, opruiming vanaf één dag na vervallen |
+| Verwijderverzoek: userId tot wissen, status, streefdatum, ontvangstbewijshash, behandelaar en concrete bewaarmotivering | Beheerwachtrij en controle | Open verzoeken blijven zichtbaar; afgerond bewijs na 90 dagen opgeruimd |
+| E-mail en back-ups | SMTP en eigen back-upvoorziening | Eigenaar moet feitelijke leveranciers, retentie en herstel-/wisprocedure vaststellen |
 
-Geen verkoop van gegevens, geen derde-partij-analytics of -advertenties, geen locatie, contacten, foto's, microfoon of camera.
-Pushlevering loopt via Apple (APNs) en Google (FCM) met alleen generieke tekst en een intern pad (geen namen/functies).
-Verwerkers: eigen hosting (NAS), SMTP-provider, Apple/Google (push). Sluit waar nodig verwerkersovereenkomsten.
+De roepings-/ontheffingscontext **kan religieuze overtuiging/betrokkenheid onthullen**; deze verwerking wordt als gevoelige informatie behandeld en als Sensitive Info opgegeven. Geen ongefundeerde claim dat dit uitsluitend niet-gevoelige administratie is. Namen van personen zonder account zijn eveneens persoonsgegevens. Geen LCR-personenimport of blijvend personenregister.
 
-## Apple – App Privacy ("nutrition label") – concept
-- **Data Linked to You:** Contact info (naam, e-mailadres); Identifiers (gebruikers-ID, apparaattoken voor push); User content (voorstellen/stemmen, functioneel).
-- **Gebruik:** uitsluitend *App Functionality*; **geen** Tracking; geen Third-Party Advertising/Analytics.
-- Uitzondering voor versleuteling: `ITSAppUsesNonExemptEncryption=false` (alleen standaard-HTTPS).
-- Review Guideline **4.2 (Minimum Functionality)**: de app is geen website-wrapper; ze biedt native inloggen met veilige credentialopslag, pushmeldingen, deep links, offline-/foutafhandeling en ring-/ondersteuningsfunctionaliteit. Bouw geen decoratieve functies om review te omzeilen.
+Biometrie/toestelcode blijft bij iOS/Android; Ringtools ontvangt alleen het verificatieresultaat en bij toestelprotocol publieke sleutel/handtekening. Geen biometrische kenmerken op de server. Een server zonder attestatie bewijst sleutelbezit, geen onafhankelijke hardwareattestatie. Geen advertenties, tracking, advertentie-ID, derde-partijanalytics, locatie, contacten, camera, microfoon of fototoegang. Native plug-ins en secure storage blijven ongewijzigd, inclusief lokale appvergrendeling en Personal Team-beperkingen.
 
-## Google Play – Data Safety – concept
-- Verzamelde gegevens: *Persoonlijke info* (naam, e-mail), *App-activiteit/gebruikerscontent* (voorstellen, stemmen), *Apparaat- of andere ID's* (pushtoken). Alle: voor *app-functionaliteit*, niet gedeeld voor advertenties, niet verkocht.
-- Gegevens versleuteld tijdens verzending (HTTPS): ja. Gebruikers kunnen verwijdering aanvragen: ja (zie hieronder).
-- Doelgroep: volwassenen/leden van een kerkelijke ring; geen kinderen. Vul de inhoudsclassificatie en doelgroep in de Play Console zelf in.
+## Apple App Store Connect → App Privacy
 
-## Accountverwijdering
-Accounts worden niet in de app aangemaakt maar door de ring uitgenodigd; verwijdering gebeurt via de ringbeheerder/beheerder.
-Document en publiceer een **webpagina met instructies en supportcontact** (vereist door Google voor een datasafety-formulier) en
-overweeg een in-app "Verzoek tot verwijdering"-link (Apple-richtlijn 5.1.1(v) geldt voor apps waarin accounts worden aangemaakt; controleer de actuele tekst).
-Op verzoek verwijdert de beheerder de gebruiker en bijbehorende apparaten/sessies/pushtokens (cascade in de database).
-*Nog te doen door eigenaar:* verwijderverzoekpagina + supportadres kiezen.
+Voor de in deze branch geïmplementeerde app/backend, inclusief optionele native meldingen: **Yes, we collect data from this app**. Neem ook inhoud over derden mee. Iedere hieronder aangevinkte categorie: doel **App Functionality**, **Linked to the user's identity: Yes**, **Used for tracking: No**. Geen advertising, developer advertising, analytics of personalization aanvinken.
 
-## Te leveren storegegevens (niet in deze repo aanwezig)
-- **Privacyverklaring** (publieke URL) en eventueel **gebruiksvoorwaarden**.
-- **Supportcontact** (e-mail/URL) en marketing-URL (optioneel).
-- **Appbeschrijving** (kort/lang), trefwoorden, categorie (Productiviteit/Lifestyle).
-- **Screenshots** met fictieve gegevens: iPhone 6,9″ en iPad 13″ (indien iPad ondersteund), Android telefoon (en tablet). Gebruik uitsluitend fictieve namen.
-- **App-icoon** (1024×1024 bron: `mobile/resources/icon.png`; gegenereerd via `npm run assets`).
-- **Versiebeheer:** `versionName`/`MARKETING_VERSION` (semver, nu 1.0.0) en oplopende `versionCode`/`CURRENT_PROJECT_VERSION` per upload.
+| App Store Connect categorie | Aanvinken | Onderbouwing |
+|---|---|---|
+| Contact Info → Name | Ja | Accountnamen en namen van kandidaten/betrokkenen |
+| Contact Info → Email Address | Ja | Account, uitnodiging, verificatie |
+| Sensitive Info | Ja | Religieuze betrokkenheid/functie en vertrouwelijke dossiers |
+| Identifiers → User ID | Ja | Account-/lidmaatschaps-ID |
+| Identifiers → Device ID | Ja | Installatie-/toestel-ID en pushregistratie, functioneel |
+| User Content → Other User Content | Ja | Voorstellen, besluiten, notities, ondersteuning en taken |
+| Usage Data → Product Interaction | Ja | Reacties, uitgevoerde acties en functionele status/tijdstippen |
+| Usage Data → Other Usage Data | Ja | Beveiligings- en autorisatiegebeurtenissen gekoppeld aan account/toestel |
+| Alle overige categorieën | Nee, zolang de verwerking niet verandert | Geen betalingen, fysieke locatie, contacten, beeld/audio, gezondheid, browse-/zoekhistorie of advertentiegegevens in de geïnspecteerde app |
 
-## Toegang voor reviewers (uitsluitend op uitnodiging)
-Apple en Google vereisen dat reviewers de app kunnen gebruiken. Omdat inloggen via een e-mailcode loopt en er **geen
-authenticatiebypass** mag bestaan, zijn er twee veilige opties; de eigenaar kiest:
-1. **Aparte reviewomgeving** (eigen stack + eigen lege database, apart domein/`VITE_API_URL`-build of testflight-config) met uitsluitend **fictieve** ring, gebruikers en voorstellen, en een **mailbox voor reviewers** waarvan de inloggegevens in de reviewnotities staan, zodat de inlogcode ontvangen kan worden. Nooit echte roepingsgegevens of een publiek toegankelijke testomgeving met echte data.
-2. Een tijdelijk, beperkt reviewaccount in diezelfde aparte omgeving, waarvan de mailbox door de eigenaar bewaakt wordt.
-Leg in App Store Connect (App Review Information → Notes) en Play Console (App-toegang) uit dat de app op uitnodiging werkt en hoe de reviewer inlogt.
-*Nog te doen door eigenaar:* reviewomgeving inrichten en seeden (fictief).
+Privacy Policy URL: `https://ringapeldoorn.nl/privacy`. Support URL: `https://ringapeldoorn.nl/contact`. Account deletion URL: `https://ringapeldoorn.nl/accountverwijdering`. Deze routes moeten na de door de eigenaar goedgekeurde productie-update opnieuw publiek worden gecontroleerd. Niet beweren dat ongepubliceerde branchcode al live staat.
 
-## Handmatige acceptatietests (op fysieke toestellen)
-1. Installeren (TestFlight / Internal Testing), inloggen met code, app sluiten/openen → nog ingelogd.
-2. E-mail met ondersteuningsverzoek ontvangen → link tikken: app opent het juiste voorstel (koude start, draaiende app, achtergrond); zonder app opent de browser.
-3. Ondersteuning uitbrengen; resultaat verschijnt in de webapp. Gebruiker van een andere ring ziet het voorstel niet.
-4. Pushmelding ontvangen (zonder namen), tikken opent het voorstel; geen dubbele melding op een toestel met PWA+app.
-5. Meldingen per toestel uitzetten; uitloggen op afstand via "Aangemelde toestellen".
-6. Vliegtuigstand: duidelijke offline-melding en herstel zodra er weer verbinding is.
-7. Dark mode, iPad en kleine telefoon, grote tekst, toetsenbord bij inloggen, Android-terugknop.
-8. Universal Links/App Links verificatie (`adb shell pm get-app-links`, Apple AASA-validatie) nadat de echte Team-ID en vingerafdrukken op de server staan.
-9. Appvergrendeling (E3): koude start vraagt altijd Face ID/Touch ID/vingerafdruk/toestelcode; annuleren blijft vergrendeld; toestel zonder schermvergrendeling krijgt de uitlegmelding; na 30 s achtergrond opnieuw ontgrendelen, korter niet; app-switcher/recente apps tonen geen inhoud; Android-screenshot geblokkeerd; iOS-screenshot (kan niet worden geblokkeerd); pushtik en link uit koude start en achtergrond openen pas na ontgrendelen; Android-terugknop; ook in `App-PersonalTeam` (zie `docs/APP-ONTGRENDELING-ONTWERP.md` §12.6).
+`mobile/ios/App/App/PrivacyInfo.xcprivacy` beschrijft dezelfde categorieën, niet gelinkt voor tracking; UserDefaults required-reason `CA92.1` blijft behouden. Het manifest vervangt de App Privacy-vragenlijst niet. Controleer ook het uiteindelijke samengevoegde archive-manifest van alle SDK's.
 
-## E2.3 – toestelsleutels (alleen bij `TRUSTED_DEVICES_ENABLED`)
+`ITSAppUsesNonExemptEncryption=false` bestaat al in de iOS-configuratie. De eerdere onderbouwing “alleen HTTPS” was onvolledig: de app gebruikt ook OS-cryptografie, publieke-sleutelverificatie en veilige opslag. De eigenaar moet de juiste exportvrijstelling in App Store Connect vaststellen; geen exportjuridische conclusie afleiden uit deze boolean.
 
-Een gekoppeld toestel bewaart een ECDSA-privésleutel uitsluitend in de beveiligde hardware (niet exporteerbaar). Naar de server gaan alleen de publieke sleutel, een zelfgekozen toestellabel ("iPhone"/"Android-toestel"), het platform en een willekeurig installatie-ID (geen hardware-ID). Geen nieuwe gegevenscategorie voor tracking of analytics; geen camera. De plug-in voegt Android-afhankelijkheden toe (`androidx.biometric`, `androidx.credentials`, Play Services Auth); controleer vóór een storerelease het samengevoegde manifest en de Data Safety-verklaring. Geen wijziging van privacy-, opslag- of versleutelingsarchitectuur.
+Google Play Data Safety: eveneens naam/e-mail, religieuze/gevoelige informatie, gebruikerscontent/activiteit en device-ID/push; functioneel, HTTPS, geen verkoop/tracking. Gebruik de verwijder-URL. Definitieve Google-formulierindeling bij publicatie opnieuw controleren.
 
+## Uitvoerbare accountverwijdering
 
-## Vereenvoudigde aanmelding release 1.0
+De app vraagt expliciete bevestiging van **het volledige account in alle ringen**, met recente serververificatie. Reviewaccounts herbevestigen met reviewwachtwoord; gewone gebruikers met hun bestaande factor. Verzoeken worden idempotent in `AccountDeletionRequest` opgeslagen. Een gehasht, willekeurig ontvangstbewijs toont zonder sessie alleen status en termijnen, geen identiteit/dossiers. Op toestel uitsluitend secure storage; op website HttpOnly-cookie. Een herhaalde aanvraag vernieuwt het bewijs. Bewijs op een ander toestel kan daardoor vervallen.
 
-Zie [het implementatie- en migratieoverzicht](AANMELDEN-RELEASE-1.md) voor automatische uitnodigingsacceptatie, lokale sessiekeuze, toestelregistratie en vereiste fysieke acceptatietests. Deze wijziging introduceert geen analytics of biometrische gegevens op de server; alleen publieke sleutels en beveiligingsmetadata worden geregistreerd.
+Gedeactiveerde gebruikers kunnen rechtstreeks op de publieke verwijderpagina een aparte eenmalige e-mailcode gebruiken: geen sessie, heractivering of MFA-reset. Dit is geen verplicht supportgesprek. Bij verlies van de mailbox is menselijke identiteitscontrole via de verantwoordelijke nodig.
+
+Beheer: beveiligde website → Instellingen → Reviewdemo en verwijderverzoeken (`/instellingen/review`), uitsluitend systeembeheer met recente MFA. Raphael Gout behandelt de zichtbare wachtrij. **Streeftermijn 14 dagen** is een operationele afspraak. Beoordeel dagelijks de wachtrij en neem bij vertraging rechtstreeks contact op via het nog aanwezige accountadres; verzamel geen extra identiteit als bestaande verificatie volstaat.
+
+1. Controleer verzoek/identiteit; bekijk lidmaatschappen en actuele processen in het bestaande beheer.
+2. Draag laatste ringbeheer, open taken en actieve rondes eerst correct over of rond ze af via de gewone workflow. De voltooiingsactie geeft concrete blokkeercategorieën terug en wist dan niets. Behandel een blokkade actief; laat een verzoek niet onbeperkt liggen.
+3. Historische noodzakelijke relaties: uitsluitend met een **werkelijk vastgestelde grondslag en concrete bewaarmotivering** tijdelijk naar een nieuw niet-authenticeerbaar `AUDIT`-object. Accountnaam/e-mail, credentials en alle lidmaatschappen verdwijnen echt. Dit is pseudonimisering, geen anonimiteit; de dossiertermijnen lopen door. Geen algemene verzonnen kerkelijke of wettelijke bewaarplicht. Zonder geldige basis eerst gegevens/dossier wissen volgens toepasselijke procedure, daarna opnieuw voltooien.
+4. Voltooien wist alle sessies, publieke sleutels, TOTP/herstelcodes, pushregistraties, eigen meldingen, challenges en expliciete persoonskoppelingen. Actieve dossiers met expliciet gekoppelde betrokkene blokkeren vooraf; niet op naam raden.
+5. Voltooiing verschijnt in de app op het aanmeldscherm → Status verwijderverzoek of op de publieke pagina met ontvangstcookie. Na de dossieropruiming verdwijnen ook verweesde AUDIT-objecten. Oude back-ups moeten bij herstel de uitgevoerde verwijderingen opnieuw toepassen (eigenaarprocedure nog vast te stellen).
+
+Systeembeheeraccounts worden via deze gewone gebruikersprocedure geweigerd; deze app kent geen mobiele webmin-login. De laatste ringbeheerder kan wel aanvragen, maar eerst moet opvolging worden vastgelegd. Een ringlidmaatschap beëindigen is geen volledige accountverwijdering.
+
+## Open eigenaarbeslissingen vóór publieke release
+
+- Concrete AVG-grondslag (art. 6) én toepasselijke uitzondering voor religieuze/bijzondere gegevens (art. 9), informatieplicht voor betrokkenen zonder account en noodzakelijkheidsbeoordeling.
+- Feitelijke hosting/SMTP-verwerkers, overeenkomsten, locaties/doorgiften/waarborgen; toegang van technisch beheer.
+- Concrete log-, mailbox- en back-upretentie; uitvoering en bewijs van verwijdering bij back-upherstel; eventuele aantoonbare wettelijke uitzonderingen.
+- Export compliance, definitieve leeftijdsvragenlijst en storeclassificaties. Geen juridische gereedheid claimen zolang dit openstaat.
+
+Releasepakket, Apple-bronnen, technische controles en productiehandelingen: [app-store/RELEASEPAKKET.md](app-store/RELEASEPAKKET.md).

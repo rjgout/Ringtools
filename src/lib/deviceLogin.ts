@@ -48,7 +48,7 @@ async function findDevice(installationId: string) {
 }
 
 function loginEligible(d: NonNullable<Awaited<ReturnType<typeof findDevice>>>): boolean {
-  return !d.revokedAt && !!d.loginEnabledAt && (d.platform === "IOS" || (d.platform === "ANDROID" && d.loginProtocol >= 2)) && d.user.active && d.user.role !== "ADMIN";
+  return !d.revokedAt && !!d.loginEnabledAt && (d.platform === "IOS" || (d.platform === "ANDROID" && d.loginProtocol >= 2)) && d.user.active && d.user.accountKind === "NORMAL" && d.user.role !== "ADMIN";
 }
 
 async function throttle(deviceId: string) {
@@ -86,7 +86,7 @@ async function checkProof(purpose: Purpose, device: { id: string; installationId
 
 async function ownedActivatableDevice(userId: string, installationId: string) {
   const d = await findDevice(installationId);
-  if (!d || d.userId !== userId || d.revokedAt || !d.user.active || d.user.role === "ADMIN" || !d.user.mfaEnabled) throw unavailable();
+  if (!d || d.userId !== userId || d.revokedAt || !d.user.active || d.user.accountKind !== "NORMAL" || d.user.role === "ADMIN" || !d.user.mfaEnabled) throw unavailable();
   if (!(d.platform === "IOS" || (d.platform === "ANDROID" && d.loginProtocol >= 2))) throw new TrustedDeviceError(403, "Wachtwoordloos inloggen is alleen op iPhone beschikbaar.", "platform-not-supported");
   return d;
 }
@@ -147,7 +147,7 @@ export async function loginWithDevice(input: { installationId: string; challenge
     // wint altijd: wacht deze transactie, dan ziet ze daarna het ingetrokken toestel; was zij eerst, dan verwijdert de intrekking haar sessie.
     const lock = await lockUserThenDevice(tx, d.userId, d.id);
     await runHook("loginAfterLock");
-    if (!lock.user || !lock.user.active || lock.user.role === "ADMIN" || !lock.device || lock.device.revokedAt || !lock.device.loginEnabledAt) throw unavailable();
+    if (!lock.user || !lock.user.active || lock.user.accountKind !== "NORMAL" || lock.user.role === "ADMIN" || !lock.device || lock.device.revokedAt || !lock.device.loginEnabledAt) throw unavailable();
     const consumed = await tx.deviceLoginChallenge.updateMany({ where: { id: ch.id, consumedAt: null, expiresAt: { gt: new Date() }, failedAttempts: { lt: MAX_CHALLENGE_FAILURES } }, data: { consumedAt: new Date() } });
     if (consumed.count !== 1) throw new TrustedDeviceError(400, "De aanmelding is verlopen of ongeldig. Probeer het opnieuw.", "invalid-challenge");
     await tx.session.create({ data: { userId: d.userId, tokenHash: hashToken(rawToken), expiresAt, mfaAt: DEVICE_SESSION_MFA_AT, deviceId: d.id, userAgent: input.userAgent || null } });

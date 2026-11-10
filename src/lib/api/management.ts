@@ -1,3 +1,4 @@
+import { accountCanUseRing } from "../accountPolicy";
 import type { Role } from "@prisma/client";
 import { prisma } from "../prisma";
 import { rateLimit } from "../rateLimit";
@@ -28,8 +29,8 @@ export async function ringErrors<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export async function requireMembershipFor(userId: string, ringId: string) {
-  const m = await prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, user: { active: true }, ring: { active: true } } });
-  if (!m) throw new ApiError(404, "Niet gevonden.", "not-found");
+  const m = await prisma.ringMembership.findFirst({ where: { userId, ringId, active: true, user: { active: true }, ring: { active: true } }, include: { user: { select: { accountKind: true, reviewRingId: true, role: true } }, ring: true } });
+  if (!m || !accountCanUseRing(m.user, m.ring)) throw new ApiError(404, "Niet gevonden.", "not-found");
   return m;
 }
 

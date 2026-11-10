@@ -1,3 +1,4 @@
+import { accountCanUseRing } from "./accountPolicy";
 import type { ChurchFunctionCode, Prisma, Role, User } from "@prisma/client";
 import { CHURCH_FUNCTION_LABELS, UNIQUE_FUNCTIONS, authorityFitsFunction, functionFitsRole } from "./churchFunctions";
 import { prisma } from "./prisma";
@@ -36,9 +37,10 @@ async function loadActiveActor(db: Db, actorId: string): Promise<User> {
 export async function assertCanManageRing(db: Db, actorId: string, ringId: string): Promise<User> {
   const actor = await loadActiveActor(db, actorId);
   if (actor.role === "ADMIN") return actor;
+  if (actor.accountKind !== "NORMAL") throw new AuthorizationError();
   const membership = await db.ringMembership.findUnique({ where: { userId_ringId: { userId: actor.id, ringId } } });
   const ring = await db.ring.findUnique({ where: { id: ringId } });
-  if (!membership || !membership.active || !membership.isRingManager || !ring?.active) throw new AuthorizationError();
+  if (!membership || !membership.active || !membership.isRingManager || !ring?.active || !accountCanUseRing(actor, ring)) throw new AuthorizationError();
   return actor;
 }
 

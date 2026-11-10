@@ -118,6 +118,15 @@ export class ApiClient {
   login(email: string, code: string, deviceName: string) {
     return this.request<LoginResult | PendingMfaLogin>("POST", "/auth/login", { email, code, deviceName }, null);
   }
+  reviewLogin(email: string, password: string) {
+    return this.request<LoginResult>("POST", "/auth/review/login", { email, password }, null);
+  }
+  reviewReauth(password: string) {
+    return this.request<TokenResult>("POST", "/auth/review/reauth", { password });
+  }
+  deletionStatus() { return this.request<{ request: DeletionStatus | null }>("GET", "/privacy/deletion"); }
+  requestDeletion() { return this.request<{ request: DeletionStatus; receipt: string }>("POST", "/privacy/deletion", { confirm: true }); }
+  deletionReceipt(receipt: string) { return this.request<{ request: DeletionStatus | null }>("POST", "/privacy/deletion/status", { receipt }, null); }
   passkeyOptions(pendingToken: string) {
     return this.request<{ options: PasskeyRequestOptions }>("POST", "/auth/mfa/passkey/options", {}, pendingToken);
   }
@@ -400,3 +409,5 @@ export class ApiClient {
     return this.request<{ ok: boolean }>("POST", `/sessions/${encodeURIComponent(id)}/revoke`, {});
   }
 }
+
+export type DeletionStatus = { id: string; status: string; requestedAt: string; dueAt: string; completedAt: string | null; blockerCount: number };

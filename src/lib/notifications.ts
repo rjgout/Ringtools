@@ -143,6 +143,9 @@ export async function notify(params: {
     })),
   });
 
+  const sourceRing = await prisma.ring.findUnique({ where: { id: ringId }, select: { isDemo: true } });
+  if (sourceRing?.isDemo) return; // Demo: wel interne meldingen, nooit externe aflevering.
+
   // 2) Pushmelding (sendPushToUsers stuurt vanzelf alleen naar wie
   // geregistreerde apparaten heeft, en ruimt verlopen abonnementen op).
   await sendPushToUsers(
@@ -159,7 +162,7 @@ export async function notify(params: {
         const { subject, text } = await buildEmail(user);
         await sendMail({ to: user.email, subject, text });
       } catch (err) {
-        console.error(`[notify] E-mail versturen naar ${user.email} mislukt (gebeurtenis ${event}):`, err);
+        console.error(`[notify] E-mailaflevering mislukt (gebeurtenis ${event}; ${err instanceof Error ? err.name : "onbekend"}).`);
       }
     }
   }

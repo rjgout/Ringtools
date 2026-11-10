@@ -55,6 +55,9 @@ async function getTransport() {
 }
 
 export async function sendMail({ to, subject, text }: { to: string | string[]; subject: string; text: string }) {
+  const destinations = Array.isArray(to) ? to : [to];
+  // Gereserveerde fictieve adressen zijn nooit externe afleverbestemmingen.
+  if (destinations.some(address => /@[^>\s,]*\.invalid(?:[>\s,]|$)/i.test(address))) return;
   let timer: NodeJS.Timeout | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new SmtpDeadlineError()), smtpSendDeadlineMs());

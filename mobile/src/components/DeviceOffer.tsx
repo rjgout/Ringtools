@@ -25,7 +25,7 @@ export function DeviceOffer() {
   const checked = useRef<string | null>(null);
 
   const userId = me?.user.id ?? null;
-  const eligible = !!userId && server.status === "ready" && server.caps.deviceAutoEnroll && deviceLoginSupported();
+  const eligible = !me?.user.reviewAccount && !!userId && server.status === "ready" && server.caps.deviceAutoEnroll && deviceLoginSupported();
 
   useEffect(() => {
     if (!eligible || !userId || checked.current === userId) return;

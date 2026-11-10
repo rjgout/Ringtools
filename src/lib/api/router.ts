@@ -1,3 +1,5 @@
+import * as privacy from "../accountDeletion";
+import { loginReviewAccount } from "../reviewAuth";
 import { loginInvitedPerson } from "../invitationLogin";
 import { createVerifiedSession, consumeLoginCode, rotateSessionIfDue, mfaRequired } from "../auth";
 import { rateLimit } from "../rateLimit";
@@ -75,6 +77,28 @@ publicRoute("POST", "/auth/login", async ({ body }) => {
   const device = str(body.deviceName).slice(0, 60).replace(/[^\p{L}\p{N} ._-]/gu, "");
   const session = await createVerifiedSession(user.id, `Ringtools-app${device ? ` (${device})` : ""}`, email.data);
   return { token: session.rawToken, expiresAt: session.expiresAt.toISOString(), ...(await svc.getMe(user.id)) };
+});
+
+publicRoute("POST", "/auth/review/login", async ({ request, body }) => {
+  const result = await loginReviewAccount(str(body.email), str(body.password), clientKeyOf(request));
+  return { token: result.token, expiresAt: result.expiresAt.toISOString(), ...(await svc.getMe(result.userId)) };
+});
+authedRoute("POST", "/auth/review/reauth", async ({ request, auth, body }) => {
+  if (auth.user.accountKind !== "REVIEW") throw new ApiError(403, "Niet beschikbaar.", "forbidden");
+  const result = await loginReviewAccount(auth.user.email, str(body.password), clientKeyOf(request));
+  await svc.revokeMySession(auth.user.id, auth.sessionId);
+  return { token: result.token, expiresAt: result.expiresAt.toISOString() };
+});
+
+authedRoute("GET", "/privacy/deletion", async ({ auth }) => ({ request: await privacy.getAccountDeletionStatus(auth.user.id) }));
+authedRoute("POST", "/privacy/deletion", async ({ auth, body }) => {
+  mgmt.requireFreshAuth(auth);
+  if (body.confirm !== true) throw new ApiError(400, "Bevestig dat je het volledige account wilt verwijderen.", "confirmation-required");
+  return privacy.requestAccountDeletion(auth.user.id);
+});
+publicRoute("POST", "/privacy/deletion/status", async ({ request, body }) => {
+  if (!rateLimit(`deletion-status:${clientKeyOf(request)}`, 60, 60000).allowed) throw new ApiError(429, "Te veel aanvragen. Probeer later opnieuw.", "rate-limited");
+  return { request: await privacy.getDeletionReceiptStatus(str(body.receipt)) };
 });
 
 // Uitnodigingen (ontvanger): voorvertoning en activatie. Token of code staan in de body, nooit in de URL. Alleen issueSession:true vraagt een sessie aan.

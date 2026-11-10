@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireRole } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { SmtpForm, TestMailForm, ChangePasswordForm } from "./SettingsForms";
@@ -9,6 +10,7 @@ export default async function InstellingenPage() {
   return (
     <div className="space-y-5 py-4">
       <h1 className="text-xl font-semibold">Instellingen</h1>
+      <Link href="/instellingen/review" className="btn-ghost">App Review en accountverwijdering beheren</Link>
 
       <SmtpForm
         current={{

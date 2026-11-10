@@ -1,3 +1,4 @@
+import { cleanupDeletionData } from "./accountDeletion";
 import cron from "node-cron";
 import { env } from "./env";
 import { sendDue30DayReminders, deleteDueProcessedCallings, retryPendingCreationNotifications, retryPendingReleaseNotifications } from "./workflow";
@@ -76,4 +77,5 @@ async function runOnce(): Promise<void> {
 
   const deleted = await deleteDueProcessedCallings();
   if (deleted > 0) console.log(`[cron] ${deleted} verwerkte roeping(en) na 30 dagen verwijderd.`);
+  await cleanupDeletionData();
 }

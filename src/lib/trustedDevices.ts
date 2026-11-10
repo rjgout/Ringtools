@@ -52,7 +52,7 @@ export function formatPairingCode(code: string): string {
 export async function createPairing(userId: string): Promise<{ code: string; expiresAt: Date }> {
   if (!env.trustedDevicesEnabled) throw new TrustedDeviceError(404, "Niet beschikbaar.", "not-available");
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user || !user.active || user.role === "ADMIN") throw new TrustedDeviceError(403, "Niet beschikbaar voor dit account.", "forbidden");
+  if (!user || !user.active || user.accountKind !== "NORMAL" || user.role === "ADMIN") throw new TrustedDeviceError(403, "Niet beschikbaar voor dit account.", "forbidden");
   if (!user.mfaEnabled) throw new TrustedDeviceError(403, "Schakel eerst verificatie in om een toestel te koppelen.", "mfa-required");
   const active = await prisma.trustedDevice.count({ where: { userId, revokedAt: null } });
   if (active >= MAX_ACTIVE_DEVICES) throw new TrustedDeviceError(409, "Je hebt het maximum aantal toestellen bereikt. Trek eerst een toestel in.", "limit");
@@ -153,9 +153,9 @@ export async function completePairing(input: CompleteInput): Promise<{ deviceId:
       // Eenmalig verbruiken (bescherming tegen gelijktijdige verzoeken): precies één transactie wint.
       const consumed = await tx.mfaPairing.updateMany({ where: { id: pairing.id, consumedAt: null, claimExpiresAt: { gt: new Date() }, failedAttempts: { lt: MAX_CLAIM_FAILURES } }, data: { consumedAt: new Date() } });
       if (consumed.count !== 1) throw invalid;
-      const rows = await tx.$queryRaw<{ role: string; mfaEnabled: boolean; active: boolean }[]>`SELECT "role"::text AS "role", "mfaEnabled", "active" FROM "User" WHERE "id" = ${pairing.userId} FOR UPDATE`;
+      const rows = await tx.$queryRaw<{ role: string; accountKind: string; mfaEnabled: boolean; active: boolean }[]>`SELECT "role"::text AS "role", "accountKind"::text AS "accountKind", "mfaEnabled", "active" FROM "User" WHERE "id" = ${pairing.userId} FOR UPDATE`;
       const user = rows[0];
-      if (!user || !user.active || user.role === "ADMIN" || !user.mfaEnabled) throw invalid;
+      if (!user || !user.active || user.accountKind !== "NORMAL" || user.role === "ADMIN" || !user.mfaEnabled) throw invalid;
       const active = await tx.trustedDevice.count({ where: { userId: pairing.userId, revokedAt: null } });
       if (active >= MAX_ACTIVE_DEVICES) throw new TrustedDeviceError(409, "Je hebt het maximum aantal toestellen bereikt.", "limit");
       const device = await tx.trustedDevice.create({

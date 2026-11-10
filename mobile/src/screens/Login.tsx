@@ -1,3 +1,5 @@
+import { DeletionReceipt } from "../components/AccountPrivacy";
+import { API_URL } from "../config";
 import logo from "../../resources/icon.png";
 import { digitsOnly } from "../lib/codeInput";
 import { useEffect, useState } from "react";
@@ -10,7 +12,9 @@ import { getPasskeyProvider, PASSKEY_UNAVAILABLE_MESSAGE, PasskeyCancelledError,
 
 /** Inloggen met e-mail + 8-cijferige code uit de e-mail. De link in de mail opent deze app direct (universele link). */
 export function Login({ initialEmail = "" }: { initialEmail?: string; onHaveInvitation?: () => void; onLinkDevice?: () => void }) {
-  const { api, signIn, finishMfa, finishMfaTotp, signInWithDevice } = useAuth();
+  const { api, signIn, signInReview, finishMfa, finishMfaTotp, signInWithDevice } = useAuth();
+  const [demo, setDemo] = useState(false);
+  const [password, setPassword] = useState("");
   const [email, setEmail] = useState(initialEmail);
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code" | "passkey" | "totp">("email");
@@ -140,6 +144,21 @@ export function Login({ initialEmail = "" }: { initialEmail?: string; onHaveInvi
   }
 
 
+  async function review(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setError(null);
+    try { await signInReview(email.trim(), password); }
+    catch (err) { setError(err instanceof ApiRequestError ? err.message : "Aanmelden is niet gelukt."); }
+    finally { setBusy(false); setPassword(""); }
+  }
+  if (demo) return <main className="page center"><form className="glass card stack card-narrow" onSubmit={review}>
+    <h1>Demoaccount</h1><p className="muted">Alleen voor de afgeschermde demonstratie met fictieve gegevens.</p>
+    <label htmlFor="review-email">E-mailadres</label><input id="review-email" type="email" autoComplete="username" autoCapitalize="none" required value={email} onChange={e => setEmail(e.target.value)} />
+    <label htmlFor="review-password">Wachtwoord</label><input id="review-password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} />
+    {error && <div className="error" role="alert">{error}</div>}
+    <button className="btn btn-primary" disabled={busy}>{busy ? "Even geduld…" : "Aanmelden"}</button>
+    <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => { setDemo(false); setPassword(""); setEmail(initialEmail); setError(null); }}>Terug naar normaal aanmelden</button>
+  </form></main>;
+
   return (
     <main className="page center">
       <form className="glass card stack card-narrow" onSubmit={step === "email" ? request : step === "code" ? login : step === "totp" ? totp : (e) => { e.preventDefault(); if (pendingToken) void passkey(pendingToken); }}>
@@ -204,6 +223,8 @@ export function Login({ initialEmail = "" }: { initialEmail?: string; onHaveInvi
           </p>
         )}
 
+        {step === "email" && <button type="button" className="btn btn-ghost btn-block" disabled={busy} onClick={() => { setDemo(true); setEmail(""); setError(null); }}>Demoaccount</button>}
+        {step === "email" && <><DeletionReceipt /><a className="btn btn-ghost" href={`${API_URL}/accountverwijdering`} target="_blank" rel="noreferrer">Account en privacy zonder toegang</a></>}
       </form>
     </main>
   );

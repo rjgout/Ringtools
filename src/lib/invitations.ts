@@ -111,6 +111,8 @@ export async function createInvitation(input: InvitationInput) {
   validateContent({ name, email, role: input.role, churchFunctionCode: input.churchFunctionCode });
 
   const secrets = issueSecrets();
+  const demo = await prisma.ring.findUnique({ where: { id: input.ringId }, select: { isDemo: true } });
+  if (demo?.isDemo) throw new RingError("Vanuit de demoring kunnen geen uitnodigingen worden verstuurd.");
   const created = await prisma.$transaction(async (tx) => {
     const actor = await assertCanManageRing(tx, input.actorId, input.ringId);
     const ring = await tx.ring.findUnique({ where: { id: input.ringId } });
@@ -478,7 +480,7 @@ export async function activateInvitation(credentials: Credentials, clientKey: st
     if (claimed.count !== 1) return { failed: "invalid" as const };
 
 
-    if (existing && (existing.role === "ADMIN" || !existing.active)) {
+    if (existing && (existing.role === "ADMIN" || existing.accountKind !== "NORMAL" || !existing.active)) {
       // Geen overname van het beheerdersaccount of een gedeactiveerd account; de claim wordt teruggedraaid, het verzoek wordt wel vastgelegd.
       throw new RollbackWithAudit(inv.id);
     }
@@ -565,7 +567,7 @@ export async function deleteOldInvitations(): Promise<number> {
 /** Alleen binnen een transactie NA volledig bewezen identiteit aanroepen. Geen publiek activatiebewijs. */
 export async function acceptInvitationsForVerifiedUser(tx: Prisma.TransactionClient, userId: string) {
   const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-  if (!user.active || user.role === "ADMIN") return;
+  if (!user.active || user.accountKind !== "NORMAL" || user.role === "ADMIN") return;
   const email = normalizeEmail(user.email);
   const rows = await tx.ringInvitation.findMany({
     where: { email, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },

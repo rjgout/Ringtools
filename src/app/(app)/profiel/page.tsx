@@ -48,6 +48,7 @@ export default async function ProfielPage() {
         <span aria-hidden>→</span>
       </a>
 
+      <a href="/accountverwijdering" className="glass-card block"><h2 className="font-semibold">Account en privacy</h2><p>Privacyverklaring, accountverwijdering en status van je verzoek.</p></a>
       <InstallPwaCard />
       <PushNotificationCard publicKey={getPublicVapidKey()} />
 

@@ -1,3 +1,4 @@
+import { AccountPrivacy } from "../components/AccountPrivacy";
 import { useEffect, useState } from "react";
 import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
@@ -28,7 +29,7 @@ export function Profile() {
   const [deviceBusy, setDeviceBusy] = useState(false);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const supported = server.caps.deviceLogin && deviceLoginSupported() && !!me;
-  const showDeviceLogin = supported;
+  const showDeviceLogin = supported && !me?.user.reviewAccount;
   const meId = me?.user.id;
   async function refreshDevice() {
     if (meId) setDeviceState(await describeDevice(api, meId));
@@ -113,9 +114,10 @@ export function Profile() {
 
       <section className="glass card stack">
         <h2>Pushmeldingen</h2>
+        {me?.user.reviewAccount && <p>De demo gebruikt alleen interne meldingen; er wordt geen push of e-mail verstuurd.</p>}
         <span className="muted">Je krijgt een melding zonder namen of functies; tikken opent het voorstel.</span>
         {caps.limited && <div role="note" className="note bad">{PERSONAL_TEAM_NOTICE}</div>}
-        {caps.limited ? null : isNative ? <button className="btn btn-primary" onClick={push}>Meldingen aanzetten op dit toestel</button> : <span className="muted">Alleen beschikbaar in de app.</span>}
+        {caps.limited || me?.user.reviewAccount ? null : isNative ? <button className="btn btn-primary" onClick={push}>Meldingen aanzetten op dit toestel</button> : <span className="muted">Alleen beschikbaar in de app.</span>}
         {pushMessage && <div role="status">{pushMessage}</div>}
         {devices.data?.devices.map((d) => (
           <div key={d.id} className="row between">
@@ -180,10 +182,11 @@ export function Profile() {
         ))}
       </section>
 
+      <AccountPrivacy />
       <button className="btn btn-ghost btn-block" onClick={() => void (async () => {
         if (await confirm({ title: "Uitloggen?", message: "Je moet daarna opnieuw inloggen met een e-mailcode en je tweede factor.", confirmLabel: "Uitloggen" })) await signOut();
       })()}>Uitloggen</button>
-      <p className="muted">Ringtools {APP_VERSION}. MFA/passkeys, accountverwijdering en privacyinstellingen vind je voorlopig in de webapp.</p>
+      <p className="muted">Ringtools {APP_VERSION}. MFA en passkeys beheer je via de beveiligde website.</p>
     </div>
   );
 }

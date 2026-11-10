@@ -247,3 +247,6 @@ Op **iOS (alleen in de app)** tekent een echte `UITabBar` de hoofdnavigatie; op 
 ## Vereenvoudigde aanmelding release 1.0
 
 Zie [het implementatie- en migratieoverzicht](AANMELDEN-RELEASE-1.md) voor automatische uitnodigingsacceptatie, lokale sessiekeuze, toestelregistratie en vereiste fysieke acceptatietests. Deze wijziging introduceert geen analytics of biometrische gegevens op de server; alleen publieke sleutels en beveiligingsmetadata worden geregistreerd.
+
+
+App Store-review, fictieve demoaccounts en volledige accountverwijdering: zie [releasepakket](app-store/RELEASEPAKKET.md). Gewone aanmelding/MFA en lokale appvergrendeling blijven behouden. Productieprovisioning en storepublicatie zijn handmatige eigenaarstappen.

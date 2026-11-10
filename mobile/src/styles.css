@@ -421,3 +421,8 @@ input[type="date"], input[type="datetime-local"], input[type="time"] { display: 
 .muted-small { font-size: 0.75rem; }
 .plain-list { list-style: none; padding: 0; margin: 0; }
 summary { cursor: pointer; min-height: var(--touch); display: list-item; }
+
+/* Lange processtatussen houden namen leesbaar op kleine review-/gebruikerschermen. */
+.list-item-row { flex-wrap: wrap; align-items: flex-start; }
+.list-item-main { flex: 1 1 12rem; }
+.list-item-row > .status { max-width: 100%; }

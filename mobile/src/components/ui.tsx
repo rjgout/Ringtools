@@ -229,8 +229,8 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
 export function ListItem({ to, name, kind, subtitle, status, tone = "ok" }: { to: string; name: string; kind: "Voorstel" | "Ontheffing"; subtitle?: string; status: string; tone?: "neutral" | "ok" | "warn" | "bad" }) {
   return (
     <Link to={to} className="glass panel">
-      <div className="row between">
-        <div className="grow">
+      <div className="row between list-item-row">
+        <div className="grow list-item-main">
           <strong>{name}</strong>
           <div className="row row-wrap row-tight">
             <StatusLabel tone={kind === "Ontheffing" ? "warn" : "neutral"}>{kind}</StatusLabel>

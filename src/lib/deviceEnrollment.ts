@@ -34,7 +34,7 @@ function assertFlag() {
 
 async function eligibleUser(userId: string) {
   const u = await prisma.user.findUnique({ where: { id: userId } });
-  if (!u || !u.active || u.role === "ADMIN") throw new TrustedDeviceError(403, "Niet beschikbaar voor dit account.", "forbidden");
+  if (!u || !u.active || u.accountKind !== "NORMAL" || u.role === "ADMIN") throw new TrustedDeviceError(403, "Niet beschikbaar voor dit account.", "forbidden");
 
   return u;
 }
@@ -79,9 +79,9 @@ export async function completeEnrollment(userId: string, input: EnrollInput, ses
 
   try {
     const device = await prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<{ active: boolean; role: string; mfaEnabled: boolean }[]>`SELECT "active", "role"::text AS "role", "mfaEnabled" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      const rows = await tx.$queryRaw<{ active: boolean; role: string; accountKind: string; mfaEnabled: boolean }[]>`SELECT "active", "role"::text AS "role", "accountKind"::text AS "accountKind", "mfaEnabled" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
       const u = rows[0];
-      if (!u || !u.active || u.role === "ADMIN") throw invalid();
+      if (!u || !u.active || u.accountKind !== "NORMAL" || u.role === "ADMIN") throw invalid();
       const consumed = await tx.deviceEnrollment.updateMany({ where: { id: e.id, userId, consumedAt: null, expiresAt: { gt: new Date() }, failedAttempts: { lt: MAX_ENROLL_FAILURES } }, data: { consumedAt: new Date() } });
       if (consumed.count !== 1) throw invalid();
       const active = await tx.trustedDevice.count({ where: { userId, revokedAt: null } });
