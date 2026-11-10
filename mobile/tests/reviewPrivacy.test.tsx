@@ -18,7 +18,12 @@ function setup() {
 }
 it("Demoaccount is secundair en verstuurt exact wachtwoord zonder codeaanvraag", async () => {
   const { api, signInReview } = setup(); render(<Login />);
-  fireEvent.click(screen.getByRole("button", { name: "Demoaccount" }));
+  const demoLink = screen.getByRole("button", { name: "Demoaccount" });
+  const privacyLink = screen.getByRole("link", { name: "Account en privacy" });
+  expect(demoLink.closest(".login-footer-links")).toBeTruthy();
+  expect(privacyLink.getAttribute("href")).toContain("/accountverwijdering");
+  expect(privacyLink.classList.contains("login-footer-link")).toBe(true);
+  fireEvent.click(demoLink);
   fireEvent.change(screen.getByLabelText("E-mailadres"), { target: { value: "review@example.invalid" } });
   fireEvent.change(screen.getByLabelText("Wachtwoord"), { target: { value: "  fictief wachtwoord  " } });
   fireEvent.click(screen.getByRole("button", { name: "Aanmelden" }));
