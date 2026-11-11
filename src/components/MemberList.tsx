@@ -15,7 +15,7 @@ type Member = {
 };
 
 /** Gebruikerslijst van één ring; gedeeld door het scherm van de ringbeheerder en dat van de webmin. */
-export function MemberList({ members, viewerIsAdmin }: { members: Member[]; viewerIsAdmin: boolean }) {
+export function MemberList({ members, viewerIsAdmin, readOnly = false }: { members: Member[]; viewerIsAdmin: boolean; readOnly?: boolean }) {
   if (members.length === 0) {
     return <p className="text-sm text-[var(--text-muted)]">Nog geen gebruikers in deze ring.</p>;
   }
@@ -36,7 +36,7 @@ export function MemberList({ members, viewerIsAdmin }: { members: Member[]; view
               <span className={`badge ${m.active ? "badge-success" : "badge-danger"}`}>{m.active ? "Actief" : "Gedeactiveerd"}</span>
             </span>
           </summary>
-          <EditMemberForm
+          {!readOnly && <EditMemberForm
             membership={{
               id: m.id,
               name: m.user.name,
@@ -47,8 +47,8 @@ export function MemberList({ members, viewerIsAdmin }: { members: Member[]; view
               active: m.active,
             }}
             canEditProfile={viewerIsAdmin || m.otherRingCount === 0}
-          />
-          {viewerIsAdmin && <ResetMfaButton userId={m.userId} userName={m.user.name} email={m.user.email} />}
+          />}
+          {viewerIsAdmin && !readOnly && <ResetMfaButton userId={m.userId} userName={m.user.name} email={m.user.email} />}
         </details>
       ))}
     </div>
