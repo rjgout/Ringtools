@@ -419,6 +419,10 @@ input[type="date"], input[type="datetime-local"], input[type="time"] { display: 
 .mt-2 { margin-top: var(--space-2); }
 .text-right { text-align: right; }
 .muted-small { font-size: 0.75rem; }
+/* Secundaire aanmeldopties blijven subtiel, met volwaardige aanraakdoelen en toetsenbordfocus. */
+.login-footer-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 var(--space-2); margin-top: var(--space-1); color: var(--text-muted); font-size: 0.875rem; }
+.login-footer-link { max-width: 100%; min-width: var(--touch); overflow-wrap: anywhere; text-align: center; display: inline-flex; min-height: var(--touch); align-items: center; justify-content: center; padding: 0 var(--space-1); border: 0; background: transparent; color: var(--text); font: inherit; font-weight: 500; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.login-footer-link:disabled { opacity: 0.45; cursor: default; }
 .plain-list { list-style: none; padding: 0; margin: 0; }
 summary { cursor: pointer; min-height: var(--touch); display: list-item; }
 
@@ -426,3 +430,7 @@ summary { cursor: pointer; min-height: var(--touch); display: list-item; }
 .list-item-row { flex-wrap: wrap; align-items: flex-start; }
 .list-item-main { flex: 1 1 12rem; }
 .list-item-row > .status { max-width: 100%; }
+
+@supports (font: -apple-system-footnote) {
+  .login-footer-links { font: -apple-system-footnote; }
+}

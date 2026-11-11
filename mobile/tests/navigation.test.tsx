@@ -14,6 +14,8 @@ describe("Navigatielogica (puur)", () => {
     expect(tabForPath("/roepingen/x")).toBe("voorstellen"); // voorheen: geen enkele tab actief
     expect(tabForPath("/beheer/inrichting")).toBe("beheer");
     expect(tabForPath("/meldingen")).toBe("meldingen");
+    expect(tabForPath("/demo-beheer")).toBe("profiel");
+    expect(parentPath("/demo-beheer")).toBe("/profiel");
     expect(tabForPath("/onbekend")).toBe("overzicht");
   });
   it("hoofdschermen hebben geen terugknop; diepere schermen wel", () => {

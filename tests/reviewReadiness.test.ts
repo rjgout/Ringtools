@@ -43,6 +43,21 @@ it("database en API houden demo en gewone ringen gescheiden, ook bij gemanipulee
   const denied = await handleApi(new Request(`http://localhost/api/mobile/v1/dashboard?ring=${w.ringId}`, { headers: { Authorization: `Bearer ${normalToken}` } }), ["dashboard"]);
   expect(denied.status).toBe(404);
 });
+it("generiek gebruikersbeheer beschermt de reviewdemo zonder databasefout of wijziging", async () => {
+  const w = await world();
+  const { addMember, updateMember, renameRing, setRingActive } = await import("@/lib/rings");
+  const sample = { actorId: w.admin.id, ringId: w.ringId, role: "HOGERAAD" as const, churchFunction: "Fictieve rol", isRingManager: true, name: "Fictieve extra beheerder", email: "extra@ringtools.invalid" };
+  const count = await prisma.user.count({ where: { accountKind: "REVIEW" } });
+  await expect(addMember(sample)).rejects.toThrow(/Apple-reviewdemo/);
+  const membership = await prisma.ringMembership.findUniqueOrThrow({ where: { userId_ringId: { userId: w.users[0].id, ringId: w.ringId } } });
+  await expect(updateMember({ actorId: w.admin.id, membershipId: membership.id, role: "RINGPRESIDIUM", churchFunction: "Test", isRingManager: true, active: true })).rejects.toThrow(/Apple-reviewdemo/);
+  await expect(renameRing({ actorId: w.admin.id, ringId: w.ringId, name: "Andere demonaam" })).rejects.toThrow(/Apple-reviewdemo/);
+  await expect(setRingActive({ actorId: w.admin.id, ringId: w.ringId, active: false })).rejects.toThrow(/Apple-reviewdemo/);
+  expect(await prisma.user.count({ where: { accountKind: "REVIEW" } })).toBe(count);
+  expect(await prisma.user.count({ where: { email: "extra@ringtools.invalid" } })).toBe(0);
+  expect((await prisma.ring.findUniqueOrThrow({ where: { id: w.ringId } })).active).toBe(true);
+  expect((await prisma.ringMembership.findUniqueOrThrow({ where: { id: membership.id } })).isRingManager).toBe(false);
+});
 it("wachtwoordwijziging en intrekking beëindigen bestaande reviewsessies", async () => {
   const w = await world(); const result = await loginReviewAccount(w.users[0].email, w.passwords[0], `rotate-${sequence}`);
   const replacement = randomBytes(24).toString("base64url");

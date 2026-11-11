@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { AccountPrivacy } from "../components/AccountPrivacy";
 import { useEffect, useState } from "react";
 import { useAuth } from "../lib/auth";
@@ -182,6 +183,7 @@ export function Profile() {
         ))}
       </section>
 
+      {me?.user.reviewAccount && ring?.role === "RINGSECRETARIS" && <Link className="glass panel" to="/demo-beheer">Gebruikersbeheer – demo</Link>}
       <AccountPrivacy />
       <button className="btn btn-ghost btn-block" onClick={() => void (async () => {
         if (await confirm({ title: "Uitloggen?", message: "Je moet daarna opnieuw inloggen met een e-mailcode en je tweede factor.", confirmLabel: "Uitloggen" })) await signOut();

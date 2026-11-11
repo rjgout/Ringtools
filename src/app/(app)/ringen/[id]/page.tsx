@@ -22,8 +22,8 @@ export default async function RingDetailPage({ params }: { params: Promise<{ id:
       where: { ringId: ring.id, status: { not: "PROCESSED" } },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.user.findMany({
-      where: { role: { not: "ADMIN" }, memberships: { none: { ringId: ring.id } } },
+    ring.isDemo ? Promise.resolve([]) : prisma.user.findMany({
+      where: { accountKind: "NORMAL", role: { not: "ADMIN" }, memberships: { none: { ringId: ring.id } } },
       orderBy: { name: "asc" },
       select: { id: true, name: true, email: true },
     }),
@@ -38,15 +38,21 @@ export default async function RingDetailPage({ params }: { params: Promise<{ id:
         <h1 className="mt-1 text-xl font-semibold">{ring.name}</h1>
       </div>
 
-      <div className="glass-card">
-        <RenameRingForm ringId={ring.id} name={ring.name} />
-      </div>
-
-      <AddMemberForm ringId={ring.id} existingUsers={allUsers} />
+      {ring.isDemo ? (
+        <div className="glass-card space-y-2">
+          <p>Dit is een afgeschermde Apple-reviewdemo. Alleen de speciale reviewaccounts mogen hier aanmelden; gewone accounts en ringbeheerrechten worden hier niet via Gebruikersbeheer aangemaakt.</p>
+          <Link href="/instellingen/review" className="underline">Beheer reviewaccounts en demogegevens via Instellingen → App Review</Link>
+        </div>
+      ) : (
+        <>
+          <div className="glass-card"><RenameRingForm ringId={ring.id} name={ring.name} /></div>
+          <AddMemberForm ringId={ring.id} existingUsers={allUsers} />
+        </>
+      )}
 
       <section className="space-y-3">
         <h2 className="font-semibold">Gebruikers van deze ring</h2>
-        <MemberList members={members} viewerIsAdmin />
+        <MemberList members={members} viewerIsAdmin readOnly={ring.isDemo} />
       </section>
 
       <section className="space-y-3">
@@ -66,7 +72,7 @@ export default async function RingDetailPage({ params }: { params: Promise<{ id:
                   {c.functionTitle} · {phaseLabel(c)}
                 </div>
               </div>
-              <DeleteCallingButton callingId={c.id} />
+              {!ring.isDemo && <DeleteCallingButton callingId={c.id} />}
             </div>
           ))
         )}

@@ -118,6 +118,9 @@ export class ApiClient {
   login(email: string, code: string, deviceName: string) {
     return this.request<LoginResult | PendingMfaLogin>("POST", "/auth/login", { email, code, deviceName }, null);
   }
+  reviewManagement(ringId: string) {
+    return this.request<import("@shared/api-types").ReviewManagementView>("GET", `/rings/${encodeURIComponent(ringId)}/review-management`);
+  }
   reviewLogin(email: string, password: string) {
     return this.request<LoginResult>("POST", "/auth/review/login", { email, password }, null);
   }

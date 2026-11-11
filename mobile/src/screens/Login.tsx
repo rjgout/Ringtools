@@ -223,8 +223,14 @@ export function Login({ initialEmail = "" }: { initialEmail?: string; onHaveInvi
           </p>
         )}
 
-        {step === "email" && <button type="button" className="btn btn-ghost btn-block" disabled={busy} onClick={() => { setDemo(true); setEmail(""); setError(null); }}>Demoaccount</button>}
-        {step === "email" && <><DeletionReceipt /><a className="btn btn-ghost" href={`${API_URL}/accountverwijdering`} target="_blank" rel="noreferrer">Account en privacy zonder toegang</a></>}
+        {step === "email" && <>
+          <DeletionReceipt />
+          <nav className="login-footer-links" aria-label="Overige aanmeldopties">
+            <button type="button" className="login-footer-link" disabled={busy} onClick={() => { setDemo(true); setEmail(""); setError(null); }}>Demoaccount</button>
+            <span aria-hidden="true">·</span>
+            <a className="login-footer-link" href={`${API_URL}/accountverwijdering`} target="_blank" rel="noreferrer">Account en privacy</a>
+          </nav>
+        </>}
       </form>
     </main>
   );

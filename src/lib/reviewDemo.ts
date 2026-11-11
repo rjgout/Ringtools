@@ -20,6 +20,11 @@ export async function requireSystemAdmin(tx: Prisma.TransactionClient, actorId: 
 function validatePassword(password: string) {
   if (password.length < 20 || Buffer.byteLength(password, "utf8") > 72) throw new ReviewManagementError("Gebruik per account een uniek wachtwoord van minimaal 20 tekens en maximaal 72 UTF-8-bytes.");
 }
+/** Houdt echte, nog lopende resets gescheiden van herstel na een afgebroken proces. */
+async function lockDemoOperation(tx: Prisma.TransactionClient) {
+  const rows = await tx.$queryRaw<{ locked: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtextextended('ringtools:review-reset-run', 0)) AS locked`;
+  if (!rows[0]?.locked) throw new ReviewManagementError("Demoherstel is bezig. Wacht tot dit is afgerond voordat je accounts wijzigt.");
+}
 /** Alleen het afgeschermde webbeheer roept dit na recente beheerders-MFA aan. Wachtwoorden worden nooit teruggegeven. */
 export async function provisionReviewDemo(actorId: string, passwords: string[]) {
   if (passwords.length !== 3) throw new ReviewManagementError("Er zijn drie wachtwoordvelden nodig.");
@@ -27,6 +32,7 @@ export async function provisionReviewDemo(actorId: string, passwords: string[]) 
   const hashes = await Promise.all(passwords.map(p => p ? bcrypt.hash(p, 12) : null));
   return prisma.$transaction(async tx => {
     await requireSystemAdmin(tx, actorId);
+    await lockDemoOperation(tx);
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('ringtools:review-provision', 0))`;
     let ring = await tx.ring.findUnique({ where: { demoKey: DEMO_KEY } });
     if (!ring) {
@@ -34,12 +40,20 @@ export async function provisionReviewDemo(actorId: string, passwords: string[]) 
       ring = await tx.ring.create({ data: { name: "Ringtools Demo", isDemo: true, demoKey: DEMO_KEY } });
     }
     if (!ring.isDemo) throw new ReviewManagementError("Ongeldige demo-inrichting; er is niets gewijzigd.");
+    if (ring.name !== "Ringtools Demo") {
+      const collision = await tx.ring.findUnique({ where: { name: "Ringtools Demo" } });
+      if (collision) throw new ReviewManagementError("De vaste demonaam is al in gebruik; geen bestaande ring wordt overgenomen.");
+      ring = await tx.ring.update({ where: { id: ring.id }, data: { name: "Ringtools Demo" } });
+    }
+    const unexpected = await tx.user.count({ where: { reviewRingId: ring.id, email: { notIn: REVIEW_ACCOUNTS.map(a => a.email) } } });
+    if (unexpected) throw new ReviewManagementError("Onverwachte accounts in de demo. Laat de inrichting gecontroleerd beoordelen; er is niets gewijzigd.");
     for (let i = 0; i < REVIEW_ACCOUNTS.length; i++) {
       const spec = REVIEW_ACCOUNTS[i]; const hash = hashes[i];
       let user = await tx.user.findUnique({ where: { email: spec.email }, include: { reviewCredential: true } });
       if (user && (user.accountKind !== "REVIEW" || user.reviewRingId !== ring.id)) throw new ReviewManagementError("Een bestaand gewoon account wordt nooit overgenomen.");
-      if (!user && !hash) throw new ReviewManagementError("Vul voor elk nieuw reviewaccount een wachtwoord in.");
+      if (!user?.reviewCredential && !hash) throw new ReviewManagementError("Vul voor elk nieuw reviewaccount een wachtwoord in.");
       if (!user) user = await tx.user.create({ data: { name: spec.name, email: spec.email, role: spec.role, accountKind: "REVIEW", reviewRingId: ring.id, emailNotificationsEnabled: false, activatedAt: new Date() }, include: { reviewCredential: true } });
+      await tx.user.update({ where: { id: user.id }, data: { name: spec.name, role: spec.role, emailNotificationsEnabled: false } });
       await tx.ringMembership.upsert({ where: { userId_ringId: { userId: user.id, ringId: ring.id } },
         create: { userId: user.id, ringId: ring.id, role: spec.role, churchFunction: spec.name, churchFunctionCode: spec.churchFunctionCode, isRingManager: false },
         update: { role: spec.role, churchFunctionCode: spec.churchFunctionCode, isRingManager: false, active: hash ? true : user.active } });
@@ -58,9 +72,11 @@ export async function provisionReviewDemo(actorId: string, passwords: string[]) 
 export async function setReviewAccountActive(actorId: string, userId: string, active: boolean) {
   await prisma.$transaction(async tx => {
     await requireSystemAdmin(tx, actorId);
+    await lockDemoOperation(tx);
     await tx.$queryRaw`SELECT id FROM "User" WHERE id=${userId} FOR UPDATE`;
     const u = await tx.user.findUnique({ where: { id: userId } });
-    if (u?.accountKind !== "REVIEW") throw new ReviewManagementError("Dit is geen reviewaccount.");
+    const demo = await tx.ring.findUnique({ where: { demoKey: DEMO_KEY } });
+    if (u?.accountKind !== "REVIEW" || u.reviewRingId !== demo?.id || !REVIEW_ACCOUNTS.some(a => a.email === u.email)) throw new ReviewManagementError("Dit is geen reviewaccount.");
     await tx.user.update({ where: { id: userId }, data: { active } });
     await tx.session.deleteMany({ where: { userId } });
     await tx.securityEvent.create({ data: { userId, actorUserId: actorId, type: "REVIEW_DISABLED", detail: active ? "opnieuw beschikbaar" : "ingetrokken" } });
@@ -68,6 +84,13 @@ export async function setReviewAccountActive(actorId: string, userId: string, ac
 }
 /** Reset uitsluitend de gemarkeerde demo. De inhoud wordt via gewone domeintransities opgebouwd. */
 export async function resetReviewDemo(actorId: string) {
+  return prisma.$transaction(async gate => {
+    await requireSystemAdmin(gate, actorId);
+    await lockDemoOperation(gate);
+    return resetReviewDemoLocked(actorId);
+  }, { timeout: 120000, maxWait: 5000 });
+}
+async function resetReviewDemoLocked(actorId: string) {
   const state = await prisma.$transaction(async tx => {
     await requireSystemAdmin(tx, actorId);
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('ringtools:review-provision', 0))`;
@@ -75,7 +98,7 @@ export async function resetReviewDemo(actorId: string) {
     if (!ring?.isDemo || ring.name !== "Ringtools Demo") throw new ReviewManagementError("Geen geldige demoring. Provisioning is eerst nodig.");
     await tx.$queryRaw`SELECT id FROM "User" WHERE "reviewRingId"=${ring.id} ORDER BY id FOR UPDATE`;
     await tx.$queryRaw`SELECT id FROM "Ring" WHERE id=${ring.id} FOR UPDATE`;
-    if (ring.demoResetting) throw new ReviewManagementError("Een demoherstel loopt al. Probeer het later opnieuw.");
+    // De procesvergrendeling is al verkregen. Een achtergebleven vlag van een afgebroken proces mag nu veilig worden hersteld.
     await tx.ring.update({ where: { id: ring.id }, data: { demoResetting: true, active: true } });
     const users = await tx.user.findMany({ where: { accountKind: "REVIEW", reviewRingId: ring.id }, orderBy: { email: "asc" } });
     if (users.length !== 3 || users.some((u,i) => u.email !== REVIEW_ACCOUNTS[i].email || !u.active)) throw new ReviewManagementError("Maak de drie reviewaccounts eerst beschikbaar via provisioning.");
@@ -136,8 +159,8 @@ export async function resetReviewDemo(actorId: string) {
   }
   await prisma.ring.update({ where: { id: state.ringId }, data: { demoResetting: false } });
   return { ringId: state.ringId };
-  } catch (err) {
+  } catch {
     await prisma.ring.update({ where: { id: state.ringId }, data: { active: false, demoResetting: false } });
-    throw err; // Een mislukte seed blijft afgeschermd. De beheerder kan veilig opnieuw proberen.
+    throw new ReviewManagementError("Demoherstel is niet afgerond. De demo is uitgeschakeld; controleer de drie reviewaccounts en probeer het herstel opnieuw.");
   }
 }

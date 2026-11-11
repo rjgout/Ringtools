@@ -13,6 +13,7 @@ import { trustedDevicesAvailable, listTrustedDevices } from "@/lib/trustedDevice
 
 export default async function BeveiligingPage() {
   const user = await requireUser();
+  if (user.accountKind !== "NORMAL") return <section><h1>Beveiliging demoaccount</h1><p>Dit demoaccount gebruikt een afzonderlijk reviewwachtwoord. Alleen de systeembeheerder kan dit via Instellingen → App Review aanpassen. Na een wachtwoordwijziging worden bestaande sessies ingetrokken.</p></section>;
   const currentSession = await getCurrentSession();
 
   const sessions = await listSessionsForUser(user.id);

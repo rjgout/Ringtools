@@ -396,3 +396,11 @@ export type OntheffingConceptInput = Partial<{
     userId?: string | null;
   }[];
 }>;
+
+/** Alleen-lezen demonstratie, zonder ringbeheerrechten of mutatiemogelijkheden. */
+export type ReviewManagementView = {
+  readOnly: true;
+  ringName: string;
+  users: { name: string; role: Role; churchFunction: string; active: boolean }[];
+  units: { name: string; kind: "WIJK" | "GEMEENTE" }[];
+};
