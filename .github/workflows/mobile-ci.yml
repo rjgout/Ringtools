@@ -251,12 +251,15 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/splash-simulator" CODE_SIGNING_ALLOWED=NO build
       - name: Launchscreen op iPhone en iPad vastleggen (licht en donker)
+        timeout-minutes: 25
         run: ./scripts/capture-splash-simulators.sh "$RUNNER_TEMP/splash-simulator/Build/Products/Debug-iphonesimulator/App.app" "$RUNNER_TEMP/splash-screenshots"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ringtools-ios-splash-screenshots
-          path: ${{ runner.temp }}/splash-screenshots/*.png
+          path: |
+            ${{ runner.temp }}/splash-screenshots/*.png
+            ${{ runner.temp }}/splash-screenshots/*.log
           if-no-files-found: warn
           retention-days: 14
       - name: iOS-configuraties controleren (productie-entitlements én Personal Team-testconfiguratie)
