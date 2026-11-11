@@ -39,11 +39,11 @@ export async function mayEnrollFirstFactorWhilePending(actor: MfaActor): Promise
 
 export async function resolveMfaActor(): Promise<MfaActor | null> {
   const awaiting = await getAwaitingMfaUser();
-  if (awaiting) {
+  if (awaiting && awaiting.user.accountKind === "NORMAL") {
     return { userId: awaiting.userId, sessionId: awaiting.sessionId, mode: "pending", mfaAt: null, email: awaiting.user.email, name: awaiting.user.name, mfaRequired: true };
   }
   const active = await getCurrentSession();
-  if (active) {
+  if (active && active.user.accountKind === "NORMAL") {
     return { userId: active.user.id, sessionId: active.sessionId, mode: "full", mfaAt: active.mfaAt, email: active.user.email, name: active.user.name, mfaRequired: mfaRequired(active.user) };
   }
   return null;

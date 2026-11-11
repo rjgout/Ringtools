@@ -22,6 +22,13 @@ import { logSecurityEvent } from "@/lib/securityEvents";
 import { rateLimit } from "@/lib/rateLimit";
 import { totpCodeSchema, recoveryCodeSchema } from "@/lib/validation";
 
+/** Reviewaccounts gebruiken uitsluitend het afzonderlijke wachtwoordbeheer. */
+async function normalMfaSession() {
+  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  if (session.user.accountKind !== "NORMAL") redirect("/profiel/beveiliging");
+  return session;
+}
+
 export type ActionResult = { ok: boolean; message: string };
 export type TotpEnrollResult = { ok: boolean; message: string; recoveryCodes?: string[] };
 
@@ -177,7 +184,7 @@ export type TotpEnrollmentView = { qrDataUrl: string; secret: string };
 
 /** Start een nieuwe TOTP-inschrijving vanuit /profiel/beveiliging (admin, altijd een vers secret). */
 export async function startTotpReenrollmentAction(): Promise<TotpEnrollmentView> {
-  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  const session = await normalMfaSession();
   if (session.user.role !== "ADMIN") throw new Error("Niet beschikbaar voor dit account.");
   const { uri, secret } = await startTotpEnrollment(session.user.id, session.user.email, true);
   const qrDataUrl = await QRCode.toDataURL(uri, { margin: 1, width: 240 });
@@ -186,7 +193,7 @@ export async function startTotpReenrollmentAction(): Promise<TotpEnrollmentView>
 
 /** Opnieuw instellen van TOTP vanuit /profiel/beveiliging (admin). Rondt direct af: de gebruiker is al volledig ingelogd. */
 export async function confirmTotpReenrollmentAction(_prev: TotpEnrollResult | null, formData: FormData): Promise<TotpEnrollResult> {
-  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  const session = await normalMfaSession();
   if (session.user.role !== "ADMIN") return { ok: false, message: "Niet beschikbaar voor dit account." };
 
   const parsed = totpCodeSchema.safeParse(formData.get("code"));
@@ -205,7 +212,7 @@ export async function confirmTotpReenrollmentAction(_prev: TotpEnrollResult | nu
 }
 
 export async function regenerateRecoveryCodesAction(): Promise<{ ok: boolean; message: string; recoveryCodes?: string[] }> {
-  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  const session = await normalMfaSession();
   // Beheerder, of een gewone gebruiker met een bevestigde authenticator-app (vlag aan); de oude set vervalt direct.
   if (session.user.role !== "ADMIN" && !(await enrolledMethods(session.user)).includes("totp")) {
     return { ok: false, message: "Niet beschikbaar voor dit account." };
@@ -218,7 +225,7 @@ export async function regenerateRecoveryCodesAction(): Promise<{ ok: boolean; me
 }
 
 export async function removePasskeyAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  const session = await normalMfaSession();
   const credentialId = String(formData.get("credentialId") || "");
 
   // Eén transactie met rijvergrendeling: de laatste bruikbare methode kan niet worden weggehaald, ook niet door twee gelijktijdige verwijderingen.
@@ -231,7 +238,7 @@ export async function removePasskeyAction(_prev: ActionResult | null, formData: 
 }
 
 export async function revokeSessionAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  const session = await normalMfaSession();
   const sessionId = String(formData.get("sessionId") || "");
   if (sessionId === session.sessionId) {
     return { ok: false, message: "Je kunt je huidige sessie hier niet beëindigen; gebruik 'Uitloggen'." };
@@ -255,12 +262,12 @@ export async function revokeSessionAction(_prev: ActionResult | null, formData: 
  */
 export async function resetUserMfaAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const admin = await requireRole(["ADMIN"]);
-  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  const session = await normalMfaSession();
   if (session.user.id !== admin.id) return { ok: false, message: "Niet toegestaan." };
 
   const targetId = String(formData.get("userId") || "");
   const target = await prisma.user.findUnique({ where: { id: targetId } });
-  if (!target || target.role === "ADMIN") {
+  if (!target || target.role === "ADMIN" || target.accountKind !== "NORMAL") {
     return { ok: false, message: "Dit account kan niet via dit scherm worden gereset." };
   }
   if (formData.get("identityChecked") !== "yes") {
@@ -320,6 +327,7 @@ export async function resetUserMfaAction(_prev: ActionResult | null, formData: F
 export async function enableUserMfaAction(): Promise<ActionResult> {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
+  if (session.user.accountKind !== "NORMAL") return { ok: false, message: "Niet beschikbaar voor dit account." };
   if (session.user.role === "ADMIN") return { ok: false, message: "Voor het beheerdersaccount is verificatie altijd verplicht." };
 
   const result = await enableMfaGuarded(session.user.id);
@@ -329,7 +337,8 @@ export async function enableUserMfaAction(): Promise<ActionResult> {
 }
 
 export async function disableUserMfaAction(): Promise<ActionResult> {
-  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  const session = await normalMfaSession();
+  if (session.user.accountKind !== "NORMAL") return { ok: false, message: "Niet beschikbaar voor dit account." };
   if (session.user.role === "ADMIN") return { ok: false, message: "Voor het beheerdersaccount is verificatie altijd verplicht." };
 
   await prisma.user.update({ where: { id: session.user.id }, data: { mfaEnabled: false } });
@@ -341,7 +350,7 @@ export async function disableUserMfaAction(): Promise<ActionResult> {
 
 /** Start de inschrijving van een authenticator-app. Met MFA aan vereist dit een recente verificatie (geen methode erbij met alleen een e-mailcode). */
 export async function startUserTotpEnrollmentAction(): Promise<TotpEnrollmentView> {
-  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  const session = await normalMfaSession();
   if (!totpAllowedForUser(session.user.role)) throw new Error("Niet beschikbaar voor dit account.");
   if (await isTotpConfirmed(session.user.id)) throw new Error("Er is al een authenticator-app ingesteld.");
   const { uri, secret } = await startTotpEnrollment(session.user.id, session.user.email);
@@ -350,7 +359,7 @@ export async function startUserTotpEnrollmentAction(): Promise<TotpEnrollmentVie
 }
 
 export async function confirmUserTotpEnrollmentAction(_prev: TotpEnrollResult | null, formData: FormData): Promise<TotpEnrollResult> {
-  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  const session = await normalMfaSession();
   if (!totpAllowedForUser(session.user.role)) return { ok: false, message: "Niet beschikbaar voor dit account." };
 
   const parsed = totpCodeSchema.safeParse(formData.get("code"));
@@ -369,7 +378,7 @@ export async function confirmUserTotpEnrollmentAction(_prev: TotpEnrollResult | 
 
 /** Verwijdert de authenticator-app en de herstelcodes. Recente MFA vereist; de laatste methode kan niet weg zolang verificatie aan staat. */
 export async function removeUserTotpAction(): Promise<ActionResult> {
-  const session = await requireRecentMfa("/profiel/beveiliging/herverifieer");
+  const session = await normalMfaSession();
   const result = await removeTotpGuarded(session.user.id);
   if (!result.ok) return { ok: false, message: result.message };
   await logSecurityEvent({ userId: session.user.id, type: "TOTP_RESET", detail: "Authenticator-app verwijderd door gebruiker" });

@@ -69,6 +69,7 @@ async function resolveUser(
     if (opts.actor.role !== "ADMIN") throw new AuthorizationError();
     const user = await tx.user.findUnique({ where: { id: opts.existingUserId } });
     if (!user || user.role === "ADMIN") throw new RingError("Deze gebruiker bestaat niet.");
+    if (user.accountKind !== "NORMAL") throw new RingError("Dit account kan niet aan een gewone ring worden gekoppeld. Beheer reviewaccounts via Instellingen → App Review.");
     return { user, isNew: false };
   }
 
@@ -80,6 +81,7 @@ async function resolveUser(
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${email}, 0))`;
   const existing = await tx.user.findUnique({ where: { email } });
   if (existing) {
+    if (existing.accountKind !== "NORMAL") throw new RingError("Dit account kan niet via gewoon gebruikersbeheer worden gekoppeld. Gebruik voor reviewaccounts Instellingen → App Review.");
     if (opts.actor.role === "ADMIN" && existing.role !== "ADMIN") {
       return { user: existing, isNew: false };
     }
@@ -289,6 +291,7 @@ export async function updateMember(input: {
     if (!before) throw new RingError("Dit lidmaatschap bestaat niet.");
     const actor = await assertCanManageRing(tx, input.actorId, before.ringId);
     const ring = await tx.ring.findUnique({ where: { id: before.ringId }, select: { isDemo: true } });
+    if (before.user.accountKind !== "NORMAL" && !ring?.isDemo) throw new RingError("Dit account kan niet via gewoon gebruikersbeheer worden gewijzigd.");
     if (ring?.isDemo) throw new RingError("De gebruikers van de afgeschermde Apple-reviewdemo worden uitsluitend beheerd via Instellingen → App Review.");
 
     // Dezelfde volgorde als code-aanmelding: e-mailidentiteit, gebruiker, ring.

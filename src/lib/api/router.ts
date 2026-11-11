@@ -242,6 +242,7 @@ authedRoute("POST", "/devices/remove", async ({ auth, body }) => svc.unregisterD
 // ---- Gebruikersbeheer: ringbeheerder (eigen ring) ----
 
 authedRoute("POST", "/auth/reauth", async ({ auth, body }) => mgmt.userReauth(auth, body));
+authedRoute("GET", "/rings/:id/review-management", async ({ auth, params }) => mgmt.reviewManagementFor(auth, params.id));
 authedRoute("GET", "/rings/:id/users", async ({ auth, params }) => mgmt.listUsersFor(auth, params.id));
 authedRoute("POST", "/rings/:id/users/:userId/login-mail", async ({ auth, params }) => mgmt.sendLoginMailFor(auth, params.id, params.userId));
 authedRoute("POST", "/rings/:id/users", async ({ auth, params, body }) => mgmt.addUserFor(auth, params.id, body));

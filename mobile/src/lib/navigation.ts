@@ -16,7 +16,7 @@ export const TAB_ROOT: Record<TabId, string> = {
 export function tabForPath(pathname: string): TabId {
   if (pathname.startsWith("/voorstellen") || pathname.startsWith("/roepingen") || pathname.startsWith("/ontheffingen")) return "voorstellen";
   if (pathname.startsWith("/meldingen")) return "meldingen";
-  if (pathname.startsWith("/profiel")) return "profiel";
+  if (pathname.startsWith("/profiel") || pathname === "/demo-beheer") return "profiel";
   if (pathname.startsWith("/beheer")) return "beheer";
   return "overzicht"; // ook /open/…
 }
@@ -28,6 +28,7 @@ export function isTabRoot(pathname: string): boolean {
 
 /** Het bovenliggende scherm van een dieper scherm, voor de terugknop als er geen eerdere stap in de geschiedenis is (bijvoorbeeld na een melding of link). */
 export function parentPath(pathname: string): string {
+  if (pathname === "/demo-beheer") return "/profiel";
   if (pathname.startsWith("/voorstellen/")) return "/voorstellen";
   if (pathname.startsWith("/roepingen/")) return "/voorstellen";
   if (pathname.startsWith("/ontheffingen")) return "/voorstellen"; // ontheffingen staan in de lijst bij Voorstellen
@@ -45,6 +46,7 @@ export function titleOf(pathname: string): string {
 
 /** Titel in het midden van de navigatiebalk van dieper liggende schermen. */
 export function navTitle(pathname: string): string {
+  if (pathname === "/demo-beheer") return "Gebruikersbeheer – demo";
   if (pathname === "/voorstellen/nieuw") return "Nieuw voorstel";
   if (pathname.startsWith("/voorstellen/concept/")) return "Concept";
   if (pathname.startsWith("/roepingen/")) return "Voorstel";

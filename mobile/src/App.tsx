@@ -1,3 +1,4 @@
+import { ReviewManagementDemo } from "./screens/ReviewManagementDemo";
 import { OntheffingForm } from "./screens/OntheffingForm";
 import { OntheffingDetail } from "./screens/OntheffingDetail";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -182,6 +183,7 @@ function Shell() {
             {ring.isRingManager && <Route path="/inrichting" element={<Navigate to="/beheer/inrichting" replace />} />}
             {ring.isRingManager && <Route path="/gebruikers" element={<Navigate to="/beheer/gebruikers" replace />} />}
             <Route path="/meldingen" element={<Notifications onChanged={refreshUnread} />} />
+            <Route path="/demo-beheer" element={<ReviewManagementDemo />} />
             <Route path="/profiel" element={<Profile />} />
             <Route path="*" element={<Home />} />
           </Routes>

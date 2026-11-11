@@ -1,4 +1,5 @@
 "use server";
+import { AuthorizationError } from "@/lib/workflow";
 import { revalidatePath } from "next/cache";
 import { requireRole, requireRecentMfa } from "@/lib/session";
 import { provisionReviewDemo, resetReviewDemo, setReviewAccountActive, ReviewManagementError } from "@/lib/reviewDemo";
@@ -11,6 +12,7 @@ async function administrator() {
 }
 const text = (f: FormData, key: string) => String(f.get(key) ?? "");
 function failure(err: unknown): Result {
+  if (err instanceof AuthorizationError) return { ok: false, message: "Je hebt geen bevoegdheid voor deze beheeractie." };
   if (err instanceof ReviewManagementError || err instanceof AccountDeletionError) return { ok: false, message: err.message };
   throw err;
 }

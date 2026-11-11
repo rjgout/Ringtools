@@ -157,7 +157,7 @@ jobs:
       - run: npx prisma migrate deploy
       - name: Backend-tests die de mobiele apps raken
         run: >-
-          npx vitest run tests/reviewReadiness.test.ts tests/notificationPrivacy.test.ts tests/workflowLifecycleApi.test.ts tests/awaitingRelease.test.ts
+          npx vitest run tests/reviewRecovery.test.ts tests/reviewReadiness.test.ts tests/notificationPrivacy.test.ts tests/workflowLifecycleApi.test.ts tests/awaitingRelease.test.ts
           tests/api.test.ts tests/nativePush.test.ts tests/wellknown.test.ts tests/push.test.ts
           tests/sessions.test.ts tests/openlinks.test.ts tests/mfa.test.ts tests/mfaProof.test.ts
           tests/rings.test.ts tests/hardening.test.ts tests/notifications.test.ts

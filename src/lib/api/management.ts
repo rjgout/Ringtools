@@ -156,3 +156,15 @@ export async function sendLoginMailFor(auth: ApiAuth, ringId: string, userId: st
   await logSecurityEvent({ userId, type: "LOGIN_MAIL_RESENT_BY_MANAGER", actorUserId: auth.user.id, detail: `Ring ${ringId}` });
   return { ok: true, message: "Er is een inlogmail verstuurd naar het geregistreerde e-mailadres van dit lid." };
 }
+
+/** Bewust aparte leesroute: dit verleent geen bevoegdheid op gewone gebruikers-/inrichtingsroutes. */
+export async function reviewManagementFor(auth: ApiAuth, ringId: string) {
+  if (auth.user.accountKind !== "REVIEW" || auth.user.reviewRingId !== ringId) throw new ApiError(404, "Niet gevonden.", "not-found");
+  const membership = await requireMembershipFor(auth.user.id, ringId);
+  if (!membership.ring.isDemo || membership.role !== "RINGSECRETARIS") throw new ApiError(403, "Deze demonstratie is beschikbaar voor Apple Review 3.", "forbidden");
+  const [users, units] = await Promise.all([
+    prisma.ringMembership.findMany({ where: { ringId, user: { accountKind: "REVIEW", reviewRingId: ringId } }, select: { role: true, churchFunction: true, active: true, user: { select: { name: true, active: true } } }, orderBy: { user: { name: "asc" } } }),
+    prisma.ringUnit.findMany({ where: { ringId }, select: { name: true, kind: true }, orderBy: { name: "asc" } }),
+  ]);
+  return { readOnly: true as const, ringName: membership.ring.name, users: users.map(m => ({ name: m.user.name, role: m.role, churchFunction: m.churchFunction, active: m.active && m.user.active })), units };
+}
