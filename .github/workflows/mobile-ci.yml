@@ -183,6 +183,8 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - name: Splash-assets controleren (huisstijl, geen oude placeholders)
+        run: npm run check:splash
       - run: npm test
       - run: npm run build
       - name: Tests van de iOS-bundlecontrole (signing, get-task-allow, APNs)
@@ -247,7 +249,16 @@ jobs:
         run: |
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO build
+            -derivedDataPath "$RUNNER_TEMP/splash-simulator" CODE_SIGNING_ALLOWED=NO build
+      - name: Launchscreen op iPhone en iPad vastleggen (licht en donker)
+        run: ./scripts/capture-splash-simulators.sh "$RUNNER_TEMP/splash-simulator/Build/Products/Debug-iphonesimulator/App.app" "$RUNNER_TEMP/splash-screenshots"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ringtools-ios-splash-screenshots
+          path: ${{ runner.temp }}/splash-screenshots/*.png
+          if-no-files-found: warn
+          retention-days: 14
       - name: iOS-configuraties controleren (productie-entitlements én Personal Team-testconfiguratie)
         run: ./scripts/verify-ios-configs.sh
       # Release-archive voor een echt toestel, zonder signing: vangt fouten die alleen in Release/device optreden vóór een TestFlight-upload.

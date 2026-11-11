@@ -137,6 +137,14 @@ ok(existsSync(join(root, "ios/App/App/Assets.xcassets/AppIcon.appiconset")), "iO
   ok(/environment:\s*testflight/.test(tf) && /workflow_dispatch:/.test(tf) && !/\n\s*(push|pull_request|schedule):/.test(tf), "ios-testflight.yml moet handmatig (workflow_dispatch) draaien met de omgeving 'testflight'.");
 }
 
+// Splash: expliciete native verwijzingen, vaste donkere achtergrond en begrensde beeldverhouding.
+const launch = read("ios/App/App/Base.lproj/LaunchScreen.storyboard");
+ok(launch.includes('contentMode="scaleAspectFit"') && !launch.includes('scaleAspectFill'), "iOS-splash mag het logo niet bijsnijden of schermvullend oprekken.");
+ok(launch.includes('id="mark-fit-width"') && launch.includes('id="mark-fit-height"'), "iOS-splash moet op smalle en liggende schermen begrensd blijven.");
+const launchTheme = read("android/app/src/main/res/values/styles.xml");
+ok(launchTheme.includes('name="windowSplashScreenAnimatedIcon">@drawable/splash_mark'), "Android 12+-splash moet het Ringtools-beeld expliciet gebruiken.");
+ok(launchTheme.includes('name="windowSplashScreenBackground">@color/splash_background'), "Android-splash moet de donkere achtergrond expliciet gebruiken.");
+
 if (errors.length) {
   console.error("Native configuratie: FOUT\n- " + errors.join("\n- "));
   process.exit(1);

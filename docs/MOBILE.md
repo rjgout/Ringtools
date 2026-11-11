@@ -253,3 +253,7 @@ App Store-review, fictieve demoaccounts en volledige accountverwijdering: zie [r
 
 
 Uitvoeringstaken worden na `APPROVED` afzonderlijk door ringstaf vrijgegeven met **Vrijgeven voor uitvoering**. Vooraf toewijzen geeft geen extra toegang of melding. De iOS-/Android-client gebruikt dezelfde API als de beveiligde website; functionele externe meldingen zijn uitsluitend generiek. [Beleid, migratie, incidentbeoordeling en fysieke acceptatie](NOTIFICATIE-PRIVACY-UITVOERING.md).
+
+## Native opstartbranding
+
+De splash gebruikt het bestaande Ringtools-appicoon (zeven units en één ring) op een donkere achtergrond. iOS heeft een begrensde, gecentreerde imageview voor iPhone/iPad; Android gebruikt een expliciete Android 12+-resource met veilige marges en een consistente compatibele fallback. Regenereren en controleren: `cd mobile && npm run assets:splash && npm run check:splash`. Zie [NATIVE-SPLASH.md](NATIVE-SPLASH.md) voor de oorzaak, bestanden, simulatorbeelden en fysieke acceptatie. Geen wijziging aan de appvergrendeling of het moment waarop de splash wordt verborgen.
