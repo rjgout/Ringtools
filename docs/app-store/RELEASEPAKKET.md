@@ -55,6 +55,18 @@ Gebruik alleen het eigen Ringtools-icoon. Geen kerklogo, officiële symbolen, sc
 
 De eigenaar vult in **App Store Connect → App Review Information → Sign-in required → Username / Password** de primaire reviewgegevens in vanuit de wachtwoordmanager. Extra rolgegevens alleen in de besloten App Review Notes/communicatie aan Apple, niet in deze repo, GitHub-issue, PR, CI, screenshot, publieke privacytekst of buildvariabele. Controleer alle drie vóór indiening. Geen echte wachtwoorden in dit sjabloon vervangen en daarna committen.
 
+## Demoaccounts en ringbeheer: bewust gescheiden
+
+De speciale `Ringtools Demo` is een **afgesloten App Review-tenant** en niet een vrij te beheren testring. Het gebruikersbeheer van gewone ringen mag hier geen personen toevoegen, bestaande accounts koppelen, rollen wijzigen of ringbeheerrechten uitdelen. Een `REVIEW`-account is alleen voor deze demo geldig en kan geen echte ring beheren; een normaal account kan juist niet deelnemen aan deze demo. Dit wordt zowel via servervalidatie als databaseconstraints afgedwongen.
+
+Richt de drie vaste accounts uitsluitend in via **Instellingen → App Review en accountverwijdering**; geef bij eerste inrichting alle drie een eigen wachtwoord. Maak voor aanvullende acceptatietests met **echte ringbeheerderrechten** een **aparte test-ring** met alleen fictieve voorstellen en reguliere testaccounts. Gebruik geen echte namen of vertrouwelijke roepingen in een testring. De App Review-tenant blijft vrij van uitgaande mail en push; een reguliere testring heeft die garantie niet.
+
+Wijzig of verwijder de drie vaste Apple-reviewaccounts niet via gewone ringgebruikersformulieren. De reviewbeheerpagina regelt credentials, intrekken/herstellen en demo-reset.
+
+## Beveiligingssleutel van de server
+
+Een waarschuwing dat `SETTINGS_ENCRYPTION_KEY` minder dan 32 tekens heeft, is een **afzonderlijk beveiligingswerkpunt**. De sleutel versleutelt onder meer opgeslagen SMTP-wachtwoorden en TOTP-geheimen. **Niet zomaar in Portainer vervangen**: zonder gecontroleerde herencryptie kunnen bestaande geheime waarden niet meer worden ontsleuteld en kan aanmelding/MFA uitvallen. Maak een herstelbare versleutelde back-up, inventariseer alle versleutelde velden en voer pas daarna een apart getest rotatieproces uit met tijdelijk zowel oude als nieuwe sleutel. Geen geheimen in GitHub of logs plaatsen.
+
 ## Apple-regels en distributiekeuze
 
 Officiële bronnen geraadpleegd op 10 november 2026; opnieuw controleren vlak voor indiening:
