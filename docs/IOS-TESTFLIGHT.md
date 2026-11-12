@@ -75,9 +75,24 @@ $password = Read-Host 'Bestaand P12-wachtwoord' -AsSecureString
 $pointer = [IntPtr]::Zero
 try {
     $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($password)
-    [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) |
-        gh secret set IOS_DISTRIBUTION_P12_PASSWORD --repo rjgout/Ringtools --env testflight
-    if ($LASTEXITCODE -ne 0) { throw 'P12-wachtwoordsecret instellen mislukt.' }
+    # Schrijf exact het wachtwoord: geen BOM of door PowerShell toegevoegde newline.
+    $startInfo = New-Object Diagnostics.ProcessStartInfo
+    $startInfo.FileName = (Get-Command gh -ErrorAction Stop).Source
+    $startInfo.Arguments = 'secret set IOS_DISTRIBUTION_P12_PASSWORD --repo rjgout/Ringtools --env testflight'
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.StandardInputEncoding = New-Object Text.UTF8Encoding($false)
+    $secretProcess = New-Object Diagnostics.Process
+    $secretProcess.StartInfo = $startInfo
+    try {
+        $secretProcess.Start() | Out-Null
+        $secretProcess.StandardInput.Write([Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer))
+        $secretProcess.StandardInput.Close()
+        $secretProcess.WaitForExit()
+        if ($secretProcess.ExitCode -ne 0) { throw 'P12-wachtwoordsecret instellen mislukt.' }
+    } finally {
+        $secretProcess.Dispose()
+    }
 } finally {
     if ($pointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
     $password.Dispose()
