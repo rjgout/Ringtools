@@ -139,11 +139,17 @@ ok(existsSync(join(root, "ios/App/App/Assets.xcassets/AppIcon.appiconset")), "iO
 
 // Splash: expliciete native verwijzingen, vaste donkere achtergrond en begrensde beeldverhouding.
 const launch = read("ios/App/App/Base.lproj/LaunchScreen.storyboard");
-ok(launch.includes('contentMode="scaleAspectFit"') && !launch.includes('scaleAspectFill'), "iOS-splash mag het logo niet bijsnijden of schermvullend oprekken.");
+ok(/contentMode="scaleAspectFit"[^>]*image="Splash"/.test(launch), "iOS-splash mag het logo niet bijsnijden of schermvullend oprekken.");
 ok(launch.includes('id="mark-fit-width"') && launch.includes('id="mark-fit-height"'), "iOS-splash moet op smalle en liggende schermen begrensd blijven.");
+ok(launch.includes('image="SplashBackground"') && launch.includes('id="background-bottom"'), "iOS-splash moet de doorlopende blauwe achtergrond schermvullend tonen.");
 const launchTheme = read("android/app/src/main/res/values/styles.xml");
-ok(launchTheme.includes('name="windowSplashScreenAnimatedIcon">@drawable/splash_mark'), "Android 12+-splash moet het Ringtools-beeld expliciet gebruiken.");
+ok(launchTheme.includes('name="windowSplashScreenAnimatedIcon">@android:color/transparent'), "Android 12+-systeemfase mag geen los icoon of placeholder tonen.");
 ok(launchTheme.includes('name="windowSplashScreenBackground">@color/splash_background'), "Android-splash moet de donkere achtergrond expliciet gebruiken.");
+
+const activity = read("android/app/src/main/java/nl/ringapeldoorn/ringtools/MainActivity.java");
+ok(activity.includes("registerPlugin(RingtoolsSplashPlugin.class)") && activity.includes('put("launchShowDuration", 0)'), "Android moet de schermvullende beeldlaag registreren en de standaard systeem-hold uitschakelen.");
+ok(read("android/app/src/main/res/layout/ringtools_splash.xml").includes('@drawable/splash_background'), "Android mist de doorlopende kleurenachtergrond.");
+ok(read("src/lib/nativeSplash.ts").includes('"RingtoolsSplash"') && read("src/lib/appLockSources.ts").includes("hideNativeSplash()"), "De bestaande splash-hide moet ook de Android-beeldlaag verwijderen.");
 
 if (errors.length) {
   console.error("Native configuratie: FOUT\n- " + errors.join("\n- "));

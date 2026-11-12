@@ -14,6 +14,9 @@
                         <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFill" image="SplashBackground" translatesAutoresizingMaskIntoConstraints="NO" id="launch-background">
+                                <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
+                            </imageView>
                             <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="Splash" translatesAutoresizingMaskIntoConstraints="NO" id="launch-mark">
                                 <rect key="frame" x="93.75" y="239.75" width="187.5" height="187.5"/>
                                 <constraints>
@@ -24,6 +27,10 @@
                         </subviews>
                         <color key="backgroundColor" red="0.0431372549" green="0.0705882353" blue="0.1254901961" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
+                            <constraint firstItem="launch-background" firstAttribute="leading" secondItem="launch-root" secondAttribute="leading" id="background-leading"/>
+                            <constraint firstItem="launch-background" firstAttribute="trailing" secondItem="launch-root" secondAttribute="trailing" id="background-trailing"/>
+                            <constraint firstItem="launch-background" firstAttribute="top" secondItem="launch-root" secondAttribute="top" id="background-top"/>
+                            <constraint firstItem="launch-background" firstAttribute="bottom" secondItem="launch-root" secondAttribute="bottom" id="background-bottom"/>
                             <constraint firstItem="launch-mark" firstAttribute="centerX" secondItem="launch-root" secondAttribute="centerX" id="mark-center-x"/>
                             <constraint firstItem="launch-mark" firstAttribute="centerY" secondItem="launch-root" secondAttribute="centerY" id="mark-center-y"/>
                             <constraint firstItem="launch-mark" firstAttribute="width" relation="lessThanOrEqual" secondItem="launch-root" secondAttribute="width" multiplier="0.5" id="mark-fit-width"/>
@@ -35,5 +42,5 @@
             </objects>
         </scene>
     </scenes>
-    <resources><image name="Splash" width="192" height="192"/></resources>
+    <resources><image name="Splash" width="192" height="192"/><image name="SplashBackground" width="1024" height="1024"/></resources>
 </document>

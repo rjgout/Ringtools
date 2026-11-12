@@ -22,7 +22,7 @@
     "verify:ios-configs": "npm run build && npx cap sync ios && ./scripts/verify-ios-configs.sh",
     "postinstall": "patch-package",
     "assets:splash": "node scripts/generate-splash-assets.mjs",
-    "check:splash": "node scripts/generate-splash-assets.mjs --check"
+    "check:splash": "node scripts/generate-splash-assets.mjs --check && node --test scripts/splash-art.test.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "10.0.0",

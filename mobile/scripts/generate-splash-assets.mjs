@@ -1,27 +1,31 @@
 #!/usr/bin/env node
-// Technische exports van het ongewijzigde appicoon; geen tweede logo of schermvullende bitmap.
+// Origineel beeldmerk en schermvullende kleurenachtergrond exporteren.
 import sharp from "sharp";
+import { originalEmblem } from "./splash-art.mjs";
 import { readFile, readdir, mkdir, writeFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const check = process.argv.includes("--check");
 const icon = await readFile(join(root, "resources/icon.png"));
-const exports = new Map([["resources/splash.png", icon]]);
+const emblem = await originalEmblem(icon);
+const background = await readFile(join(root, "resources/splash-background.png"));
+const exports = new Map([
+  ["resources/splash.png", emblem],
+  ["ios/App/App/Assets.xcassets/SplashBackground.imageset/blue.png", background],
+  ["ios/App/App/Assets.xcassets/SplashBackground.imageset/Contents.json", Buffer.from(JSON.stringify({ images: [{ idiom: "universal", filename: "blue.png", scale: "1x" }], info: { version: 1, author: "xcode" } }, null, 2) + "\n")],
+  ["android/app/src/main/res/drawable-nodpi/splash_background.png", background],
+]);
 const images = [];
 for (const scale of [1, 2, 3]) {
   const filename = `ringtools-${scale}x.png`;
-  exports.set(`ios/App/App/Assets.xcassets/Splash.imageset/${filename}`, await sharp(icon).resize(192 * scale, 192 * scale).png().toBuffer());
+  exports.set(`ios/App/App/Assets.xcassets/Splash.imageset/${filename}`, await sharp(emblem).resize(192 * scale, 192 * scale).png().toBuffer());
   images.push({ idiom: "universal", filename, scale: `${scale}x` });
 }
 exports.set("ios/App/App/Assets.xcassets/Splash.imageset/Contents.json", Buffer.from(JSON.stringify({ images, info: { version: 1, author: "xcode" } }, null, 2) + "\n"));
-// Android 12+: 288dp zonder icoonachtergrond, 192dp veilige cirkel. De volledige
-// vierkante huisstijl is 128dp (diagonaal 181dp), zodat alle zeven units ook
-// binnen het ronde 192dp-systeemmasker passen.
+// Android toont hetzelfde originele beeldmerk in de app-eigen native splash.
 for (const [density, scale] of Object.entries({ mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 })) {
-  const padding = 80 * scale;
-  const png = await sharp(icon).resize(128 * scale, 128 * scale).extend({ top: padding, bottom: padding, left: padding, right: padding, background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
-  exports.set(`android/app/src/main/res/drawable-${density}/splash_mark.png`, png);
+  exports.set(`android/app/src/main/res/drawable-${density}/splash_mark.png`, await sharp(emblem).resize(192 * scale, 192 * scale).png().toBuffer());
 }
 const stale = [];
 const ios = "ios/App/App/Assets.xcassets/Splash.imageset";

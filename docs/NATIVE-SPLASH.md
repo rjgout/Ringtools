@@ -1,18 +1,13 @@
-# Native Ringtools-splash
+# Schermvullende native Ringtools-splash
 
-## Oorzaak
+De eigenaar heeft het eerste ontwerp met een klein vierkant icoon op een effen achtergrond afgewezen. Het definitieve ontwerp trekt de blauwe kleuren door tot de schermranden. De oorspronkelijke ring, zeven units en personen blijven behouden; geen tekst, kruis of placeholder.
 
-Het huidige appicoon was al Ringtools, maar `mobile/resources/splash.png` bevatte nog het blauwe/paarse target. De iOS-assetcatalogus verwees naar gegenereerde `Default…`-bestanden met datzelfde beeld; ook oude Capacitor-splashbestanden waren achtergebleven. Android had schermvullende bitmapexports per oriëntatie/nachtmodus en geen expliciete branded icon-verwijzing voor de Android 12+-splash.
+## Bronnen en exports
 
-## Ontwerp en exports
-
-Het **ongewijzigde bestaande appicoon** is de bron: zeven witte unitgroepen rond één gouden ring. Geen kruis, nieuwe symbolen, tekst, spinner of externe afbeelding. Het beeld staat centraal op `#0b1220`, dezelfde donkere kleur als de bestaande native splashconfiguratie. Appicoon en normale appschermen worden niet gewijzigd.
-
-- iOS: `LaunchScreen.storyboard` heeft een echte effen achtergrond en een aparte `scaleAspectFit`-imageview. Voorkeursmaat 192pt; maximaal de helft van schermbreedte én -hoogte. Daardoor blijft het beeld op iPhone, iPad, smalle vensters en liggende schermen volledig zichtbaar, zonder een grote bitmap te croppen. Universele 1x/2x/3x-assets; dezelfde rustige splash in lichte/donkere modus.
-- Android: `Theme.SplashScreen` verwijst expliciet naar `splash_mark` en `splash_background`; na de splash keert de bestaande `AppTheme.NoActionBar` terug. Donkere status-/navigatiebalk bij het opstarten. Een 288dp-export bevat het volledige vierkante beeld op 128dp: diagonaal circa 181dp, binnen het ronde 192dp-masker van Android 12+. De compatibele XML-splash heeft dezelfde achtergrond en een gecentreerde bitmap. Geen oriëntatie-/nightvariant met een oud target meer.
-- Capacitor: `launchAutoHide: false` en de bestaande vergrendel-/opstartstroom blijven behouden. Alleen de Android-resource en veilige `CENTER_INSIDE`-schaal voor de fallback zijn expliciet ingesteld. APNs, permissies, app-ID, signing, entitlements en backend blijven ongewijzigd.
-
-Herhaalbare technische export:
+- `mobile/resources/icon.png`: ongewijzigde originele bron van het beeldmerk.
+- `mobile/resources/splash-background.png`: apart uitgewerkte blauwe kleurenlaag in de bestaande huisstijl, zonder nieuw beeldmerk. Schermvullend, zonder icoonvlak.
+- `mobile/scripts/splash-art.mjs`: maakt uitsluitend de achtergrond buiten de gesloten witte/gouden contouren transparant. De oorspronkelijke kleuren van alle behouden pixels, de donkere binnenvlakken, personen en verbindingen blijven exact behouden. Twee bronpixels marge beschermen de anti-aliasranden. Het beeldmerk wordt niet opnieuw getekend.
+- `mobile/scripts/generate-splash-assets.mjs`: exporteert de twee lagen voor iOS en Android. Het originele appicoon blijft ongewijzigd. Oude target-/icoonvlakexports worden verwijderd. `npm run assets` voert na de algemene assetgenerator deze export uit.
 
 ```sh
 cd mobile
@@ -23,12 +18,31 @@ npm run check:native-config
 npm run cap:sync
 ```
 
-`scripts/generate-splash-assets.mjs` maakt de native resoluties vanuit `resources/icon.png`, werkt de splashbron bij en verwijdert oude exports. Het verandert het icoon zelf niet. `npm run assets` voert na de bestaande algemene assetgenerator deze splash-export uit, zodat regenereren de configuratie niet terugzet. `check:splash` vergelijkt alle exports met de huidige bron en weigert achtergebleven bestanden; CI voert deze controle uit. Sharp is hiervoor expliciet als ontwikkelafhankelijkheid opgenomen (dezelfde versie was al transitief aanwezig).
+`check:splash` vergelijkt alle exports met hun bronnen en controleert met twee regressietests dat de vierkante achtergrond verdwijnt en alle behouden pixels en acht binnenvlakken origineel blijven.
 
-## Native controle en screenshots
+## iPhone en iPad
 
-Lokaal: mobiele TypeScript/Vite/Capacitor-build, mobiele tests, native configuratie, assetintegriteit en Android `assembleDebug`. Deze cloudwerkplek is Linux: geen Xcode/iOS-simulator en geen geïnstalleerde Android-emulator/system image. Een Android-build is geen visuele emulatorcontrole.
+`LaunchScreen.storyboard` heeft twee afzonderlijke imageviews. De achtergrond vult alle vier schermranden met `scaleAspectFill`; alleen het abstracte kleurenveld kan worden bijgesneden. Het oorspronkelijke beeldmerk staat erboven met `scaleAspectFit`, een voorkeursmaat van 192pt en een maximum van de halve schermbreedte én -hoogte. Het beeldmerk vervormt dus niet bij rotatie, op een iPad of in een smal venster. Universele 1x/2x/3x-exports behouden scherpe contouren. De bestaande Capacitor-iOS-plugin gebruikt ditzelfde storyboard. `launchAutoHide: false`, appvergrendeling en het gereedmoment blijven behouden.
 
-De bestaande macOS-iOS-CI bouwt de simulatorapp en voert `scripts/capture-splash-simulators.sh` uit op een beschikbare iPhone- en iPad-simulator, in lichte én donkere modus. Een tijdelijke, ad-hoc ondertekende UIKit-testhost laadt **het gecompileerde `LaunchScreen.storyboardc` en `Assets.car` uit de echte simulatorbuild**. Zo blijven het werkelijke beeld en de Auto Layout zichtbaar voor een screenshot, zonder een screenshotmodus of vertraging in Ringtools zelf toe te voegen. Een pixelcontrole vergelijkt de opname met de donkere achtergrond en het bronicoon; zwarte beelden, onjuiste schaal of placeholders falen. De eerste capturepoging stopte vóór `main()` en leverde zwarte beelden op omdat UIKit nog niet tekende; die beelden gelden niet als visueel bewijs. De testhost bevat geen authenticatie, backend of netwerkcode. Dit is een native storyboard-/assettest op echte simulators, geen test van de volledige Ringtools-koude-startketen. Die laatste overgang blijft onderdeel van fysieke acceptatie. De beelden staan in CI-artifact **ringtools-ios-splash-screenshots**. De overige iOS-configuratie- en unsigned releasearchivecontroles blijven bestaan. Geen TestFlight-upload.
+## Android
 
-Definitieve build-/CI-uitkomst en screenshotlinks staan bij de feature-PR. Controleer vóór een latere release op een echt toestel ook een koude start, rotatie/iPad-multitasking en de overgang naar het bestaande vergrendel-/aanmeldscherm. iOS kan een oude launchsnapshot cachen: sluit de app volledig en installeer de nieuwe build opnieuw indien de oude afbeelding nog zichtbaar lijkt. Geen productiegegevens of serverconfiguratie wijzigen voor deze controle.
+Android 12+ ondersteunt uitsluitend een effen **systeem**achtergrond, geen schermvullende afbeelding. De korte systeemfase is daarom blauw met een expliciet transparant systeemicoon, zonder los appicoon of target. Daarna toont de app een native, schermvullende kleurenlaag plus hetzelfde oorspronkelijke beeldmerk.
+
+- `MainActivity.load()` schakelt uitsluitend de standaard Android-splash-hold uit met `launchShowDuration=0`. Alle andere configuratie en plugins blijven behouden.
+- `RingtoolsSplashPlugin` toont de native layout vóór de eerste appweergave. De kleurenlaag vult het scherm; het beeldmerk houdt dezelfde begrensde 192dp-maat als iOS. Er is geen timer of extra wachttijd. Bij een ongeschikte WebView wordt de foutweergave niet afgedekt. Bij vernietiging van de activity wordt de laag verwijderd.
+- `nativeSplash.ts` verbergt de standaardlaag en op Android ook de eigen beeldlaag, vanaf dezelfde bestaande hide-aanroepen. Herhaald hide is veilig; een ontbrekende oudere bridge blokkeert de opstart niet. De ontgrendelcontroller, verificatie, sessies, ringisolatie en privacybescherming veranderen niet.
+- `ringtools_splash.xml` wordt ook als standaard Capacitor-layout gebruikt. `drawable/splash.xml` is de compatibele window-fallback. Geen oude port/land/night-targetbitmaps meer.
+
+Geen wijzigingen aan app-ID, appiconen, APNs, entitlements, eigenaarcertificaten, productiegegevens of serverinstellingen.
+
+## Validatie en beelden
+
+Lokaal: mobiele TypeScript/Vite/Capacitor-build, 427 mobiele tests inclusief Android/iOS-hide-regressies, native configuratie, assetintegriteit, twee pixelbehoudtests en Android `assembleDebug`. Deze cloudwerkplek is Linux zonder Xcode of geïnstalleerde Android-emulator/system image; een build is geen fysieke toesteltest.
+
+macOS-CI bouwt de echte iOS-simulatorapp. `capture-splash-simulators.sh` laadt het gecompileerde `LaunchScreen.storyboardc` en `Assets.car` uit die build in een tijdelijke UIKit-testhost op een iPhone- en iPad-simulator, elk licht en donker. De testhost heeft geen backend of authenticatie en wijzigt Ringtools zelf niet. De pixelcontrole vergelijkt zowel het hele kleurenveld als het oorspronkelijke beeldmerk; zwarte beelden, placeholders en een achtergebleven vierkant icoonvlak worden afgekeurd. Beelden staan in artifact **ringtools-ios-splash-screenshots**. Dit is een native storyboard-/assettest, geen volledige koude-starttest van de beveiligde app. De bestaande iOS-configuratie-, Personal Team- en unsigned releasearchivecontroles blijven bestaan.
+
+Controleer na een latere installatie op echte iPhone/iPad/Android ook de koude start, rotatie/multitasking en overgang naar appvergrendeling. iOS kan een oude launchsnapshot cachen; installeer de nieuwe build opnieuw als de oude afbeelding nog verschijnt. Native assets worden gebundeld: een Docker-update vervangt de splash in een reeds geïnstalleerde TestFlight-/Android-app niet.
+
+## Oplevering
+
+De eigenaar heeft op 12 november 2026 toegestaan om na groene controles naar `main` te gaan. Dit vervangt voor deze wijziging de eerdere instructie om niet te mergen. De automatische Docker-publicatie/Watchtower-update op main is bekend. Geen handmatige productiemigratie en geen TestFlight-upload starten. Definitieve commit-, CI- en screenshotlinks worden in PR #5 en het opleverbericht vastgelegd.

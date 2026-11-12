@@ -1,5 +1,5 @@
 import { App as CapApp } from "@capacitor/app";
-import { SplashScreen } from "@capacitor/splash-screen";
+import { hideNativeSplash } from "./nativeSplash";
 import { Capacitor } from "@capacitor/core";
 import { LockController } from "./appLock";
 import { createLazyAppLockProvider, loadNativeAppLockProvider } from "./biometricAppLock";
@@ -34,7 +34,7 @@ export const nativeLockSources: LockSources = {
     return () => void sub.then((h) => h.remove()).catch(() => {});
   },
   hideSplash() {
-    if (native) void SplashScreen.hide().catch(() => {});
+    if (native) void hideNativeSplash().catch(() => {});
   },
 };
 

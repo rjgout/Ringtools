@@ -3,7 +3,7 @@ import { App } from "@capacitor/app";
 import { Keyboard } from "@capacitor/keyboard";
 import { Network } from "@capacitor/network";
 import { Share } from "@capacitor/share";
-import { SplashScreen } from "@capacitor/splash-screen";
+import { hideNativeSplash } from "./nativeSplash";
 import { StatusBar, Style } from "@capacitor/status-bar";
 
 export const isNative = Capacitor.isNativePlatform();
@@ -18,7 +18,7 @@ export async function setupNativeChrome() {
   dark.addEventListener("change", apply);
   if (platform === "android") void StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {});
   await Keyboard.setAccessoryBarVisible({ isVisible: true }).catch(() => {});
-  await SplashScreen.hide().catch(() => {});
+  await hideNativeSplash().catch(() => {});
 }
 
 /** Bron van toetsenbordgebeurtenissen (native plug-in of, op het web, de visualViewport). */
