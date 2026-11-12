@@ -10,7 +10,7 @@
 		     (server-env APPLE_APP_ID) en NATIVE_PASSKEYS_ENABLED aan staat. Niet aanwezig in Debug-PersonalTeam (gratis Personal Team kent geen Associated Domains). -->
 		<string>webcredentials:ringapeldoorn.nl</string>
 	</array>
-	<!-- Pushmeldingen (APNs). Xcode zet dit bij archiveren automatisch op "production". -->
+	<!-- Debug gebruikt sandbox-APNs; Release gebruikt afzonderlijk App-Store.entitlements met productie-APNs. -->
 	<key>aps-environment</key>
 	<string>development</string>
 </dict>

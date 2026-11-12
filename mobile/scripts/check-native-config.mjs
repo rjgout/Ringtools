@@ -53,7 +53,12 @@ const cfgBlocks = [...pbx.matchAll(/\t\t[0-9A-F]{24} \/\* ([^*]+) \*\/ = \{\n\t\
 const targetBlocks = cfgBlocks.filter((b) => /INFOPLIST_FILE = App\/Info.plist/.test(b.body));
 const byName = (n) => targetBlocks.find((b) => b.name === n);
 ok(byName("Debug") && byName("Release") && byName("Debug-PersonalTeam"), "iOS-project: configuraties Debug, Release en Debug-PersonalTeam ontbreken.");
-for (const n of ["Debug", "Release"]) ok(byName(n) && /CODE_SIGN_ENTITLEMENTS = App\/App.entitlements;/.test(byName(n).body), `iOS-configuratie ${n} moet de productie-entitlements (App/App.entitlements) behouden.`);
+for (const [n, file, apns] of [["Debug", "App.entitlements", "development"], ["Release", "App-Store.entitlements", "production"]]) {
+  ok(byName(n)?.body.includes(`CODE_SIGN_ENTITLEMENTS = App/${file};`), `iOS-configuratie ${n} moet de juiste entitlements behouden.`);
+  const entitlements = read(`ios/App/App/${file}`);
+  ok(entitlements.includes(`<key>aps-environment</key>\n\t<string>${apns}</string>`), `${n}: verkeerde APNs-omgeving.`);
+  for (const prefix of ["applinks:", "webcredentials:"]) ok(entitlements.includes(`${prefix}${androidHosts[0]}<`), `${n}: Associated Domains ontbreken of wijken af.`);
+}
 ok(byName("Debug-PersonalTeam") && !/CODE_SIGN_ENTITLEMENTS/.test(byName("Debug-PersonalTeam").body), "Debug-PersonalTeam mag in het project geen CODE_SIGN_ENTITLEMENTS zetten (het xcconfig maakt het leeg).");
 ok(/XCConfigurationList[\s\S]*Debug-PersonalTeam/.test(pbx) && (pbx.match(/\/\* Debug-PersonalTeam \*\/,/g) || []).length === 2, "Debug-PersonalTeam moet in de configuratielijsten van project én target staan.");
 const personalXc = read("ios/PersonalTeam.xcconfig");
@@ -130,8 +135,13 @@ ok(existsSync(join(root, "ios/App/App/Assets.xcassets/AppIcon.appiconset")), "iO
   ok(tf.length > 0, ".github/workflows/ios-testflight.yml ontbreekt.");
   ok(!/-----BEGIN|AuthKey_[A-Z0-9]{10}\.p8/.test(tf.replace(/AuthKey_\$\{ASC_KEY_ID\}\.p8/g, "")), "ios-testflight.yml bevat een sleutel of vaste sleutelnaam.");
   ok(!/echo\s+"?\$\{?(ASC_API_KEY_P8_BASE64|ASC_KEY_ID|ASC_ISSUER_ID)[^|>]*$/m.test(tf), "ios-testflight.yml mag secrets niet printen.");
-  ok(/signingCertificate<\/key><string>Apple Distribution/.test(tf), "ios-testflight.yml moet in de export-opties expliciet 'Apple Distribution' vragen.");
-  ok(/verify-ios-bundle\.py --stage ipa/.test(tf) && /verify-ios-bundle\.py --stage archive/.test(tf), "ios-testflight.yml moet archive en IPA met verify-ios-bundle.py (echte plist-parser) controleren.");
+  const signing = read("scripts/ios_signing_policy.py");
+  const driver = read("scripts/ios_distribution.py");
+  ok(signing.includes("'signingStyle': 'manual'") && signing.includes("'signingCertificate': state['certificate_sha1']") && signing.includes("'provisioningProfiles': {BUNDLE_ID: state['profile_uuid']}"), "Export vereist handmatige signing met gevalideerd Distribution-certificaat en app-specifiek profiel.");
+  ok(signing.includes("'CODE_SIGN_STYLE=Manual'") && signing.includes("'CODE_SIGN_IDENTITY=' + state['certificate_sha1']"), "Archive vereist expliciet hetzelfde Distribution-certificaat.");
+  ok(driver.includes("'archive', state)") && driver.includes("'ipa', state)") && driver.includes("scripts/verify-ios-bundle.py"), "Archive en IPA moeten de volledige distributiecontrole doorlopen.");
+  ok(!/allowProvisioning|authenticationKey|signingStyle[^\n]*automatic/.test(tf + driver + signing), "Distributie mag nooit automatische provisioning of Apple-authenticatie voor xcodebuild gebruiken.");
+  ok(/upload:[\s\S]*?default: false/.test(tf), "Upload moet standaard uit staan.");
   ok(!/grep[^\n]*get-task-allow/.test(tf), "get-task-allow mag niet met grep worden gecontroleerd (een App Store-plist is één regel; gebruik de plist-parser).");
   ok(existsSync(join(root, "scripts/verify-ios-bundle.py")), "scripts/verify-ios-bundle.py ontbreekt.");
   ok(/environment:\s*testflight/.test(tf) && /workflow_dispatch:/.test(tf) && !/\n\s*(push|pull_request|schedule):/.test(tf), "ios-testflight.yml moet handmatig (workflow_dispatch) draaien met de omgeving 'testflight'.");

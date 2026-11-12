@@ -1,84 +1,113 @@
-# iOS-distributie en TestFlight
+# Ringtools: handmatige iOS Distribution-signing
 
-Status van de repository: **klaar voor de eerste TestFlight-build**. Wat alleen jij kunt doen (Apple-account, tweefactor, overeenkomsten) staat in "Handmatige stappen". Er staan geen certificaten, sleutels of wachtwoorden in Git.
+Dit ontwerp gebruikt het **bestaande** Apple Distribution-certificaat met privésleutel en het bestaande App Store-profiel voor `nl.ringapeldoorn.ringtools`. Het maakt geen Apple-certificaten of profielen aan en trekt niets in. De echte eigenaarbestanden zijn niet door Codex ontvangen of getest. Een geslaagde synthetische test bewijst niet dat de Windows-export door macOS wordt geaccepteerd.
 
-## Vastgestelde identiteit
+## Oorzaak en audit
 
-| Onderdeel | Waarde |
+De oude `ios-testflight.yml` archiveerde Release met automatische signing, `iPhone Developer` op projectniveau en `CODE_SIGN_STYLE=Automatic` op de app-target. De export vroeg daarna pas om Apple Distribution. Beide stappen gebruikten `-allowProvisioningUpdates` en App Store Connect-authenticatie. Tijdelijke macOS-runners konden zo opnieuw Development-identiteiten aanvragen. Dat past bij de gemelde certificaatlimiet; de exacte historische Apple-accountmutaties zijn niet onafhankelijk vastgesteld. De oude archivecontrole controleerde alleen metadata, niet de distributiehandtekening. Alleen de IPA werd streng op Distribution gecontroleerd. De oude upload stond standaard aan.
+
+## Nieuwe uitvoering en grenzen
+
+1. `.github/workflows/ios-signing-tests.yml`: automatische Linux/macOS-CI met uitsluitend gegenereerde, zelfondertekende synthetische testsleutels. Geen `testflight`-omgeving, signingsecrets, Apple-account, echte signingbuild of upload. De macOS-test probeert alleen een tijdelijk synthetisch AES256-SHA256-P12 te importeren en rapporteert acceptatie of veilige afwijzing.
+2. `.github/workflows/ios-signing-import-check.yml`: **afzonderlijk te autoriseren** handmatige importcontrole op `main`, omgeving `testflight`. `import_authorized` staat standaard uit. Decodeert/valideert uitsluitend de bestaande middelen, probeert import in een tijdelijke keychain, controleert een geldige codesigning-identiteit en ruimt alles weer op. Geen Xcode-build, ondertekening, App Store Connect-sleutel of IPA-upload. Alleen een niet-geheim bewijs met commit en SHA-256-binding van de twee versleutelde/publieke bestanden wordt zeven dagen bewaard, na succesvolle cleanup.
+3. `.github/workflows/ios-testflight.yml`: **opnieuw afzonderlijk te autoriseren** handmatige Distribution-build op dezelfde `main`-commit. `signing_authorized=false`, **`upload=false`**. Vereist het runnummer van de geslaagde importcontrole. Controleert event, workflowpad, branch, commit, runresultaat en het bewijs voor dezelfde P12/profielbytes. Bij een gewijzigde commit of gewijzigde bestanden is een nieuwe importcontrole nodig. Verlopen/verwijderd bewijs betekent opnieuw controleren. Er wordt geen IPA-artifact gepubliceerd; zonder upload blijft de IPA alleen op de tijdelijke runner en wordt hij opgeruimd.
+
+Deze workflows worden in deze opdracht **niet gestart**. De nieuwe workflows worden pas op `main` bruikbaar na onafhankelijke review én afzonderlijke expliciete merge-toestemming. `main` publiceert ook Docker-images; een merge is dus een aparte productiehandeling. Vink een toestemmingsinput uitsluitend aan na echte eigenaarstoestemming. Die invoer is geen vervanging van GitHub-environmentbescherming.
+
+Configureer als eigenaar de omgeving `testflight` met vereiste reviewers, voorkomen van zelfgoedkeuring waar beschikbaar en uitsluitend `main` als toegestane deploymentbranch. Configureer **geen** gelijknamige signingsecrets op repository- of organisatieniveau. PR-workflows krijgen geen environment en verwijzen niet naar deze secrets; distributiejobs weigeren andere repositories/events/branches. Eigenaar/maintainers blijven verantwoordelijk voor workflowreview en repositorybeveiliging. De twee handmatige workflows delen één concurrencygroep zonder automatische annulering.
+
+## Signingontwerp
+
+`mobile/scripts/ios_distribution.py` beheert de tijdelijke middelen. `ios_signing_policy.py` bevat het gedeelde beleid; `verify-ios-bundle.py` controleert zowel archive als IPA met dezelfde distributieregels.
+
+- Strikte base64- en aanwezigheidscontrole; P12 moet met het gegeven wachtwoord openen, een privésleutel met overeenkomend certificaat bevatten, een geldige Apple Distribution-naam, de verwachte team-OU, code-signing-EKU en geldigheidsperiode hebben.
+- `security cms` decodeert het profiel. Het moet geldig en specifiek voor deze app zijn, dezelfde teamidentiteit hebben, het exacte certificaat bevatten, iOS/App Store-distributie ondersteunen, `get-task-allow=false` en productie-APNs toestaan. Development/ad-hoc (ook een lege `ProvisionedDevices`-sleutel), enterprise, wildcard-app-ID, ontbrekende distributiemarker, verkeerde/verlopen middelen worden geweigerd. Een bestaande App ID-prefix mag afwijken van Team ID; beide worden onafhankelijk gecontroleerd.
+- Tijdelijke keychain met willekeurig, alleen in geheugen gehouden wachtwoord; restrictieve directory-/bestandsrechten. `security find-identity -v -p codesigning` moet de geïmporteerde SHA-1-identiteit als geldig herkennen. Een onvolledige/onbetrouwbare certificaatketen stopt de run. Gebruik de bestaande volledige keten; geen automatische certificaataanvraag.
+- Alleen het eigen profiel-UUID wordt in de legacy- en moderne Xcode-profieldirectory geïnstalleerd. Eventuele bestaande bestanden worden met inhoud en rechten hersteld. Andere profielen blijven intact. De vorige keychainzoeklijst wordt hersteld; de standaardkeychain wordt niet gewijzigd.
+- **Release** is op project- en targetniveau `Manual` / `Apple Distribution`. Debug behoudt sandbox-APNs; Release gebruikt `App-Store.entitlements` met expliciet productie-APNs en dezelfde Associated Domains. Debug-PersonalTeam blijft zonder capabilities. Er wordt niet vertrouwd op een automatische entitlementsomzetting bij export. Commandoregel pinnt het gevalideerde Distribution-certificaat op zijn SHA-1-identiteit en team. Alleen de app-target consumeert `RINGTOOLS_DISTRIBUTION_PROFILE_UUID` als `PROVISIONING_PROFILE_SPECIFIER`; Swift Package-frameworks krijgen geen ongeschikt globaal profiel of overschreven Bundle ID. De app-Bundle ID blijft vast in de Release-target en wordt opnieuw gecontroleerd. Dezelfde identiteit en expliciete Bundle ID→profielmapping staan in de handmatige `app-store-connect`-exportopties. SHA-1 is hier de Xcode-identificator, geen wachtwoordhash of vertrouwensbeslissing.
+- Geen provisioningupdates, apparaatregistratie of App Store Connect-authenticatie in archive/export. Geen API die certificaten of profielen aanmaakt. Signing zonder middelen faalt; geen automatische fallback.
+- Archive **en** IPA vereisen een geldige strikte codesignhandtekening, Apple Distribution, dezelfde geselecteerde certificaatvingerafdruk, matching profiel/certificaat/team/appidentiteit, App Store-distributie, geen debuggerrechten, productie-APNs, `applinks:ringapeldoorn.nl`, `webcredentials:ringapeldoorn.nl`, correcte Bundle ID/versie/build en `PrivacyInfo.xcprivacy`.
+- Alleen de expliciete uploadstap krijgt de bestaande ASC-secrets en schrijft tijdelijk de P8 in de door `altool` ondersteunde `./private_keys`-directory. De sleutel wordt niet aan Xcode doorgegeven. De bestaande APNs-serverconfiguratie en sleutels blijven ongewijzigd.
+- `always()` herstelt profielen/zoeklijst en verwijdert de tijdelijke keychain, P12, P8, archive, IPA en werkdirectory, ook bij fouten. Cleanup probeert alle herstelacties; een mislukte herstelactie maakt de run rood en houdt het hersteljournaal voor een tweede poging beschikbaar. Bij een hard beëindigde runner is expliciete cleanup niet gegarandeerd; GitHub vernietigt de tijdelijke hosted runner. Geen self-hosted runner gebruiken zonder apart beoordeeld herstelbeleid.
+- Geen ruwe `security`-/Xcode-/altool-uitvoer of distributionlogs in CI/artifacts. Fouten geven uitsluitend een generieke categorie. Voor nadere diagnose uitsluitend veilige lokale inspectie door de eigenaar, nooit bestanden/wachtwoorden/identiteiten in chat, issues, PR's of logs plaatsen.
+
+## Environment secrets `testflight`
+
+| Secret | Inhoud / gebruik |
 |---|---|
-| Bundle-ID (bestaand, niet gewijzigd) | `nl.ringapeldoorn.ringtools` |
-| Appnaam (weergave) | Ringtools |
-| Versie / build (project) | `1.0` / `1` (de workflow zet versie en buildnummer per upload) |
-| Minimum iOS | 18.0 |
-| Team-ID | uit jouw Apple Developer-account → Membership; staat alleen in het GitHub-secret `IOS_TEAM_ID` en in de server-env `APNS_TEAM_ID`/`APPLE_APP_ID`, niet in Git |
-| Entitlements (Debug/Release) | `aps-environment` (Xcode zet dit bij distributie op `production`), `applinks:ringapeldoorn.nl`, `webcredentials:ringapeldoorn.nl` |
-| Gratis Personal Team | blijft apart bestaan: configuratie `Debug-PersonalTeam`, bundle-ID `….ringtools.dev`, geen entitlements. Raakt Release/TestFlight niet. |
-| Privacymanifest | `mobile/ios/App/App/PrivacyInfo.xcprivacy` (geen tracking; verzamelde gegevens: naam, e-mail, gebruikers-ID, apparaattoken, gebruikersinhoud, alleen voor appfunctionaliteit) |
-| Exportcompliance | `ITSAppUsesNonExemptEncryption = false` (alleen standaard-HTTPS) |
-| Appicoon | `mobile/resources/icon.png` → 1024 × 1024, zonder transparantie; bewaakt door `npm run check:native-config` |
+| `IOS_TEAM_ID` | Bestaande tien tekens lange Apple Team ID; geen voorbeeldwaarde overnemen |
+| `IOS_DISTRIBUTION_P12_BASE64` | Base64 van de bestaande wachtwoordbeveiligde `AppleDistribution.p12` |
+| `IOS_DISTRIBUTION_P12_PASSWORD` | Het bestaande P12-wachtwoord, ongewijzigd |
+| `IOS_PROVISIONING_PROFILE_BASE64` | Base64 van `Ringtools_App_Store_Distribution.mobileprovision` |
+| `ASC_KEY_ID` | Bestaande sleutelidentificatie; alleen bij goedgekeurde upload |
+| `ASC_ISSUER_ID` | Bestaande issuer; alleen bij goedgekeurde upload |
+| `ASC_API_KEY_P8_BASE64` | Bestaande P8, base64; alleen bij goedgekeurde upload |
 
-Wat in deze sessie is aangepast: zie de commit. Belangrijk: `AppDelegate.swift` gaf het APNs-apparaattoken niet door aan de Capacitor-plug-in (`didRegisterForRemoteNotificationsWithDeviceToken`); zonder die twee functies slaagt registratie voor pushmeldingen op iOS nooit. Dat is hersteld.
+Geen nieuwe API-sleutel of bredere provisioningrechten nodig. Beoordeel als eigenaar de bestaande ASC-rechten voor upload; geen automatisch accountbeheer. Geen secretwaarden in documentatie, appvariabelen, broncode of review.
 
-## Handmatige stappen (volgorde)
+## Windows: bestaande bestanden rechtstreeks naar secrets
 
-Alleen jij kunt dit doen; het zijn eenmalige handelingen.
+Voer dit alleen als eigenaar uit op een vertrouwde Windows-machine, buiten de repository, zonder transcriptie/schermopname. Installeer/controleer GitHub CLI vooraf, meld aan en controleer account/repository met `gh auth status` en `gh repo view rjgout/Ringtools`. Configureer eerst de beschermde environment. Bewaar de originele bestanden en beveiligde reservekopie. Deel ze niet met Codex. De voorbeelden bevatten alleen lokale voorbeeldpaden; vervang uitsluitend die paden.
 
-1. **Overeenkomsten:** App Store Connect → *Agreements, Tax, and Banking*: accepteer de *Apple Developer Program License Agreement* en, voor betaalde apps, de bank-/belastinggegevens (niet nodig voor TestFlight).
-2. **App ID registreren:** developer.apple.com → Certificates, Identifiers & Profiles → *Identifiers* → **+** → *App IDs* → *App* → beschrijving "Ringtools", **Explicit** Bundle ID `nl.ringapeldoorn.ringtools`. Vink de capabilities **Push Notifications** en **Associated Domains** aan. Is de ID al geregistreerd, controleer dan alleen die twee capabilities.
-3. **App aanmaken in App Store Connect:** *Apps* → **+** → *New App*: Platform **iOS**, Naam **Ringtools** (is de naam al bezet, dan meldt Apple dat; kies dan bijv. "Ringtools Ring"), Primaire taal **Nederlands**, Bundle ID `nl.ringapeldoorn.ringtools`, SKU `ringtools-ios-001`, Toegang *Volledige toegang*. (Apple biedt geen API om een app-record aan te maken; dit moet in de webinterface.)
-4. **App Store Connect API-sleutel (voor CI):** App Store Connect → *Users and Access* → *Integrations* → *App Store Connect API* → **+**: naam "Ringtools CI", toegang **Admin** (nodig voor automatisch beheerde signing). Download de `.p8` (kan maar één keer) en noteer *Key ID* en *Issuer ID*.
-5. **APNs-sleutel (voor pushmeldingen):** developer.apple.com → *Keys* → **+** → vink *Apple Push Notifications service (APNs)* aan → download de `.p8` (eenmalig) en noteer *Key ID*. Deze sleutel hoort **alleen op de server**, niet in GitHub.
-6. **GitHub-omgeving `testflight`:** repository → Settings → Environments → *New environment* `testflight` (zet optioneel *Required reviewers* aan, jijzelf). Voeg als *environment secrets* toe:
-   - `ASC_KEY_ID` – Key ID van stap 4
-   - `ASC_ISSUER_ID` – Issuer ID van stap 4
-   - `ASC_API_KEY_P8_BASE64` – inhoud van die `.p8`, base64 (`base64 -i AuthKey_XXXX.p8 | pbcopy` op een Mac)
-   - `IOS_TEAM_ID` – je Team-ID (Membership)
-7. **Server-env (Portainer, door jou; ik wijzig de stack niet):**
-   - `APNS_KEY_P8` (of een gemount bestand via `APNS_KEY_P8_FILE`), `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID=nl.ringapeldoorn.ringtools`; `APNS_PRODUCTION=true` (TestFlight en App Store gebruiken **altijd** productie-APNs).
-   - `APPLE_APP_ID=<TEAM-ID>.nl.ringapeldoorn.ringtools` (voor Universal Links en native passkeys via `/.well-known/apple-app-site-association`).
-   - Herstart de app-container pas na een back-up (`docs/BACKUP-HERSTEL.md`).
-8. **Build starten:** GitHub → Actions → **iOS TestFlight (handmatig)** → *Run workflow* (laat *upload* aan). Eerste run: versie `1.0.0`, buildnummer leeg (= runnummer). Bij een fout in de signing staat in de log welke Apple-instelling ontbreekt.
-9. **Verwerking:** na de upload verwerkt App Store Connect de build (5–20 min); je krijgt een e-mail. TestFlight → *iOS builds*. Er is bij de eerste build geen exportcompliance-vraag meer (staat in `Info.plist`).
-10. **Testers:** App Store Connect → TestFlight → *Internal Testing* → **+** groep "Intern" → voeg jezelf (account met rol Admin/App Manager/Developer) toe en kies de build. Intern testen heeft geen Apple-review nodig.
-11. **Installeren op je iPhone:** installeer de app **TestFlight** uit de App Store, open de uitnodigingsmail (of de TestFlight-app) met hetzelfde Apple-ID → **Installeer** bij Ringtools. Verwijder eerst de oude persoonlijke testversie (`….ringtools.dev`) om verwarring te voorkomen; haar data en push zijn niet te hergebruiken.
+PowerShell: base64 rechtstreeks via stdin naar `gh secret set`. Geen `--body` met secretwaarden, geen consoleprint of tussenbestand:
 
-## Ondertekening: hoe het werkt en hoe je een fout leest
+```powershell
+$ErrorActionPreference = 'Stop'
+Get-Command gh -ErrorAction Stop | Out-Null
 
-Xcode maakt de archive met **automatische signing**, dus met een *Apple Development*-identiteit en een ontwikkelprofiel (`get-task-allow = true`). Dat is normaal en geen fout: `CODE_SIGN_IDENTITY = "iPhone Developer"` op projectniveau is de standaardwaarde en wordt bij een automatisch ondertekende archive door Xcode overruled. De **export** (`method = app-store-connect`, `signingCertificate = Apple Distribution`) ondertekent de app daarna opnieuw met *Apple Distribution* en een App Store-profiel. Dat profiel heeft geen apparatenlijst, de entitlements krijgen `aps-environment = production` en `get-task-allow` verdwijnt. Het projectbestand wordt daarom niet op "Apple Distribution" gezet: dat breekt automatische signing en de gewone Debug-, `Debug-PersonalTeam`- en simulatorbuilds.
+function Set-RingtoolsFileSecret([string]$Name, [string]$Path) {
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    try {
+        $encoded = [Convert]::ToBase64String($bytes)
+        if ($encoded.Length -gt 64000) { throw 'Bestand te groot voor een GitHub secret; stop en beoordeel lokaal.' }
+        $encoded | gh secret set $Name --repo rjgout/Ringtools --env testflight
+        if ($LASTEXITCODE -ne 0) { throw 'GitHub secret instellen mislukt.' }
+    } finally {
+        [Array]::Clear($bytes, 0, $bytes.Length)
+        $encoded = $null
+        $bytes = $null
+    }
+}
+Set-RingtoolsFileSecret 'IOS_DISTRIBUTION_P12_BASE64' 'C:\BeveiligdeSigning\AppleDistribution.p12'
+Set-RingtoolsFileSecret 'IOS_PROVISIONING_PROFILE_BASE64' 'C:\BeveiligdeSigning\Ringtools_App_Store_Distribution.mobileprovision'
 
-Een eerdere controle gebruikte `grep` op de uitvoer van `codesign`. Die uitvoer is bij een App Store-build één regel XML en bevat altijd `beta-reports-active = <true/>`; `grep -A1 get-task-allow` zag daardoor ten onrechte een `<true/>`. Nu leest `mobile/scripts/verify-ios-bundle.py` de entitlements en het ingebedde profiel met een echte plist-parser (getest in `mobile/scripts/test_verify_ios_bundle.py`, ook voor deze regressie).
+$password = Read-Host 'Bestaand P12-wachtwoord' -AsSecureString
+$pointer = [IntPtr]::Zero
+try {
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($password)
+    [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) |
+        gh secret set IOS_DISTRIBUTION_P12_PASSWORD --repo rjgout/Ringtools --env testflight
+    if ($LASTEXITCODE -ne 0) { throw 'P12-wachtwoordsecret instellen mislukt.' }
+} finally {
+    if ($pointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+    $password.Dispose()
+    $password = $null
+}
+```
 
-De workflow toont per stap (groep "Ondertekening") de handtekeningautoriteiten, profielnaam en UUID, of er een apparatenlijst is, en de waarden van `get-task-allow` en `aps-environment`, nooit sleutels of certificaten. Bij een fout geeft hij de reden en een hint. Voor de export staat bij een fout een korte uitleg van de distributie-log in de job.
+PowerShell/.NET gebruikt kortstondig managed strings die niet gegarandeerd onmiddellijk uit geheugen gewist worden; voer dit daarom uitsluitend op de vertrouwde eigenaarmachine uit en sluit de sessie daarna. De invoer verschijnt niet in shellgeschiedenis of console. Gebruik geen clipboard met ingeschakelde geschiedenis/synchronisatie en geen commando met een letterlijk wachtwoord. Controleer uitsluitend de **namen** met `gh secret list --repo rjgout/Ringtools --env testflight`. Stel ontbrekende `IOS_TEAM_ID` als eigenaar via de beveiligde environmentinterface in; controleer bestaande ASC-secrets pas voor een afzonderlijk goedgekeurde upload. Codex wijzigt geen secrets.
 
-## Controles die de workflow zelf doet
+## Exacte eigenaarshandelingen en open acceptatie
 
-`ios-testflight.yml` stopt als iets niet klopt: tests/build/`check:native-config`; Release-archive met automatische signing; `codesign --verify --deep --strict`; handtekening *Apple Distribution*; App Store-profiel zonder apparatenlijst; `get-task-allow` uit (plist-parser); `aps-environment = production`, `applinks:` en `webcredentials:`; bundle-ID, versie en buildnummer kloppen; privacymanifest aanwezig. Daarna uploadt `altool` naar TestFlight. De API-sleutel staat alleen tijdelijk op de runner en wordt nooit geprint. De gewone CI (`mobile-ci.yml`) maakt bij elke wijziging ook een **Release-archive zonder signing** om Release-fouten vroeg te vangen.
+1. Laat deze draft-PR onafhankelijk reviewen, inclusief workflowrechten, Xcode Release-configuratie, testuitvoer en cleanup. Geen merge zonder expliciet akkoord; een merge naar `main` heeft ook Docker/Watchtower-impact.
+2. Richt de environmentbescherming en drie nieuwe secrets hierboven in; bevestig de bestaande Team ID. Geen nieuwe certificaten/profielen maken of intrekken.
+3. Geef **afzonderlijk toestemming uitsluitend voor de niet-publicerende importcontrole**. Na toegestane merge: Actions → *iOS signing importcontrole (geen build of upload)* → `main` → `import_authorized=true`; keur het environmentverzoek goed. Controleer resultaat **en cleanup**, noteer run-ID. Dit is de eerste test met de echte Windows AES256-SHA256-export.
+4. Bij afwijzing stopt alles. Controleer lokaal wachtwoord, exportformaat, certificaatgeldigheid/team/profielmatching en keten. Geen automatische algoritmedowngrade of nieuwe Apple-certificaten. Als macOS het Windows-AES-formaat afwijst, kan de eigenaar na aparte beoordeling dezelfde bestaande sleutel/certificaat opnieuw als compatibele wachtwoordbeveiligde P12 exporteren (inclusief bestaande keten). Dit is herverpakken, geen certificaatproductie. Geen onversleutelde privésleutelbestanden gebruiken. Beveilig de nieuwe export en verwijder overtollige kopieën. Vervang zo nodig uitsluitend de betreffende secrets en herhaal de importcontrole.
+5. Geef pas na succesvolle importcontrole afzonderlijk toestemming voor een **echte signingbuild**. Start *iOS TestFlight (handmatig)* op dezelfde commit met run-ID, `signing_authorized=true`, juiste HTTPS-URL, versie en uniek oplopend buildnummer; **laat upload uit**. Keur de environmentaanvraag opnieuw goed. Archive/export mogen geen Development-identiteit of automatische provisioning gebruiken.
+6. Upload alleen na nogmaals expliciete toestemming: `upload=true` maakt de drie ASC-secrets beschikbaar en voert `altool` uit na alle controles. Een nieuwe workflow-run bouwt opnieuw; gebruik een nieuw buildnummer. Geen automatische TestFlight-upload/App Store-publicatie.
+7. Fysieke acceptatie na een later goedgekeurde TestFlight-upload: iPhone én iPad, productieserverpush/APNs, universal links/native passkeys, MFA/Face ID en privacybescherming. Deze opdracht verandert geen appfunctionaliteit of Android-configuratie en claimt geen fysieke acceptatie.
 
-## Pushmeldingen (APNs)
+## Regressiecommando's
 
-- Registratie: de app vraagt toestemming, ontvangt het apparaattoken via `AppDelegate` → `PushNotifications` en meldt het aan `/devices/register`; bij uitloggen, sessie-intrekking of een ongeldige-tokenreactie (`410`, `BadDeviceToken`, `Unregistered`) verwijdert de server het token.
-- Backend: APNs-token-authenticatie (ES256 JWT) met sleutel uit server-env, HTTP/2, `apns-topic` = bundle-ID, productie of sandbox via `APNS_PRODUCTION`. **Eén server bedient één omgeving**: TestFlight en App Store → productie.
-- Inhoud: uitsluitend generieke tekst en een intern pad; geen namen of roepingen. Het vergrendelscherm toont dus niets vertrouwelijks.
-- Webpush (PWA) is een aparte route en wordt niet geraakt.
-- *Niet aantoonbaar zonder fysiek toestel:* daadwerkelijke levering. Test na de eerste build op de iPhone (zie checklist).
+```bash
+python3 -m pip install -r mobile/scripts/signing-requirements.txt
+python3 -m unittest discover -s mobile/scripts -p 'test_*signing*.py' -v
+python3 mobile/scripts/test_verify_ios_bundle.py -v
+cd mobile
+npm ci
+npm test
+npm run build
+npm run check:native-config
+```
 
-## Acceptatiechecklist eerste TestFlight-build (iPhone)
-
-Gebruik uitsluitend de testgegevens van **Ring Apeldoorn**; laat Ring Den Haag en andere ringen ongemoeid.
-
-1. App start zonder crash; app-icoon en naam kloppen (geen "dev").
-2. Inloggen met e-mailcode (en MFA waar die geldt); app sluiten en openen → nog ingelogd.
-3. Face ID/appvergrendeling vraagt na 30 s op de achtergrond; vóór de ontgrendeling is niets zichtbaar; app-switcher toont het schermscherm.
-4. Face ID-inrichting (alleen als de serverlags aan staan; staan uit): niets ongevraagd.
-5. Ringisolatie: gebruiker van Ring Apeldoorn ziet niets van andere ringen.
-6. Meldingen in de app (bel) verschijnen en openen het juiste voorstel/dossier.
-7. **Push:** toestemming geven; een melding uitlokken (bijv. een ondersteuningsverzoek) → melding zonder namen; tikken opent het voorstel; uitloggen → geen pushes meer.
-8. Deeplink: een e-maillink naar een voorstel opent de app (koud, achtergrond, draaiend). Controleer eerst dat `https://ringapeldoorn.nl/.well-known/apple-app-site-association` jouw `Team-ID.nl.ringapeldoorn.ringtools` toont.
-9. Voorstel indienen/ondersteunen, ontheffing, gezamenlijk akkoord: gedrag ongewijzigd.
-10. Vliegtuigmodus: duidelijke offlinemelding, geen vertrouwelijke gegevens in de cache.
-
-## Resterende beperkingen
-
-- App-record, App ID en sleutels kunnen niet vanuit deze repository worden aangemaakt (Apple-aanmelding met tweefactor).
-- Publieke App Store-release staat bewust uit (andere procedure, reviewgegevens, `docs/STORE-PRIVACY.md`).
-- Een iOS-build kon in de ontwikkelomgeving niet lokaal worden uitgevoerd (geen macOS/Xcode); de macOS-CI doet de simulatorbuild en de Release-archive zonder signing.
+Gewone `mobile-ci.yml` behoudt simulatorbuilds, de ad-hoc gesigneerde simulatorconfiguratiecontroles en een **ongesignede** Release-archive. De nieuwe policy-CI draait op Linux en macOS met nul signingsecrets. De synthetische AES-import is uitsluitend een formaatproef met een zelfondertekend testcertificaat en publiceert geen sleutel. Echte owner-P12-compatibiliteit, Apple-vertrouwen en App Store-acceptatie blijven open tot de afzonderlijk geautoriseerde controles hierboven. Er is geen databasewijziging; rollback van deze PR vraagt geen datamigratie. Terugzetten naar automatische signing is geen geaccepteerde fallback.

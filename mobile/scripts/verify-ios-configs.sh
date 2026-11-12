@@ -14,8 +14,14 @@ settings() { xcodebuild -project "$PROJECT" -scheme "$1" -configuration "$2" -sd
 echo "== Build settings =="
 for cfg in Debug Release; do
   s="$(settings App "$cfg")"
-  grep -qE '^\s*CODE_SIGN_ENTITLEMENTS = App/App.entitlements$' <<<"$s" || fail "$cfg: productie-entitlements ontbreken"
+  entitlements_file=App.entitlements
+  [ "$cfg" != Release ] || entitlements_file=App-Store.entitlements
+  grep -qE "^[[:space:]]*CODE_SIGN_ENTITLEMENTS = App/${entitlements_file}$" <<<"$s" || fail "$cfg: vereiste entitlements ontbreken"
   grep -qE '^\s*PRODUCT_BUNDLE_IDENTIFIER = nl\.ringapeldoorn\.ringtools$' <<<"$s" || fail "$cfg: onverwachte bundle-ID"
+  if [ "$cfg" = Release ]; then
+    grep -qE '^\s*CODE_SIGN_STYLE = Manual$' <<<"$s" || fail "Release: handmatige signing vereist"
+    grep -qE '^\s*CODE_SIGN_IDENTITY = Apple Distribution$' <<<"$s" || fail "Release: Apple Distribution vereist"
+  fi
   echo "ok  $cfg"
 done
 s="$(settings App-PersonalTeam Debug-PersonalTeam)"

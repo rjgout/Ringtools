@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Universal Links: host via scripts/configure-native.mjs (RINGTOOLS_APP_HOST). Vereist /.well-known/apple-app-site-association op de server. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:ringapeldoorn.nl</string>
+		<!-- Native passkeys (C5.2): voorbereiding. Werkt pas als /.well-known/apple-app-site-association een webcredentials-sectie met het app-ID (Team-ID.bundle-ID) bevat
+		     (server-env APPLE_APP_ID) en NATIVE_PASSKEYS_ENABLED aan staat. Niet aanwezig in Debug-PersonalTeam (gratis Personal Team kent geen Associated Domains). -->
+		<string>webcredentials:ringapeldoorn.nl</string>
+	</array>
+	<!-- App Store/TestFlight: expliciete productie-APNs, ook tijdens de handmatig gesigneerde archive. -->
+	<key>aps-environment</key>
+	<string>production</string>
+</dict>
+</plist>

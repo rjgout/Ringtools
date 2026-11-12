@@ -76,3 +76,7 @@ Releasepakket, Apple-bronnen, technische controles en productiehandelingen: [app
 ## Notificatiecorrectie vóór store-release
 
 Functionele e-mails en pushes bevatten uitsluitend de generieke actieboodschap uit `notificationText.ts`, geen kandidaat, functie, ring, besluitreden of persoonlijk toegangstoken. Login-/uitnodigings-/beveiligingsmail blijft doelgebonden. Een vooraf toegewezen uitvoeringstaak geeft pas na definitief akkoord en expliciete uitvoeringsvrijgave rechten of meldingen. De nieuwe taakmeldingsregistratie bewaart alleen gebruikers-/dossierverwijzing, taak/revisie, vrijgavegeneratie en aflevertoestand; ze verdwijnt via account-/dossiercascade (verwerkt dossier: bestaande 30-dagentermijn). De bestaande App Privacy-categorieën blijven van toepassing; geen nieuwe tracking, biometrie, native permissie of SDK. Mogelijke eerdere blootstelling moet de verantwoordelijke feitelijk beoordelen: zie [NOTIFICATIE-PRIVACY-UITVOERING.md](NOTIFICATIE-PRIVACY-UITVOERING.md).
+
+## Signingmiddelen in CI
+
+De handmatige iOS-distributie gebruikt uitsluitend bestaande certificaat-/profielmiddelen in een tijdelijke keychain, met opruimen bij fouten. Dit wijzigt geen appgegevensverwerking of APNs-configuratie. PR-CI heeft geen signingsecrets. Echte import, build en upload blijven afzonderlijke eigenaarshandelingen; zie `docs/IOS-TESTFLIGHT.md`.

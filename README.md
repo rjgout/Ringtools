@@ -787,3 +787,7 @@ Zie [het implementatie- en migratieoverzicht](docs/AANMELDEN-RELEASE-1.md) voor 
 
 
 App Store-review, fictieve demoaccounts en volledige accountverwijdering: zie [releasepakket](docs/app-store/RELEASEPAKKET.md). Gewone aanmelding/MFA en lokale appvergrendeling blijven behouden. Productieprovisioning en storepublicatie zijn handmatige eigenaarstappen.
+
+### iOS-distributiesigning
+
+Archive en IPA-export gebruiken handmatige Apple Distribution-signing met bestaande middelen. Echte importcontrole, signingbuild en upload vereisen elk afzonderlijke eigenaarstoestemming; upload staat standaard uit. Zie [de TestFlight-handleiding](docs/IOS-TESTFLIGHT.md) voor environment secrets en de niet-publicerende importcontrole.

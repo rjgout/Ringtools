@@ -1,175 +1,103 @@
 name: iOS TestFlight (handmatig)
 
-# EXPLICIET HANDMATIG. Bouwt een officiële Release-archive van Ringtools met automatische signing (App Store Connect API-sleutel),
-# controleert de IPA (productie-APNs, Associated Domains, bundle-ID, buildnummer) en uploadt hem naar TESTFLIGHT.
-# Dit is GEEN App Store-release: publiceren naar de App Store gebeurt uitsluitend handmatig in App Store Connect.
-# Vereist de secrets van de omgeving "testflight" (zie docs/IOS-TESTFLIGHT.md). Er staan geen certificaten of sleutels in Git;
-# de API-sleutel wordt alleen tijdelijk op de runner neergezet en nooit geprint.
+# No automatic provisioning. Owner approval is separate from the import-only check.
 on:
   workflow_dispatch:
     inputs:
+      signing_authorized:
+        description: Eigenaar heeft deze echte Distribution-build afzonderlijk goedgekeurd
+        type: boolean
+        default: false
+      import_check_run_id:
+        description: Geslaagde afzonderlijk goedgekeurde importcontrole op dezelfde main-commit
+        type: string
+        required: true
       api_url:
-        description: https-URL van de backend (VITE_API_URL)
+        description: HTTPS-backend
         type: string
         default: https://ringapeldoorn.nl
       marketing_version:
-        description: Versie voor gebruikers (CFBundleShortVersionString), bijv. 1.0.0
+        description: CFBundleShortVersionString
         type: string
-        default: "1.0.0"
+        default: '1.0.0'
       build_number:
-        description: Buildnummer (leeg = het nummer van deze workflow-run). Moet per versie oplopen.
+        description: Oplopend buildnummer (leeg = workflow-runnummer)
         type: string
-        default: ""
+        default: ''
       upload:
-        description: Uploaden naar TestFlight (uit = alleen archiveren en controleren)
+        description: Eigenaar heeft ook de TestFlight-upload expliciet goedgekeurd
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
-
+  actions: read
 concurrency:
-  group: ios-testflight
+  group: ringtools-ios-signing
   cancel-in-progress: false
-
 jobs:
   testflight:
-    name: Archiveren, controleren en naar TestFlight
+    if: ${{ github.repository == 'rjgout/Ringtools' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
     runs-on: macos-latest
     environment: testflight
     timeout-minutes: 60
     defaults:
       run:
         working-directory: mobile
+        shell: bash
     env:
       VITE_API_URL: ${{ inputs.api_url }}
       MARKETING_VERSION: ${{ inputs.marketing_version }}
       BUILD_NUMBER: ${{ inputs.build_number != '' && inputs.build_number || github.run_number }}
-      BUNDLE_ID: nl.ringapeldoorn.ringtools
+      IOS_SIGNING_AUTHORIZED: ${{ inputs.signing_authorized }}
     steps:
-      - name: Secrets aanwezig? (alleen de namen worden gecontroleerd)
-        working-directory: .
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
-          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-        run: |
-          for v in ASC_KEY_ID ASC_ISSUER_ID ASC_API_KEY_P8_BASE64 IOS_TEAM_ID; do
-            [ -n "${!v}" ] || { echo "::error::Secret $v ontbreekt in de omgeving 'testflight' (zie docs/IOS-TESTFLIGHT.md)."; exit 1; }
-          done
-          [[ "$MARKETING_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::Ongeldige versie '$MARKETING_VERSION'."; exit 1; }
-          [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "::error::Ongeldig buildnummer '$BUILD_NUMBER'."; exit 1; }
-          [[ "$VITE_API_URL" =~ ^https:// ]] || { echo "::error::api_url moet met https:// beginnen."; exit 1; }
       - uses: actions/checkout@v4
+      - name: Afzonderlijke toestemming en publieke invoer controleren
+        working-directory: .
+        run: |
+          set -euo pipefail
+          [ "$IOS_SIGNING_AUTHORIZED" = true ] || { echo '::error::Echte signing is geblokkeerd zonder afzonderlijke eigenaarstoestemming.'; exit 1; }
+          [[ "$MARKETING_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || exit 1
+          [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || exit 1
+          [[ "$VITE_API_URL" =~ ^https:// ]] || exit 1
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
+      - run: python3 -m pip install -r scripts/signing-requirements.txt
+      - run: python3 -m unittest discover -s scripts -p 'test_*signing*.py'
+      - run: python3 scripts/test_verify_ios_bundle.py
       - run: npm ci
       - run: npm test
       - run: npm run build
       - run: npm run check:native-config
       - run: npx cap sync ios
-      - name: API-sleutel tijdelijk neerzetten (wordt nooit geprint, gecommit of geüpload)
+      - name: Bestaande Distribution-middelen controleren en tijdelijk importeren
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
-        run: |
-          set +x
-          mkdir -p "$HOME/private_keys"
-          echo "$ASC_API_KEY_P8_BASE64" | base64 -d > "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
-          chmod 600 "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
-      - name: Archiveren (Release, automatische signing)
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          GH_TOKEN: ${{ github.token }}
+          IMPORT_CHECK_RUN_ID: ${{ inputs.import_check_run_id }}
           IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-        run: |
-          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
-            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Ringtools.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            DEVELOPMENT_TEAM="$IOS_TEAM_ID" MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            archive
-      - name: Archive controleren (diagnostiek; archive is met Apple Development ondertekend, de export zet er Apple Distribution op)
-        env:
-          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-        run: |
-          APP="$(ls -d "$RUNNER_TEMP"/Ringtools.xcarchive/Products/Applications/*.app | head -1)"
-          python3 scripts/verify-ios-bundle.py --stage archive --app "$APP" --bundle-id "$BUNDLE_ID" --version "$MARKETING_VERSION" --build "$BUILD_NUMBER"
-      - name: Exporteren (IPA voor App Store Connect)
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-        run: |
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>export</string>
-            <key>teamID</key><string>$IOS_TEAM_ID</string>
-            <key>signingStyle</key><string>automatic</string>
-            <key>signingCertificate</key><string>Apple Distribution</string>
-            <key>manageAppVersionAndBuildNumber</key><false/>
-            <key>uploadSymbols</key><true/>
-          </dict></plist>
-          PLIST
-          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Ringtools.xcarchive" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
-          ls "$RUNNER_TEMP/export"/*.ipa
-      - name: Export-diagnostiek bij een fout (alleen namen en foutregels, geen sleutels)
-        if: failure()
-        run: |
-          for f in "$TMPDIR"/App_*.xcdistributionlogs/IDEDistribution.standard.log; do
-            [ -f "$f" ] && grep -iE "error|fail|no (signing|profile)|certificate" "$f" | grep -viE "private key|BEGIN" | tail -30 || true
-          done
-      - name: IPA controleren (distributie-ondertekening, App Store-profiel, productie-APNs, Associated Domains, bundle-ID, versie, privacymanifest)
-        env:
-          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-        run: |
-          set -euo pipefail
-          IPA="$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)"
-          rm -rf "$RUNNER_TEMP/ipa" && mkdir -p "$RUNNER_TEMP/ipa" && unzip -q "$IPA" -d "$RUNNER_TEMP/ipa"
-          APP="$(ls -d "$RUNNER_TEMP"/ipa/Payload/*.app | head -1)"
-          codesign --verify --deep --strict "$APP"
-          python3 scripts/verify-ios-bundle.py --stage ipa --app "$APP" --bundle-id "$BUNDLE_ID" --version "$MARKETING_VERSION" --build "$BUILD_NUMBER"
-          {
-            echo "### Ringtools iOS"
-            echo "- Bundle-ID: \`$BUNDLE_ID\`"
-            echo "- Versie: \`$MARKETING_VERSION\` (build \`$BUILD_NUMBER\`)"
-            echo "- Ondertekening: **Apple Distribution**, App Store-profiel (geen apparatenlijst), get-task-allow uit"
-            echo "- APNs-omgeving in de IPA: **production**"
-            echo "- Controles: handtekening, profiel, productie-APNs, Associated Domains, webcredentials, bundle-ID, versie, buildnummer en privacymanifest geslaagd"
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Uploaden naar TestFlight
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: python3 scripts/ios_distribution.py prepare --import-run-id "$IMPORT_CHECK_RUN_ID"
+      - name: Handmatige Distribution-archive en IPA-export met volledige distributiecontroles
+        run: python3 scripts/ios_distribution.py build
+      - name: Expliciet goedgekeurde TestFlight-upload
         if: ${{ inputs.upload }}
         env:
+          IOS_UPLOAD_AUTHORIZED: ${{ inputs.upload }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-        run: |
-          IPA="$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)"
-          xcrun altool --upload-app --type ios -f "$IPA" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
-          echo "- Upload naar TestFlight: **gestart** (verwerking in App Store Connect duurt enkele minuten)" >> "$GITHUB_STEP_SUMMARY"
-      - name: IPA bewaren als artifact (alleen bij uitgeschakelde upload)
-        if: ${{ !inputs.upload }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ringtools-ios-ipa
-          path: ${{ runner.temp }}/export/*.ipa
-          retention-days: 3
-      - name: API-sleutel verwijderen
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+        run: python3 scripts/ios_distribution.py upload
+      - name: Tijdelijke middelen en eerdere keychain/profielen herstellen (ook bij fouten)
         if: always()
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-        run: rm -f "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+        run: python3 scripts/ios_distribution.py cleanup
