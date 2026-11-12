@@ -23,7 +23,7 @@ const config: CapacitorConfig = {
   plugins: {
     // Native HTTP voor API-aanroepen (geen CORS-afhankelijkheid, geen cookies van de WebView).
     CapacitorHttp: { enabled: true },
-    SplashScreen: { launchAutoHide: false, backgroundColor: "#0b1220", showSpinner: false },
+    SplashScreen: { launchAutoHide: false, backgroundColor: "#0b1220", showSpinner: false, androidSplashResourceName: "splash", androidScaleType: "CENTER_INSIDE", layoutName: "ringtools_splash" },
     Keyboard: { resize: "body" as never, resizeOnFullScreen: true },
     PushNotifications: { presentationOptions: ["badge", "sound", "alert"] },
     // Schermbescherming (E3): Android FLAG_SECURE; iOS alleen de afscherming voor de app-switcher. De niet-gedocumenteerde laagtruc voor

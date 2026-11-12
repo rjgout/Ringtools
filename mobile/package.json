@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "assets": "capacitor-assets generate --iconBackgroundColor '#0b1220' --splashBackgroundColor '#0b1220'",
+    "assets": "capacitor-assets generate --iconBackgroundColor '#0b1220' --splashBackgroundColor '#0b1220' && npm run assets:splash",
     "cap:sync": "npm run build && cap sync",
     "cap:doctor": "cap doctor",
     "ios": "npm run cap:sync && cap open ios",
@@ -20,7 +20,9 @@
     "check:native-config": "node scripts/check-native-config.mjs",
     "build:ios:simulator:personal": "npm run cap:sync && xcodebuild -project ios/App/App.xcodeproj -scheme App-PersonalTeam -configuration Debug-PersonalTeam -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
     "verify:ios-configs": "npm run build && npx cap sync ios && ./scripts/verify-ios-configs.sh",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "assets:splash": "node scripts/generate-splash-assets.mjs",
+    "check:splash": "node scripts/generate-splash-assets.mjs --check && node --test scripts/splash-art.test.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "10.0.0",
@@ -53,6 +55,7 @@
     "@vitejs/plugin-react": "^6.2.1",
     "jsdom": "^30.1.3",
     "patch-package": "8.0.1",
+    "sharp": "^0.35.5",
     "typescript": "^5.9.0",
     "vite": "^8.3.5",
     "vitest": "^5.1.0"

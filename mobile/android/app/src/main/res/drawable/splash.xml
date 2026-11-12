@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ook de compatibele/fallback-splash gebruikt de huisstijl, zonder rekken. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><bitmap android:src="@drawable/splash_background" android:gravity="fill" /></item>
+    <item android:width="192dp" android:height="192dp" android:gravity="center">
+        <bitmap android:src="@drawable/splash_mark" android:gravity="center" android:filter="true" />
+    </item>
+</layer-list>

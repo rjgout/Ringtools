@@ -253,3 +253,7 @@ App Store-review, fictieve demoaccounts en volledige accountverwijdering: zie [r
 
 
 Uitvoeringstaken worden na `APPROVED` afzonderlijk door ringstaf vrijgegeven met **Vrijgeven voor uitvoering**. Vooraf toewijzen geeft geen extra toegang of melding. De iOS-/Android-client gebruikt dezelfde API als de beveiligde website; functionele externe meldingen zijn uitsluitend generiek. [Beleid, migratie, incidentbeoordeling en fysieke acceptatie](NOTIFICATIE-PRIVACY-UITVOERING.md).
+
+## Native opstartbranding
+
+De splash toont een schermvullend blauw kleurenveld, met de originele ring en zeven units als afzonderlijke transparante laag. Geen vierkant icoonvlak. iOS gebruikt hetzelfde native launchstoryboard op iPhone/iPad. Android heeft een korte effen systeemfase zonder icoon en daarna een eigen native beeldlaag; beide verdwijnen vanaf de bestaande splash-hide-aanroepen. Regenereren/controleren: `cd mobile && npm run assets:splash && npm run check:splash`. Zie [NATIVE-SPLASH.md](NATIVE-SPLASH.md) voor bronnen, platformgedrag, pixelbehoud, simulatorbeelden en fysieke acceptatie. De appvergrendeling en authenticatie blijven behouden.
