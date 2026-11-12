@@ -87,6 +87,29 @@ try {
 
 PowerShell/.NET gebruikt kortstondig managed strings die niet gegarandeerd onmiddellijk uit geheugen gewist worden; voer dit daarom uitsluitend op de vertrouwde eigenaarmachine uit en sluit de sessie daarna. De invoer verschijnt niet in shellgeschiedenis of console. Gebruik geen clipboard met ingeschakelde geschiedenis/synchronisatie en geen commando met een letterlijk wachtwoord. Controleer uitsluitend de **namen** met `gh secret list --repo rjgout/Ringtools --env testflight`. Stel ontbrekende `IOS_TEAM_ID` als eigenaar via de beveiligde environmentinterface in; controleer bestaande ASC-secrets pas voor een afzonderlijk goedgekeurde upload. Codex wijzigt geen secrets.
 
+## Synthetische macOS-formaatbevinding
+
+De eerste macOS-policy-CI op commit `805f0ba` wees de synthetische AES256-SHA256-export veilig af ([run 43206742004](https://github.com/rjgout/Ringtools/actions/runs/43206742004)). De regressies bevatten daarom ook een **verplicht geslaagde** tijdelijke import van een synthetische TripleDES-SHA1-P12 en een verplicht geweigerd verkeerd wachtwoord. Daarmee wordt onderscheid gemaakt tussen een defecte importopdracht en AES-compatibiliteit. Alleen de synthetische formaatproef mag afwijzen zonder de policy-CI rood te maken; de echte eigenaar-importcontrole faalt dan altijd en levert geen importbewijs op.
+
+Als de afzonderlijk toegestane controle de echte AES-export afwijst, kan de eigenaar na expliciete beoordeling hetzelfde bestaande certificaat mét dezelfde privésleutel vanuit de Windows-certificaatopslag herverpakken. Bijvoorbeeld, uitsluitend lokaal op de vertrouwde eigenaarmachine, met een nieuw sterk exportwachtwoord en een beveiligde doelmap:
+
+```powershell
+$thumbprint = Read-Host 'Thumbprint van het bestaande Distribution-certificaat (alleen lokaal)'
+$certificate = Get-Item ('Cert:\CurrentUser\My\' + $thumbprint)
+if (-not $certificate.HasPrivateKey) { throw 'Bestaande privésleutel ontbreekt; stop.' }
+$exportPassword = Read-Host 'Sterk wachtwoord voor compatibele tijdelijke export' -AsSecureString
+try {
+    Export-PfxCertificate -Cert $certificate `
+        -FilePath 'C:\BeveiligdeSigning\AppleDistribution-compatible.p12' `
+        -Password $exportPassword -CryptoAlgorithmOption TripleDES_SHA1 -ChainOption BuildChain |
+        Out-Null
+} finally {
+    $exportPassword.Dispose()
+}
+```
+
+Dit vraagt geen nieuw Apple-certificaat aan en wijzigt geen bestaand certificaat/profiel. TripleDES-SHA1 is een ouder interoperabiliteitsformaat; gebruik het uitsluitend voor deze versleutelde overdracht, met een sterk uniek wachtwoord, beschermde opslag en beperkte bewaartijd. Er vindt geen stille downgrade in CI plaats. De eigenaar vervangt daarna bewust de P12- en wachtwoordsecret via bovenstaande stdin-procedure en herhaalt de importcontrole. Bewaar de bestaande beveiligde oorspronkelijke reservekopie. Gebruik geen `-nodes`/onversleutelde PEM-export. De feitelijke eigenaarbestanden kunnen pas na afzonderlijke toestemming worden beoordeeld.
+
 ## Exacte eigenaarshandelingen en open acceptatie
 
 1. Laat deze draft-PR onafhankelijk reviewen, inclusief workflowrechten, Xcode Release-configuratie, testuitvoer en cleanup. Geen merge zonder expliciet akkoord; een merge naar `main` heeft ook Docker/Watchtower-impact.

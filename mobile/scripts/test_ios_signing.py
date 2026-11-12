@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 STATE = {'team': TEAM, 'certificate_sha1': 'A' * 40, 'profile_uuid': profile()['UUID']}
 
 
-def p12_fixture(password=b'synthetic-only', cn='Apple Distribution: SYNTHETIC', team=TEAM, expired=False, private=True):
+def p12_fixture(password=b'synthetic-only', cn='Apple Distribution: SYNTHETIC', team=TEAM, expired=False, private=True, legacy=False):
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn), x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, team)])
     now = datetime.now(timezone.utc)
@@ -35,7 +35,8 @@ def p12_fixture(password=b'synthetic-only', cn='Apple Distribution: SYNTHETIC', 
             .not_valid_after(now + timedelta(days=-1 if expired else 2))
             .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CODE_SIGNING]), critical=False).sign(key, hashes.SHA256()))
     encryption = (PrivateFormat.PKCS12.encryption_builder().kdf_rounds(20000)
-                  .key_cert_algorithm(pkcs12.PBES.PBESv2SHA256AndAES256CBC).hmac_hash(hashes.SHA256()).build(password))
+                  .key_cert_algorithm(pkcs12.PBES.PBESv1SHA1And3KeyTripleDESCBC if legacy else pkcs12.PBES.PBESv2SHA256AndAES256CBC)
+                  .hmac_hash(hashes.SHA1() if legacy else hashes.SHA256()).build(password))
     return pkcs12.serialize_key_and_certificates(b'SYNTHETIC ONLY', key if private else None, cert, None, encryption), cert.public_bytes(serialization.Encoding.DER)
 
 
@@ -274,6 +275,27 @@ class ArchitectureTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == 'darwin', 'macOS keychain API unavailable; Linux tests cover P12 parsing and fail-closed policy')
 class MacSyntheticImportTests(unittest.TestCase):
+    def test_compatible_synthetic_control_and_wrong_password(self):
+        # A positive control prevents a broken import command being reported as AES incompatibility.
+        p12, _ = p12_fixture(cn='SYNTHETIC COMPATIBILITY CONTROL ONLY', legacy=True)
+        with tempfile.TemporaryDirectory(prefix='ringtools-synthetic-control-') as directory:
+            root = Path(directory); p12_file = root / 'synthetic.p12'; keychain = root / 'synthetic.keychain-db'
+            driver.private_file(p12_file, p12)
+            password = uuid.uuid4().hex
+            previous = driver.run(['security', 'list-keychains', '-d', 'user'], 'Read synthetic search-list control')
+            try:
+                driver.run(['security', 'create-keychain', '-p', password, str(keychain)], 'Synthetic keychain creation')
+                driver.run(['security', 'unlock-keychain', '-p', password, str(keychain)], 'Synthetic keychain unlock')
+                with self.assertRaises(driver.SigningError):
+                    driver.import_p12(p12_file, 'deliberately-wrong-synthetic-password', keychain)
+                driver.import_p12(p12_file, 'synthetic-only', keychain)
+                print('SYNTHETIC compatible P12 control: imported; wrong password refused. No Apple credentials used.')
+            finally:
+                if keychain.exists():
+                    driver.run(['security', 'delete-keychain', str(keychain)], 'Synthetic cleanup')
+            self.assertFalse(keychain.exists())
+            self.assertEqual(previous, driver.run(['security', 'list-keychains', '-d', 'user'], 'Check synthetic search-list control'))
+
     def test_aes256_sha256_ephemeral_self_signed_import_only(self):
         # No Apple identity, provisioning, signing, account or API contact.
         p12, _ = p12_fixture(cn='SYNTHETIC KEYCHAIN COMPATIBILITY ONLY')
@@ -281,6 +303,7 @@ class MacSyntheticImportTests(unittest.TestCase):
             root = Path(directory); p12_file = root / 'synthetic.p12'; keychain = root / 'synthetic.keychain-db'
             driver.private_file(p12_file, p12)
             password = uuid.uuid4().hex
+            previous = driver.run(['security', 'list-keychains', '-d', 'user'], 'Read synthetic search-list control')
             try:
                 driver.run(['security', 'create-keychain', '-p', password, str(keychain)], 'Synthetic keychain creation')
                 driver.run(['security', 'unlock-keychain', '-p', password, str(keychain)], 'Synthetic keychain unlock')
@@ -295,6 +318,7 @@ class MacSyntheticImportTests(unittest.TestCase):
                 if keychain.exists():
                     driver.run(['security', 'delete-keychain', str(keychain)], 'Synthetic cleanup')
             self.assertFalse(keychain.exists())
+            self.assertEqual(previous, driver.run(['security', 'list-keychains', '-d', 'user'], 'Check synthetic search-list control'))
 
 
 if __name__ == '__main__':
