@@ -6,7 +6,7 @@ import { HashRouter, Route, Routes, useLocation, useNavigate, Navigate } from "r
 import { App as CapApp } from "@capacitor/app";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { AuthProvider, useAuth } from "./lib/auth";
-import { API_HOST } from "./config";
+import { API_HOST, APP_VARIANT } from "./config";
 import { watchKeyboard, isNative, onBackButton, onNetworkChange, setupNativeChrome } from "./lib/native";
 import { installDeepLinkHandlers } from "./lib/deeplinks";
 import { routeInbox } from "./lib/routeInbox";
@@ -159,6 +159,7 @@ export function Shell() {
   return (
     <div className="shell">
       
+      {APP_VARIANT === "dev" && <div className="banner" role="note">Ontwikkelomgeving – alleen testgegevens</div>}
       {!online && <div className="banner" role="status">Geen internetverbinding. Gegevens kunnen verouderd zijn.</div>}
       {ring && !isTabRoot(location.pathname) && (
         <NavBar title={navTitle(location.pathname)} backLabel={titleOf(parentPath(location.pathname))} onBack={() => void goBack()} />
