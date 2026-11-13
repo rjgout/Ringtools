@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import crypto from "crypto";
 import { prisma } from "../src/lib/prisma";
 import { completePairing, registrationMessage } from "../src/lib/trustedDevices";
+import { gotoStable } from "./helpers/mfa";
 import { codeFor, seedTotpUser, releaseReplayCounter, startLogin } from "./helpers/totp";
 
 /**
@@ -20,7 +21,7 @@ async function loginWithTotp(page: import("@playwright/test").Page, name: string
   await releaseReplayCounter(user.id);
   await page.locator("#code").fill(codeFor(secret));
   await page.getByRole("button", { name: "Inloggen", exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/app/);
   return user;
 }
 
@@ -29,7 +30,7 @@ test.describe("vlag aan", () => {
 
   test("koppelcode tonen, in de app 'claimen', toestel zien en intrekken", async ({ page, request }) => {
     const user = await loginWithTotp(page, "Toestel Web Een");
-    await page.goto("/profiel/beveiliging");
+    await gotoStable(page, "/profiel/beveiliging");
     await expect(page.getByRole("heading", { name: "Vertrouwde toestellen" })).toBeVisible();
     await expect(page.getByText("Geen gekoppelde toestellen.")).toBeVisible();
     await page.getByRole("button", { name: "Nieuw toestel koppelen" }).click();
@@ -65,7 +66,7 @@ test.describe("vlag uit", () => {
 
   test("geen paneel en de API-routes bestaan niet", async ({ page, request }) => {
     await loginWithTotp(page, "Toestel Web Twee");
-    await page.goto("/profiel/beveiliging");
+    await gotoStable(page, "/profiel/beveiliging");
     await expect(page.getByRole("heading", { name: "Beveiliging", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Vertrouwde toestellen" })).toHaveCount(0);
     expect((await request.post("/api/mobile/v1/trusted-devices/pair/claim", { data: { code: "AAAA-BBBB-CCCC" } })).status()).toBe(404);

@@ -145,3 +145,9 @@ export async function logoutFromApp(page: Page) {
   await page.getByRole("alertdialog").getByRole("button", { name: "Uitloggen" }).click();
   await page.waitForURL(/\/login/);
 }
+
+/** Navigeert pas nadat de vorige pagina (bijv. /app met zijn eigen doorverwijzing) tot rust is gekomen, zodat navigaties elkaar niet onderbreken. */
+export async function gotoStable(page: Page, path: string) {
+  await page.waitForLoadState("networkidle");
+  await page.goto(path);
+}

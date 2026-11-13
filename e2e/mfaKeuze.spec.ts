@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { prisma } from "../src/lib/prisma";
 import { createMagicLinkToken } from "../src/lib/auth";
 import { createE2eUser } from "./helpers/data";
-import { addVirtualAuthenticator, loginWithMagicLink } from "./helpers/mfa";
+import { addVirtualAuthenticator, loginWithMagicLink, logoutFromApp, gotoStable } from "./helpers/mfa";
 import { codeFor, seedTotpUser, releaseReplayCounter, startLogin, fakePasskeyRow } from "./helpers/totp";
 
 /**
@@ -12,15 +12,14 @@ const MODE = process.env.E2E_WEB_TOTP === "on" ? "on" : process.env.E2E_WEB_TOTP
 test.skip(MODE === null, "Zet E2E_WEB_TOTP=on of off (en start de server met dezelfde WEB_TOTP_ENABLED-waarde).");
 
 async function logout(page: Page) {
-  await page.goto("/dashboard");
-  await page.getByRole("button", { name: "Uitloggen" }).click();
+  await logoutFromApp(page);
 }
 
 async function submitTotp(page: Page, userId: string, secret: string) {
   await releaseReplayCounter(userId);
   await page.locator("#code").fill(codeFor(secret));
   await page.getByRole("button", { name: "Inloggen", exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/app/);
 }
 
 /** Gebruiker met een echte (virtuele) passkey ÉN een authenticator-app, uitgelogd en klaar voor een nieuwe inlog. */
@@ -29,7 +28,7 @@ async function userWithBoth(page: Page, name: string) {
   await startLogin(page, user.id);
   await addVirtualAuthenticator(page);
   await submitTotp(page, user.id, secret);
-  await page.goto("/profiel/beveiliging");
+  await gotoStable(page, "/profiel/beveiliging");
   await page.getByRole("button", { name: "Passkey toevoegen" }).click();
   await page.getByRole("button", { name: "Passkey registreren" }).click();
   await expect.poll(async () => prisma.webAuthnCredential.count({ where: { userId: user.id } })).toBe(1);
@@ -43,7 +42,7 @@ test.describe("vlag aan", () => {
   test("alleen een passkey: direct passkeyverificatie, geen keuzescherm", async ({ page }) => {
     const { user } = await createE2eUser("HOGERAAD", `Keuze passkey ${Date.now()}`);
     await loginWithMagicLink(page, `/auth/magic/${(await createMagicLinkToken(user.id)).rawToken}`);
-    await page.goto("/profiel/beveiliging");
+    await gotoStable(page, "/profiel/beveiliging");
     await page.getByRole("button", { name: "Passkey toevoegen" }).click();
     await page.getByRole("button", { name: "Passkey registreren" }).click();
     await expect(page.getByRole("button", { name: "Verificatie inschakelen" })).toBeEnabled();
@@ -53,7 +52,7 @@ test.describe("vlag aan", () => {
 
     await startLogin(page, user.id);
     await expect(page.getByTestId("mfa-chooser")).toHaveCount(0);
-    await expect(page).toHaveURL(/\/dashboard/); // passkey automatisch bevestigd
+    await expect(page).toHaveURL(/\/app/); // passkey automatisch bevestigd
   });
 
   test("alleen een authenticator-app: direct TOTP, geen keuzescherm of wisselknop", async ({ page }) => {
@@ -74,13 +73,13 @@ test.describe("vlag aan", () => {
     await expect(page.getByTestId("mfa-chooser")).toBeVisible();
     await expect(page.getByText(/Aanbevolen/)).toBeVisible();
     // zonder verificatie geen toegang (geen e-mail-only terugval)
-    await page.goto("/dashboard");
+    await page.goto("/app");
     await expect(page).toHaveURL(/\/login/);
 
     // 2) kies passkey
     await startLogin(page, user.id);
     await page.getByRole("link", { name: /Met een passkey/ }).click();
-    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page).toHaveURL(/\/app/);
     await logout(page);
 
     // 3) kies authenticator-app
@@ -171,8 +170,8 @@ test.describe("vlag aan", () => {
     const { user } = await userWithBoth(page, `Keuze profiel ${Date.now()}`);
     await startLogin(page, user.id);
     await page.getByRole("link", { name: /Met een passkey/ }).click();
-    await expect(page).toHaveURL(/\/dashboard/);
-    await page.goto("/profiel/beveiliging");
+    await expect(page).toHaveURL(/\/app/);
+    await gotoStable(page, "/profiel/beveiliging");
     const overview = page.getByTestId("methods-overview");
     await expect(overview).toContainText("Passkey: 1 geregistreerd");
     await expect(overview).toContainText("Authenticator-app: ingesteld");
@@ -192,7 +191,7 @@ test.describe("vlag uit", () => {
     await expect(page.getByRole("link", { name: /authenticator/i })).toHaveCount(0);
     await page.goto("/mfa/totp");
     await expect(page).toHaveURL(/\/mfa\/passkey/);
-    await page.goto("/dashboard");
+    await page.goto("/app");
     await expect(page).toHaveURL(/\/login/);
   });
 
@@ -200,7 +199,7 @@ test.describe("vlag uit", () => {
     const { user } = await seedTotpUser(`Uit totp ${Date.now()}`);
     await startLogin(page, user.id);
     await expect(page.getByText(/niet beschikbaar/)).toBeVisible();
-    await page.goto("/dashboard");
+    await page.goto("/app");
     await expect(page).toHaveURL(/\/login/);
   });
 });

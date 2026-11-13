@@ -5,7 +5,7 @@ import { createMagicLinkToken } from "../src/lib/auth";
 import { startTotpEnrollment, confirmTotpEnrollment } from "../src/lib/mfa";
 import { decryptSecret } from "../src/lib/crypto";
 import { createE2eUser } from "./helpers/data";
-import { loginWithMagicLink, addVirtualAuthenticator } from "./helpers/mfa";
+import { loginWithMagicLink, addVirtualAuthenticator, logoutFromApp, gotoStable } from "./helpers/mfa";
 
 /**
  * E2.1 – authenticator-app (TOTP) voor gewone webgebruikers.
@@ -60,7 +60,7 @@ test.describe("vlag aan", () => {
   test("inschrijven in het profiel: QR, bevestigen, acht herstelcodes eenmalig getoond, daarna verificatie inschakelen", async ({ page }) => {
     const { user } = await createE2eUser("HOGERAAD", `Inschrijven ${Date.now()}`);
     await loginWithMagicLink(page, `/auth/magic/${(await createMagicLinkToken(user.id)).rawToken}`);
-    await page.goto("/profiel/beveiliging");
+    await gotoStable(page, "/profiel/beveiliging");
 
     await expect(page.getByRole("heading", { name: "Authenticator-app" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Verificatie inschakelen" })).toBeDisabled();
@@ -100,21 +100,21 @@ test.describe("vlag aan", () => {
 
     await submitLoginCode(page, "000000");
     await expect(page.getByText("Ongeldige code.")).toBeVisible();
-    await page.goto("/dashboard");
+    await page.goto("/app");
     await expect(page).toHaveURL(/\/login/); // nog geen sessie
 
     await startLogin(page, user.id);
     await releaseReplayCounter(user.id);
     const code = codeFor(secret);
     await submitLoginCode(page, code);
-    await expect(page).toHaveURL(/\/dashboard/);
-    await page.getByRole("button", { name: "Uitloggen" }).click();
+    await expect(page).toHaveURL(/\/app/);
+    await logoutFromApp(page);
 
     // Replay: dezelfde code opnieuw (zelfde tijdstap) wordt geweigerd
     await startLogin(page, user.id);
     await submitLoginCode(page, code);
     await expect(page.getByText("Ongeldige code.")).toBeVisible();
-    await page.goto("/dashboard");
+    await page.goto("/app");
     await expect(page).toHaveURL(/\/login/);
   });
 
@@ -130,7 +130,7 @@ test.describe("vlag aan", () => {
     await expect(page.getByText(/Te veel mislukte pogingen/)).toBeVisible();
     await submitLoginCode(page, codeFor(secret));
     await expect(page.getByText(/Te veel mislukte pogingen/)).toBeVisible();
-    await page.goto("/dashboard");
+    await page.goto("/app");
     await expect(page).toHaveURL(/\/login/);
     expect((await prisma.totpCredential.findUniqueOrThrow({ where: { userId: user.id } })).lockedUntil).not.toBeNull();
   });
@@ -141,16 +141,15 @@ test.describe("vlag aan", () => {
     await page.getByRole("button", { name: "Ik heb geen toegang tot mijn authenticator" }).click();
     await page.locator("#recovery-code").fill(recoveryCodes[0]);
     await page.getByRole("button", { name: "Inloggen met herstelcode" }).click();
-    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page).toHaveURL(/\/app/);
 
     // nieuwe herstelcodes (sessie is recent geverifieerd)
-    await page.goto("/profiel/beveiliging");
+    await gotoStable(page, "/profiel/beveiliging");
     await expect(page.getByText("Nog 7 van 8 herstelcodes ongebruikt.")).toBeVisible();
     await page.getByRole("button", { name: "Nieuwe herstelcodes maken" }).click();
     await expect(page.getByTestId("recovery-codes-panel").locator(".recovery-codes span")).toHaveCount(8);
     await page.getByRole("button", { name: "Ik heb mijn herstelcodes opgeslagen" }).click();
-    await page.goto("/dashboard");
-    await page.getByRole("button", { name: "Uitloggen" }).click();
+    await logoutFromApp(page);
 
     // oude code (nog ongebruikt in de oude set) werkt niet meer; de al gebruikte code ook niet
     await startLogin(page, user.id);
@@ -158,7 +157,7 @@ test.describe("vlag aan", () => {
     await page.locator("#recovery-code").fill(recoveryCodes[1]);
     await page.getByRole("button", { name: "Inloggen met herstelcode" }).click();
     await expect(page.getByText("Ongeldige of al gebruikte herstelcode.")).toBeVisible();
-    await page.goto("/dashboard");
+    await page.goto("/app");
     await expect(page).toHaveURL(/\/login/);
   });
 
@@ -167,11 +166,11 @@ test.describe("vlag aan", () => {
     await startLogin(page, user.id);
     await releaseReplayCounter(user.id);
     await submitLoginCode(page, codeFor(secret));
-    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page).toHaveURL(/\/app/);
 
     // Sessie ouder dan 15 minuten -> herverificatie nodig
     await prisma.session.updateMany({ where: { userId: user.id }, data: { mfaAt: new Date(Date.now() - 60 * 60 * 1000) } });
-    await page.goto("/profiel/beveiliging");
+    await gotoStable(page, "/profiel/beveiliging");
     await page.getByRole("button", { name: "Verificatie uitschakelen" }).click();
     await expect(page).toHaveURL(/\/profiel\/beveiliging\/herverifieer/);
     await releaseReplayCounter(user.id);
@@ -228,7 +227,7 @@ test.describe("vlag aan", () => {
     await expect(page.getByText("Bewaar je herstelcodes", { exact: false })).toBeVisible();
     await expect(page.locator(".recovery-codes span")).toHaveCount(8);
     await page.getByRole("button", { name: "Ik heb mijn herstelcodes opgeslagen, ga verder" }).click();
-    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page).toHaveURL(/\/app/);
   });
 
   test("terugzetten van de vlag: bestaande TOTP-gebruiker kan weer inloggen (rondreis aan → uit → aan)", async ({ page }) => {
@@ -245,7 +244,7 @@ test.describe("vlag aan", () => {
     await startLogin(page, user.id);
     await expect(page).toHaveURL(/\/mfa\/totp/);
     await submitLoginCode(page, codeFor(await secretOf(user.id)));
-    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page).toHaveURL(/\/app/);
   });
 });
 
@@ -258,7 +257,7 @@ test.describe("vlag uit", () => {
   test("geen authenticator-app in het profiel; bestaande teksten blijven 'passkey'", async ({ page }) => {
     const { user } = await createE2eUser("HOGERAAD", `Uit profiel ${Date.now()}`);
     await loginWithMagicLink(page, `/auth/magic/${(await createMagicLinkToken(user.id)).rawToken}`);
-    await page.goto("/profiel/beveiliging");
+    await gotoStable(page, "/profiel/beveiliging");
     await expect(page.getByRole("heading", { name: "Authenticator-app" })).toHaveCount(0);
     await expect(page.getByText(/Passkey-verificatie/).first()).toBeVisible();
   });
@@ -276,7 +275,7 @@ test.describe("vlag uit", () => {
     await expect(page.locator("#recovery-code")).toHaveCount(0);
     void secret;
     void recoveryCodes;
-    await page.goto("/dashboard");
+    await page.goto("/app");
     await expect(page).toHaveURL(/\/login/);
     expect(await prisma.session.count({ where: { userId: user.id, mfaAt: { not: null } } })).toBe(0);
   });
@@ -288,7 +287,7 @@ test.describe("vlag uit", () => {
     await releaseReplayCounter(user.id);
     await startLogin(page, user.id);
     await expect(page.getByText(/niet beschikbaar/)).toBeVisible();
-    await page.goto("/dashboard");
+    await page.goto("/app");
     await expect(page).toHaveURL(/\/login/);
   });
 
