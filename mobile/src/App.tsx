@@ -59,7 +59,7 @@ function DeepLinks() {
   return null;
 }
 
-function Shell() {
+export function Shell() {
   const { status, api, ring, me, startupError, retryStartup, signOut, reloadMe } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();

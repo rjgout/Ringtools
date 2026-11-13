@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { useAuth } from "../lib/auth";
 import { digitsOnly } from "../lib/codeInput";
 import { ApiRequestError } from "../lib/api";
+import { IS_WEB_APP } from "../config";
 
 /**
  * Herverificatie voor gevoelige beheeracties. De server weigert de actie met code "reauth-required" als de laatste
@@ -27,6 +28,9 @@ export function useReauth() {
   const ask = useCallback(
     () =>
       new Promise<void>((resolve, reject) => {
+        // Webomgeving: een account met een tweede factor bevestigt op de bestaande beveiligingspagina van de website (passkey of authenticator-app)
+        // en komt daarna terug op dit scherm; de actie wordt dan opnieuw gestart door de gebruiker. Er verschijnt hier geen codeveld.
+        if (IS_WEB_APP && mfaUser) return void reauthWithPasskey().catch(reject);
         waiter.current = { resolve, reject };
         setCode("");
         setError(null);
@@ -34,7 +38,7 @@ export function useReauth() {
         setOpen(true);
         if (mfaUser) void Promise.resolve().then(() => api.meta()).then((m) => setTotpServer(m?.nativeTotpLogin === true)).catch(() => {});
       }),
-    [mfaUser, api]
+    [mfaUser, api, reauthWithPasskey]
   );
 
   const run = useCallback(

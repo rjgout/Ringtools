@@ -1,4 +1,7 @@
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
+import { webAppTargetFor } from "@/lib/webAppRedirect";
 import { getRingContext } from "@/lib/ringContext";
 import { canManageRingUsers, canManageSettings, canManageWorkflow } from "@/lib/rbac";
 import { ROLE_LABELS } from "@/lib/format";
@@ -9,6 +12,9 @@ import { SessionKeepAlive } from "@/components/SessionKeepAlive";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+  // Web/PWA v2 (vlag WEB_APP_V2_ENABLED, standaard uit): gewone gebruikers gaan naar de gedeelde interface onder /app. De webmin blijft hier.
+  const target = webAppTargetFor((await headers()).get("x-ringtools-path"), { isAdmin: user.role === "ADMIN" });
+  if (target) redirect(target);
   const ctx = await getRingContext();
   const isAdmin = user.role === "ADMIN";
 

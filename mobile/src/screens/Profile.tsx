@@ -5,7 +5,8 @@ import { useAuth } from "../lib/auth";
 import { useLoad } from "../lib/useLoad";
 import { ApiRequestError } from "../lib/api";
 import { isNative } from "../lib/native";
-import { APP_VERSION } from "../config";
+import { APP_VERSION, IS_WEB_APP } from "../config";
+import { WebInstallSection, WebPushSection, WebSecuritySection } from "../web/WebProfileSections";
 import { nativeCapabilities, PERSONAL_TEAM_NOTICE } from "../lib/buildProfile";
 import { useReauth } from "../components/Reauth";
 import { ActionMenu, MENU_ICONS } from "../components/Menu";
@@ -21,7 +22,7 @@ export function Profile() {
   const [pushMessage, setPushMessage] = useState<string | null>(null);
   const caps = nativeCapabilities();
   const sessions = useLoad(() => api.sessions(), []);
-  const devices = useLoad(() => api.devices(), []);
+  const devices = useLoad(() => (IS_WEB_APP ? Promise.resolve({ devices: [] }) : api.devices()), []);
   // Snel aanmelden (E2.4a/E2.5): status van dit toestel voor dit account; instellen, activeren of uitzetten. De server beslist (recente tweede factor).
   const server = useServerCapabilities(api);
   const { run, dialog } = useReauth();
@@ -113,7 +114,7 @@ export function Profile() {
         </section>
       )}
 
-      <section className="glass card stack">
+      {IS_WEB_APP ? <><WebSecuritySection /><WebPushSection /><WebInstallSection /></> : <section className="glass card stack">
         <h2>Pushmeldingen</h2>
         {me?.user.reviewAccount && <p>De demo gebruikt alleen interne meldingen; er wordt geen push of e-mail verstuurd.</p>}
         <span className="muted">Je krijgt een melding zonder namen of functies; tikken opent het voorstel.</span>
@@ -126,7 +127,7 @@ export function Profile() {
             <button className="btn btn-ghost" onClick={async () => { await api.setDeviceActive(d.id, !d.active); await devices.reload(); }}>{d.active ? "Uitzetten" : "Aanzetten"}</button>
           </div>
         ))}
-      </section>
+      </section>}
 
       {showDeviceLogin && (
         <section className="glass card stack" aria-label="Snel aanmelden">
@@ -184,11 +185,11 @@ export function Profile() {
       </section>
 
       {me?.user.reviewAccount && ring?.role === "RINGSECRETARIS" && <Link className="glass panel" to="/demo-beheer">Gebruikersbeheer – demo</Link>}
-      <AccountPrivacy />
+      {IS_WEB_APP ? <a className="glass panel" href="/accountverwijdering">Account en privacy</a> : <AccountPrivacy />}
       <button className="btn btn-ghost btn-block" onClick={() => void (async () => {
-        if (await confirm({ title: "Uitloggen?", message: "Je moet daarna opnieuw inloggen met een e-mailcode en je tweede factor.", confirmLabel: "Uitloggen" })) await signOut();
+        if (await confirm({ title: "Uitloggen?", message: IS_WEB_APP ? "Je moet daarna opnieuw inloggen met een e-mailcode." : "Je moet daarna opnieuw inloggen met een e-mailcode en je tweede factor.", confirmLabel: "Uitloggen" })) await signOut();
       })()}>Uitloggen</button>
-      <p className="muted">Ringtools {APP_VERSION}. MFA en passkeys beheer je via de beveiligde website.</p>
+      <p className="muted">{IS_WEB_APP ? `Ringtools ${APP_VERSION} (web).` : `Ringtools ${APP_VERSION}. MFA en passkeys beheer je via de beveiligde website.`}</p>
     </div>
   );
 }

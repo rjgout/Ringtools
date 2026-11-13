@@ -8,5 +8,11 @@ npm-debug.log
 tests
 vitest.config.ts
 README.md
-mobile
+# De client in mobile/ is nodig voor de webomgeving (stage "webapp"); native projecten en bouwuitvoer niet.
+mobile/node_modules
+mobile/dist
+mobile/ios
+mobile/android
+mobile/tests
+public/app
 playwright.config.ts

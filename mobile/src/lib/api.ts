@@ -66,6 +66,11 @@ export type ApiClientOptions = {
    * achtergrondproces gegevens ophalen of een sessie verversen zolang de app vergrendeld is. Standaard: nooit geblokkeerd.
    */
   isBlocked?: () => boolean;
+  /**
+   * Webomgeving: aanmelden met de HttpOnly-sessiecookie van de eigen oorsprong. Er gaat dan nooit een Authorization-header mee; wel de vaste
+   * eigen header waaraan de server een verzoek uit de webomgeving herkent (CSRF-bescherming). Een 401 meldt altijd `onUnauthorized`.
+   */
+  webCookie?: boolean;
 };
 
 /** Dunne client voor /api/mobile/v1. Het sessietoken gaat alleen in de Authorization-header, nooit in een URL. */
@@ -74,7 +79,8 @@ export class ApiClient {
 
   private async request<T>(method: "GET" | "POST", path: string, body?: unknown, tokenOverride?: string | null): Promise<T> {
     if (this.opts.isBlocked?.()) throw new ApiRequestError(0, "Ringtools is vergrendeld. Ontgrendel de app om verder te gaan.", "app-locked");
-    const token = tokenOverride === undefined ? this.opts.getToken() : tokenOverride;
+    const web = this.opts.webCookie === true;
+    const token = web ? null : tokenOverride === undefined ? this.opts.getToken() : tokenOverride;
     let res: Response;
     // Time-out: een hangende verbinding mag de app nooit eindeloos laten laden.
     const controller = new AbortController();
@@ -87,7 +93,9 @@ export class ApiClient {
           Accept: "application/json",
           ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(web ? { "X-Ringtools-Web": "1", "Content-Type": "application/json" } : {}),
         },
+        ...(web ? { credentials: "same-origin" as const, cache: "no-store" as const } : {}),
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
     } catch {
@@ -102,7 +110,7 @@ export class ApiClient {
       /* lege of niet-JSON-respons */
     }
     if (!res.ok) {
-      if (res.status === 401 && token && tokenOverride === undefined) this.opts.onUnauthorized?.();
+      if (res.status === 401 && (web ? tokenOverride === undefined : token && tokenOverride === undefined)) this.opts.onUnauthorized?.();
       throw new ApiRequestError(res.status, typeof data.error === "string" ? data.error : "Er ging iets mis.", typeof data.code === "string" ? data.code : null);
     }
     return data as T;
@@ -188,6 +196,29 @@ export class ApiClient {
   }
   reauthPasskeyVerify(response: PasskeyAssertion) {
     return this.request<TokenResult>("POST", "/auth/reauth/passkey/verify", { response });
+  }
+  // ---- Alleen webomgeving: webpush (VAPID) en e-mailvoorkeur ----
+  webPushOverview() {
+    return this.request<{ configured: boolean; publicKey: string | null; subscriptions: { id: string; userAgent: string | null; createdAt: string }[] }>("GET", "/web-push");
+  }
+  webPushSubscribe(sub: { endpoint: string; keys: { p256dh: string; auth: string } }) {
+    return this.request<{ ok: boolean; message: string }>("POST", "/web-push/subscribe", sub);
+  }
+  webPushUnsubscribe(endpoint: string) {
+    return this.request<{ ok: boolean; message: string }>("POST", "/web-push/unsubscribe", { endpoint });
+  }
+  webPushTest() {
+    return this.request<{ ok: boolean; message: string }>("POST", "/web-push/test", {});
+  }
+  webPushRemove(id: string) {
+    return this.request<{ ok: boolean }>("POST", `/web-push/${encodeURIComponent(id)}/remove`, {});
+  }
+  setEmailNotifications(enabled: boolean) {
+    return this.request<{ ok: boolean; enabled: boolean }>("POST", "/me/email-notifications", { enabled });
+  }
+  /** Verse e-mailcode voor herverificatie van het eigen account (ook bruikbaar in de webomgeving, waar de openbare aanvraagroute is afgesloten). */
+  requestReauthCode() {
+    return this.request<{ ok: boolean }>("POST", "/auth/reauth/request-code", {});
   }
   userReauth(code: string) {
     return this.request<TokenResult>("POST", "/auth/reauth", { code });

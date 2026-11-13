@@ -5,7 +5,12 @@ export const API_URL = raw.replace(/\/+$/, "");
 export const API_HOST = new URL(API_URL).host;
 /** In de browser-dev-server proxyt Vite /api naar de backend; native gebruikt de volledige URL. */
 export const IS_DEV_BROWSER = import.meta.env.DEV;
-export const API_BASE = IS_DEV_BROWSER && typeof window !== "undefined" ? `${window.location.origin}/api/mobile/v1` : `${API_URL}/api/mobile/v1`;
+/**
+ * Web-build (`vite build --config vite.web.config.ts`, mode "web"): dezelfde client als de app, geserveerd door de eigen server onder /app.
+ * Praat altijd met dezelfde oorsprong en meldt zich aan met de HttpOnly-sessiecookie van de website (geen token in JavaScript).
+ */
+export const IS_WEB_APP = import.meta.env.MODE === "web";
+export const API_BASE = IS_WEB_APP && typeof window !== "undefined" ? `${window.location.origin}/api/mobile/v1` : IS_DEV_BROWSER && typeof window !== "undefined" ? `${window.location.origin}/api/mobile/v1` : `${API_URL}/api/mobile/v1`;
 export const APP_VERSION = "1.0.0";
 /** Korte build-ID (git-commit) uit de build; toont op het inlogscherm welke bundel er draait. Niet geheim. */
 declare const __RINGTOOLS_BUILD_ID__: string;

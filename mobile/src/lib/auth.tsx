@@ -14,7 +14,7 @@ import { nativeCapabilities } from "./buildProfile";
 
 type Status = "loading" | "signedOut" | "signedIn" | "unavailable";
 
-type AuthValue = {
+export type AuthValue = {
   status: Status;
   /** Alleen bij status "unavailable": waarom de sessie niet hervat kon worden. */
   startupError: ApiRequestError | null;
@@ -48,7 +48,7 @@ type AuthValue = {
   enablePush: () => Promise<{ ok: boolean; message: string }>;
 };
 
-const AuthContext = createContext<AuthValue | null>(null);
+export const AuthContext = createContext<AuthValue | null>(null);
 
 export function useAuth(): AuthValue {
   const value = useContext(AuthContext);

@@ -6,7 +6,9 @@ import { rateLimit } from "../rateLimit";
 import { emailSchema } from "../validation";
 import { sendLoginMail } from "../loginMail";
 import { resolveOpenLink } from "../openLinks";
-import { authenticate, type ApiAuth } from "./auth";
+import * as webPush from "../webPush";
+import { prisma } from "../prisma";
+import { assertTrustedWebRequest, authenticate, isWebClientRequest, sessionCookieHeader, type ApiAuth } from "./auth";
 import { ApiError, jsonResponse, errorResponse, readJson, str } from "./http";
 import * as svc from "./service";
 import { reviewOverview } from "../catalog/callings";
@@ -235,12 +237,40 @@ authedRoute("POST", "/devices/:id/active", async ({ auth, params, body }) => svc
 
 // ---- Sessies (apparaten waarop dit account is ingelogd) ----
 
+// Webpush (VAPID) en e-mailvoorkeur voor de webomgeving (web/PWA v2). Alleen via de sessiecookie: de native app gebruikt APNs/FCM (`/devices`).
+const webOnly = (auth: ApiAuth) => {
+  if (auth.via !== "cookie") throw new ApiError(404, "Niet gevonden.", "not-found");
+};
+authedRoute("GET", "/web-push", async ({ auth }) => (webOnly(auth), webPush.webPushOverview(auth.user.id)));
+authedRoute("POST", "/web-push/subscribe", async ({ auth, body, request }) => {
+  webOnly(auth);
+  const keys = (body.keys && typeof body.keys === "object" ? body.keys : {}) as Record<string, unknown>;
+  return webPush.subscribeWebPush(auth.user.id, { endpoint: str(body.endpoint), keys: { p256dh: str(keys.p256dh), auth: str(keys.auth) } }, request.headers.get("user-agent") ?? undefined);
+});
+authedRoute("POST", "/web-push/unsubscribe", async ({ auth, body }) => (webOnly(auth), webPush.unsubscribeWebPush(auth.user.id, str(body.endpoint))));
+authedRoute("POST", "/web-push/test", async ({ auth }) => (webOnly(auth), webPush.sendTestWebPush(auth.user.id)));
+authedRoute("POST", "/web-push/:id/remove", async ({ auth, params }) => {
+  webOnly(auth);
+  await webPush.removeWebPushSubscription(auth.user.id, params.id);
+  return { ok: true };
+});
+authedRoute("POST", "/me/email-notifications", async ({ auth, body }) => {
+  webOnly(auth);
+  await prisma.user.update({ where: { id: auth.user.id }, data: { emailNotificationsEnabled: body.enabled === true } });
+  return { ok: true, enabled: body.enabled === true };
+});
 authedRoute("GET", "/sessions", async ({ auth }) => svc.listMySessions(auth.user.id, auth.token));
 authedRoute("POST", "/sessions/:id/revoke", async ({ auth, params }) => svc.revokeMySession(auth.user.id, params.id));
 authedRoute("POST", "/devices/remove", async ({ auth, body }) => svc.unregisterDevice(auth.user.id, str(body.token)));
 
 // ---- Gebruikersbeheer: ringbeheerder (eigen ring) ----
 
+// Verse e-mailcode voor herverificatie, uitsluitend naar het geregistreerde adres van het ingelogde account (zelfde mail en limieten als inloggen).
+authedRoute("POST", "/auth/reauth/request-code", async ({ auth }) => {
+  const result = await sendLoginMail(auth.user.email.trim().toLowerCase(), null);
+  if (!result.ok) throw new ApiError(429, result.message, "rate-limited");
+  return { ok: true };
+});
 authedRoute("POST", "/auth/reauth", async ({ auth, body }) => mgmt.userReauth(auth, body));
 authedRoute("GET", "/rings/:id/review-management", async ({ auth, params }) => mgmt.reviewManagementFor(auth, params.id));
 authedRoute("GET", "/rings/:id/users", async ({ auth, params }) => mgmt.listUsersFor(auth, params.id));
@@ -278,6 +308,11 @@ function match(route: Route, method: string, segments: string[]): Record<string,
 }
 
 /** Eén ingang voor de hele JSON-API (/api/mobile/v1/...). Alle fouten komen als JSON terug. */
+/** Openbare routes die de webclient mag aanroepen (geen token, geen gegevens van anderen). */
+const WEB_PUBLIC_ROUTES = new Set(["meta"]);
+/** Routes die alleen voor de native app bestaan (toestelsleutels, native push, demo-aanmelding). */
+const WEB_BLOCKED_PREFIXES = ["auth/device", "auth/review", "auth/reauth/passkey/options", "auth/reauth/passkey/verify", "trusted-devices", "devices/remove"];
+
 export async function handleApi(request: Request, segments: string[]): Promise<Response> {
   try {
     const url = new URL(request.url);
@@ -291,9 +326,31 @@ export async function handleApi(request: Request, segments: string[]): Promise<R
         if (r.segments.length === segments.length && r.segments.every((s, i) => s.startsWith(":") || s === segments[i])) pathMatch = true;
         continue;
       }
+      const web = isWebClientRequest(request);
+      if (web) {
+        // Webomgeving (cookie): eerst de herkomst controleren, ook op openbare routes. Routes die een token uitgeven of bij een toestel horen
+        // (inloggen met code, toestelsleutels, koppelen, uitnodiging met sessie) zijn voor de webclient afgesloten: aanmelden gebeurt daar
+        // uitsluitend via de bestaande website (e-mailcode, MFA) en het sessietoken komt nooit in JavaScript.
+        assertTrustedWebRequest(request);
+        const path = segments.join("/");
+        if (!r.auth && !WEB_PUBLIC_ROUTES.has(path)) throw new ApiError(403, "Dit is niet beschikbaar in de webomgeving.", "web-not-allowed");
+        if (WEB_BLOCKED_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) throw new ApiError(403, "Dit is niet beschikbaar in de webomgeving.", "web-not-allowed");
+      }
       const auth = r.auth ? await authenticate(request, r.auth) : null;
       const body = request.method === "GET" ? {} : await readJson(request);
       const data = await (r.handler as PublicHandler)({ request, params, query: url.searchParams, body, auth });
+      if (auth?.via === "cookie") {
+        // Een vervangen sessietoken (herverificatie, rotatie) gaat als HttpOnly-cookie terug en wordt uit de JSON verwijderd; uitloggen wist de cookie.
+        const out = data && typeof data === "object" && !Array.isArray(data) ? { ...(data as Record<string, unknown>) } : data;
+        const headers: Record<string, string> = {};
+        if (out && typeof out === "object" && !Array.isArray(out) && "token" in out) {
+          const token = (out as Record<string, unknown>).token;
+          delete (out as Record<string, unknown>).token;
+          if (typeof token === "string" && token) headers["Set-Cookie"] = sessionCookieHeader(token);
+        }
+        if (segments.join("/") === "auth/logout") headers["Set-Cookie"] = sessionCookieHeader(null);
+        return jsonResponse(out, 200, headers);
+      }
       return jsonResponse(data);
     }
     throw new ApiError(pathMatch ? 405 : 404, pathMatch ? "Methode niet toegestaan." : "Niet gevonden.", pathMatch ? "method" : "not-found");

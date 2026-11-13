@@ -201,7 +201,9 @@ h2 { font-size: 1.25rem; font-weight: 600; margin: var(--space-2) 0 0; line-heig
   box-shadow: inset 0 1px 0 rgb(var(--glass-edge) / var(--glass-edge-alpha)), var(--elev-2);
 }
 /* Lange namen en beschrijvingen breken af in plaats van uit het scherm te lopen of te worden afgekapt. */
-.card, .panel, .item-main, .status, .empty, strong, h1, h2, .muted, .note { overflow-wrap: anywhere; }
+.card, .panel, .item-main, .empty, strong, h1, h2, .muted, .note { overflow-wrap: anywhere; }
+/* Een statuslabel breekt alleen tussen woorden af (nooit midden in een kort woord als "Open") en krimpt niet weg naast een lange naam. */
+.status { flex: none; max-width: 100%; overflow-wrap: break-word; }
 .card-narrow { width: 100%; max-width: 420px; }
 .row-wrap { flex-wrap: wrap; gap: var(--space-2); }
 .row-tight { margin-top: var(--space-1); }
@@ -433,4 +435,31 @@ summary { cursor: pointer; min-height: var(--touch); display: list-item; }
 
 @supports (font: -apple-system-footnote) {
   .login-footer-links { font: -apple-system-footnote; }
+}
+
+/* Tijdlijn "Voortgang" op het voorsteldetail (app en webomgeving): ingeklapt een samenvatting, uitgeklapt de acht stappen. */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.progress > summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); list-style: none; }
+.progress > summary::-webkit-details-marker { display: none; }
+.progress-list { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); }
+.progress-list li { display: flex; align-items: baseline; gap: var(--space-2); color: var(--text-muted); }
+.progress-list li.done { color: var(--text); }
+.progress-list li.done > span:first-child { color: var(--success); font-weight: 700; }
+
+/* ---- Webomgeving (web/PWA, html[data-platform="web"]): dezelfde schermen; op tablet en desktop staat de hoofdnavigatie links. ---- */
+:root[data-platform="web"] .page > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+@media (min-width: 900px) {
+  :root[data-platform="web"] .shell { display: grid; grid-template-columns: 240px minmax(0, 1fr); grid-auto-rows: min-content; grid-template-rows: auto auto minmax(0, 1fr); }
+  :root[data-platform="web"] .shell > * { grid-column: 2; }
+  :root[data-platform="web"] .shell > .page { grid-row: 3; }
+  :root[data-platform="web"] .shell > .tabbar {
+    grid-column: 1; grid-row: 1 / -1; flex-direction: column; justify-content: flex-start; gap: var(--space-1); overflow: visible;
+    padding: calc(var(--sat) + var(--space-5)) var(--space-3) var(--space-4) calc(var(--sal) + var(--space-3));
+    border-top: 0; border-right: 1px solid rgb(var(--separator) / var(--separator-alpha));
+  }
+  :root[data-platform="web"] .tabbar .tab { flex: 0 0 auto; flex-direction: row; justify-content: flex-start; gap: var(--space-3); min-height: var(--touch); padding: 0 var(--space-4); border-radius: var(--radius-pill); font-size: 1.0625rem; }
+  :root[data-platform="web"] .tabbar .tab.active { background: rgb(var(--tint-rgb) / var(--tint-fill-alpha)); }
+  :root[data-platform="web"] .tabbar .tab .dot { position: static; margin-left: var(--space-1); }
+  :root[data-platform="web"][data-keyboard="open"] .tabbar { display: flex; }
+  :root[data-platform="web"] .navbar-title { max-width: 40vw; }
 }
