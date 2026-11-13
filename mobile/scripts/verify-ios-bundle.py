@@ -83,6 +83,7 @@ def main():
     ap.add_argument("--build", required=True)
     ap.add_argument("--link-host", default="ringapeldoorn.nl", help="Host van Universal Links/webcredentials (dev-variant: dev.ringapeldoorn.nl).")
     ap.add_argument("--team-id", default=os.environ.get("IOS_TEAM_ID", ""))
+    ap.add_argument("--strict", action="store_true", help="Pas ook bij de archive de volledige distributiecontroles toe (handmatige Apple Distribution-signing).")
     a = ap.parse_args()
 
     failures = []
@@ -133,7 +134,7 @@ def main():
         print("Profiel:                    geen embedded.mobileprovision")
     print("::endgroup::")
 
-    if a.stage == "ipa":
+    if a.stage == "ipa" or a.strict:
         failures += check_distribution(ent, profile, authorities, team_identifier, a.team_id or None, a.link_host)
 
     if failures:

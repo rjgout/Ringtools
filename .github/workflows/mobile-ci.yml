@@ -6,6 +6,7 @@ on:
   push:
     paths:
       - "mobile/**"
+      - ".github/workflows/ios-testflight-dev.yml"
       - "shared/**"
       # Mobiele backend: wijzigingen hier mogen nooit buiten de native regressietests blijven.
       - "src/lib/api/**"
@@ -70,6 +71,7 @@ on:
   pull_request:
     paths:
       - "mobile/**"
+      - ".github/workflows/ios-testflight-dev.yml"
       - "shared/**"
       # Mobiele backend: wijzigingen hier mogen nooit buiten de native regressietests blijven.
       - "src/lib/api/**"
@@ -204,6 +206,10 @@ jobs:
         run: npm run build:web
       - name: Tests van de iOS-bundlecontrole (signing, get-task-allow, APNs)
         run: python3 scripts/test_verify_ios_bundle.py
+      - name: Tests van de handmatige dev-signing (synthetische sleutels, geen echte middelen)
+        run: |
+          python3 -m pip install -r scripts/signing-requirements.txt
+          python3 -m unittest discover -s scripts -p 'test_ios_signing.py'
       - name: Native configuratie controleren (identiteit, links, privacy, geen geheimen)
         run: npm run check:native-config
       - name: Capacitor-configuratie controleren

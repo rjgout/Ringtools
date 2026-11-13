@@ -33,3 +33,7 @@ ExportOptions.plist
 
 # Lokale iOS-instellingen (Team-ID enz.)
 ios/Local.xcconfig
+
+# Python-cache van de signingscripts
+__pycache__/
+*.pyc
