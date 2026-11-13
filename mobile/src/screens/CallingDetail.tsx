@@ -7,6 +7,8 @@ import type { CallingDetail as Detail, TaskKey, TaskView } from "@shared/api-typ
 import { ErrorState, PageHead, Spinner, StatusLabel } from "../components/ui";
 import { ActionMenu, MENU_ICONS } from "../components/Menu";
 import { Sheet, useConfirm } from "../components/Dialog";
+import { canShareReminder, progressSteps } from "../lib/progress";
+import { shareGeneralReminder } from "../lib/share";
 
 export function CallingDetail() {
   const { id = "" } = useParams();
@@ -96,8 +98,11 @@ export function CallingDetail() {
           <PageHead
             title={data.personName}
             subtitle={`${data.functionTitle} · ${data.ring.name}`}
-            action={data.me.isStaff && data.canDelete ? (
-              <ActionMenu label="Acties voor dit voorstel" items={[{ id: "delete", label: "Voorstel verwijderen…", icon: MENU_ICONS.trash, danger: true, onSelect: () => void deleteCalling() }]} disabled={busy} />
+            action={data.me.isStaff && (data.canDelete || canShareReminder(data)) ? (
+              <ActionMenu label="Acties voor dit voorstel" items={[
+                { id: "share", label: "Algemene herinnering delen", icon: MENU_ICONS.send, hidden: !canShareReminder(data), onSelect: () => void shareGeneralReminder() },
+                { id: "delete", label: "Voorstel verwijderen…", icon: MENU_ICONS.trash, danger: true, hidden: !data.canDelete, onSelect: () => void deleteCalling() },
+              ]} disabled={busy} />
             ) : undefined}
           />
           <div>
@@ -110,6 +115,14 @@ export function CallingDetail() {
             )}
           </div>
           {message && <div role="status" className="glass panel">{message}</div>}
+          <details className="glass card progress">
+            <summary><strong>Voortgang</strong> <span className="muted">{progressSteps(data).filter((p) => p.done).length} van {progressSteps(data).length} stappen</span></summary>
+            <ol className="plain-list progress-list">
+              {progressSteps(data).map((p) => (
+                <li key={p.label} className={p.done ? "done" : ""}><span aria-hidden="true">{p.done ? "✓" : "○"}</span><span>{p.label}<span className="sr-only">{p.done ? " (afgerond)" : " (nog niet)"}</span></span></li>
+              ))}
+            </ol>
+          </details>
           {data.me.isStaff && data.readyToProcess && (
             <button className="btn btn-primary" disabled={busy} onClick={() => act(() => api.markProcessed(id), "Het voorstel is administratief verwerkt.")}>Administratief verwerkt</button>
           )}

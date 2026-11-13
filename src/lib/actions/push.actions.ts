@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { isAllowedPushEndpoint, isValidPushKey, MAX_PUSH_SUBSCRIPTIONS_PER_USER } from "@/lib/pushEndpoint";
-import { sendPushToUser, isPushConfigured, PushNotConfiguredError } from "@/lib/push";
+import { sendTestWebPush, subscribeWebPush, unsubscribeWebPush } from "@/lib/webPush";
 
 export type ActionResult = { ok: boolean; message: string };
 
@@ -15,59 +14,17 @@ export type SubscriptionInput = {
 
 export async function subscribePushAction(input: SubscriptionInput, userAgent?: string): Promise<ActionResult> {
   const user = await requireUser();
-  if (!isPushConfigured()) {
-    return { ok: false, message: "Pushnotificaties zijn niet geconfigureerd door de beheerder." };
-  }
-
-  if (!isAllowedPushEndpoint(input?.endpoint) || !isValidPushKey(input.keys?.p256dh, 200) || !isValidPushKey(input.keys?.auth, 100)) {
-    return { ok: false, message: "Dit apparaat kan niet worden geregistreerd voor pushnotificaties." };
-  }
-  const existing = await prisma.pushSubscription.count({ where: { userId: user.id, NOT: { endpoint: input.endpoint } } });
-  if (existing >= MAX_PUSH_SUBSCRIPTIONS_PER_USER) {
-    return { ok: false, message: "Je hebt het maximale aantal apparaten voor pushnotificaties bereikt." };
-  }
-
-  await prisma.pushSubscription.upsert({
-    where: { endpoint: input.endpoint },
-    update: { userId: user.id, p256dh: input.keys.p256dh, auth: input.keys.auth, userAgent, lastSeenAt: new Date() },
-    create: {
-      userId: user.id,
-      endpoint: input.endpoint,
-      p256dh: input.keys.p256dh,
-      auth: input.keys.auth,
-      userAgent,
-    },
-  });
-
-  return { ok: true, message: "Pushnotificaties zijn ingeschakeld voor dit apparaat." };
+  return subscribeWebPush(user.id, input, userAgent);
 }
 
 export async function unsubscribePushAction(endpoint: string): Promise<ActionResult> {
   const user = await requireUser();
-  await prisma.pushSubscription.deleteMany({ where: { endpoint, userId: user.id } });
-  return { ok: true, message: "Pushnotificaties zijn uitgeschakeld voor dit apparaat." };
+  return unsubscribeWebPush(user.id, endpoint);
 }
 
 export async function sendTestPushAction(): Promise<ActionResult> {
   const user = await requireUser();
-  try {
-    const before = await prisma.pushSubscription.count({ where: { userId: user.id } });
-    if (before === 0) {
-      return { ok: false, message: "Er is nog geen apparaat geregistreerd voor pushnotificaties." };
-    }
-    await sendPushToUser(user.id, {
-      title: "Ringtools",
-      body: "Dit is een testnotificatie. Als je dit ziet, werken pushnotificaties op dit apparaat.",
-      url: "/profiel",
-    });
-    return { ok: true, message: "Testnotificatie verstuurd." };
-  } catch (err) {
-    if (err instanceof PushNotConfiguredError) {
-      return { ok: false, message: err.message };
-    }
-    console.error("[push] Testnotificatie mislukt:", err);
-    return { ok: false, message: "Versturen van de testnotificatie is mislukt." };
-  }
+  return sendTestWebPush(user.id);
 }
 
 export async function removeSubscriptionAction(formData: FormData): Promise<void> {

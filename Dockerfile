@@ -10,12 +10,23 @@ FROM base AS deps
 RUN npm ci --omit=dev
 RUN npx prisma generate
 
+# ---- Webomgeving (web/PWA v2): dezelfde React-client als de app, gebundeld voor de browser (uitvoer: /src/public/app) ----
+# Zonder de vlag WEB_APP_V2_ENABLED wordt deze bundel niet gebruikt. Geen native onderdelen, geen geheimen; postinstall (patches voor native plug-ins) is hier niet nodig.
+FROM node:22-alpine AS webapp
+WORKDIR /src
+COPY mobile/package.json mobile/package-lock.json ./mobile/
+RUN cd mobile && npm ci --ignore-scripts
+COPY shared ./shared
+COPY mobile ./mobile
+RUN cd mobile && npx vite build --config vite.web.config.ts
+
 # ---- Volledige install + build (TypeScript/Tailwind hebben devDependencies nodig) ----
 FROM base AS builder
 RUN npm ci
 COPY . .
 RUN npx prisma generate
 RUN npm run build
+COPY --from=webapp /src/public/app ./public/app
 
 # ---- Uiteindelijke, kleinere runtime-image ----
 FROM node:22-alpine AS runner

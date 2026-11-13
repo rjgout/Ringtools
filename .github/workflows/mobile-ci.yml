@@ -54,6 +54,12 @@ on:
       - "src/app/api/mobile/**"
       - "src/app/.well-known/**"
       - "src/app/open/**"
+      # Web/PWA v2 (gedeelde client met sessiecookie): beveiligingsgevoelig, altijd mee testen.
+      - "src/app/app/**"
+      - "src/lib/webPush.ts"
+      - "src/lib/webAppRedirect.ts"
+      - "Dockerfile"
+      - ".dockerignore"
       - "src/app/uitnodiging/**"
       - "prisma/**"
       - "tests/**"
@@ -112,6 +118,12 @@ on:
       - "src/app/api/mobile/**"
       - "src/app/.well-known/**"
       - "src/app/open/**"
+      # Web/PWA v2 (gedeelde client met sessiecookie): beveiligingsgevoelig, altijd mee testen.
+      - "src/app/app/**"
+      - "src/lib/webPush.ts"
+      - "src/lib/webAppRedirect.ts"
+      - "Dockerfile"
+      - ".dockerignore"
       - "src/app/uitnodiging/**"
       - "prisma/**"
       - "tests/**"
@@ -167,6 +179,7 @@ jobs:
           tests/simpleLogin.test.ts tests/nativeTotpLogin.test.ts tests/webTotp.test.ts
           tests/trustedDevices.test.ts tests/deviceLogin.test.ts tests/deviceLoginConcurrency.test.ts
           tests/deviceEnrollment.test.ts tests/deviceAuthorization.test.ts
+          tests/webCookieAuth.test.ts tests/webAppRedirect.test.ts
 
   client:
     name: Client en native configuratie
@@ -187,6 +200,8 @@ jobs:
         run: npm run check:splash
       - run: npm test
       - run: npm run build
+      - name: Webomgeving bouwen (web/PWA v2, dezelfde client)
+        run: npm run build:web
       - name: Tests van de iOS-bundlecontrole (signing, get-task-allow, APNs)
         run: python3 scripts/test_verify_ios_bundle.py
       - name: Native configuratie controleren (identiteit, links, privacy, geen geheimen)

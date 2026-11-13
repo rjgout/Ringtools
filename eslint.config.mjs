@@ -13,6 +13,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "mobile/**",
+    // Gebouwde webomgeving (web/PWA v2): uitvoer van `npm run build:web` in mobile/.
+    "public/app/**",
   ]),
 ]);
 

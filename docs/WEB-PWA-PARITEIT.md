@@ -1,6 +1,8 @@
-# Web/PWA gelijk trekken met de iOS-app – fase 1: verschillen en architectuurvoorstel
+# Web/PWA gelijk trekken met de iOS-app
 
-Status: **alleen analyse en voorstel; er is niets geïmplementeerd.** Basis: `main` op `aa071a6`. Uitgangspunt is de iOS-app (`mobile/src`); de webomgeving is `src/app/(app)` (Next.js, Server Actions, sessiecookie).
+Status: **fase 1 (analyse, §1–§7) afgerond; fase 2 (implementatie achter de vlag `WEB_APP_V2_ENABLED`, standaard uit) staat in §8–§11.** Niets is geactiveerd of gedeployed.
+
+Fase 1 – Basis: `main` op `aa071a6`. Uitgangspunt is de iOS-app (`mobile/src`); de webomgeving is `src/app/(app)` (Next.js, Server Actions, sessiecookie).
 
 ## 1. Samenvatting
 
@@ -149,3 +151,80 @@ Eén schakelpunt "platform = ios | android | web" (bestaat al in `lib/native.ts`
 
 - De schermen zijn vergeleken op basis van de code, niet op een draaiende installatie of toestel.
 - "App Store-versie 1.1.2": het project staat in de repository nog op versie 1.0; welke API-aanroepen die versie precies doet is afgeleid van de huidige client. De borging is dat bestaande routes en typen ongewijzigd blijven.
+
+---
+
+## 8. Fase 2 – wat is gebouwd (besluiten eigenaar verwerkt)
+
+Besluiten: optie A; iOS-app leidend; tijdlijn "Voortgang" en de algemene deelknop behouden voor beide platforms; ringbeheerders nodigen uit zoals in de app; beveiligingsbeheer via Profiel → Aanmelden en beveiliging; alles achter `WEB_APP_V2_ENABLED` (standaard uit).
+
+| Onderdeel | Waar |
+|---|---|
+| Cookie-aanmelding op de API, herkomstcontrole, geen token in JSON | `src/lib/api/auth.ts`, `src/lib/api/router.ts` |
+| Webpush en e-mailvoorkeur via de API (alleen cookie) | `src/lib/webPush.ts`, routes `/web-push*`, `/me/email-notifications` |
+| E-mailcode voor herverificatie van het eigen account | route `/auth/reauth/request-code` |
+| Webomgeving serveren, sessiecontrole, vlag | `src/app/app/route.ts` |
+| Doorverwijzen van de oude pagina's (alleen met de vlag, nooit de webmin) | `src/lib/webAppRedirect.ts`, `src/app/(app)/layout.tsx` |
+| Web-build van dezelfde client | `mobile/vite.web.config.ts`, `mobile/web.html`, `npm run build:web` → `public/app` (niet in Git) |
+| Aanmeldlaag zonder token | `mobile/src/web/WebAuthProvider.tsx`, `webPaths.ts` |
+| Profiel in de browser (beveiligingsbeheer, webpush, installeren, e-mailvoorkeur) | `mobile/src/web/WebProfileSections.tsx` |
+| Tijdlijn "Voortgang" en "Algemene herinnering delen" (app én web) | `mobile/src/lib/progress.ts`, `share.ts`, `screens/CallingDetail.tsx` |
+| Tablet/desktop: hoofdnavigatie links | `mobile/src/styles.css` (`html[data-platform="web"]`) |
+| Docker: bundel in de image | `Dockerfile` (stage `webapp`), `.dockerignore` |
+
+Gedrag met de vlag **aan**: een gewone gebruiker die inlogt komt op `/app` (dezelfde schermen als de iOS-app); `/dashboard`, `/roepingen…`, `/gebruikers` en `/profiel` verwijzen door naar hetzelfde scherm; `/profiel/beveiliging`, inloggen, MFA, publieke pagina's en de webmin blijven de bestaande pagina's. Met de vlag **uit**: `/app` geeft 404, de API weigert elke cookie-aanmelding (401) en de bestaande website werkt ongewijzigd. De gebouwde bundel staat wel in de image; het bestand `/app/index.html` is een lege schil zonder gegevens (dezelfde code als in de app).
+
+Wijzigingen die ook de iOS-app raken (in de eerstvolgende app-build, niet in 1.1.2): de tijdlijn "Voortgang" en het menu-item "Algemene herinnering delen" op het voorsteldetail, en een statuslabel dat niet meer midden in een woord afbreekt.
+
+## 9. Beveiligingsbeoordeling cookie-aanmelding (vóór activering door de eigenaar te beoordelen)
+
+**Wat verandert:** `/api/mobile/v1` accepteert, alleen met de vlag, naast het Bearer-token de bestaande HttpOnly-sessiecookie.
+
+| Risico | Maatregel | Test |
+|---|---|---|
+| CSRF (een andere site laat de browser met de cookie een verzoek doen) | Cookie telt alleen met de eigen header `X-Ringtools-Web: 1` (kan niet door formulier/link/afbeelding; dwingt cross-origin een preflight af die nooit wordt toegestaan), exacte `Origin` = `APP_BASE_URL`, `Sec-Fetch-Site: same-origin` indien aanwezig, minstens één van beide verplicht, JSON-inhoudstype bij POST; cookie blijft `SameSite=Lax` | `tests/webCookieAuth.test.ts` "herkomst en CSRF" (7 afwijkende origins, 3 fetch-sites, ontbrekende headers, 4 inhoudstypen, afwijkende headerwaarden) |
+| CORS | Er worden nergens `Access-Control-*`-headers gezet; er is geen OPTIONS-handler | zelfde bestand, "no-store en zonder CORS-headers" |
+| Vermenging Bearer/cookie | Eigen header + `Authorization` (welke dan ook) → 400; zonder eigen header wordt een cookie genegeerd | "Geen vermenging" (3 tests) |
+| Sessietoken in JavaScript | Cookie is HttpOnly; antwoorden op cookie-verzoeken bevatten nooit `token` (vervangen token → `Set-Cookie`); token-uitgevende en toestelroutes geven 403 `web-not-allowed`; openbare routes zijn standaard dicht | "Het sessietoken komt nooit in JavaScript" (4 tests); Playwright controleert `localStorage`, `sessionStorage` en `document.cookie` |
+| MFA/herverificatie omzeilen | Zelfde `getActiveSession` (MFA voltooid); pre-MFA-sessie → 401; gevoelige acties → `reauth-required`; accounts met tweede factor herverifiëren op de bestaande webpagina | "Sessie, MFA en intrekking" (5 tests) |
+| Intrekking/deactivering | Ingetrokken sessie, gedeactiveerd account/lidmaatschap, inactieve ring → direct 401/404; uitloggen wist sessie en cookie | idem + Playwright "sessie ingetrokken" en "uitloggen" |
+| Rollen en ringisolatie | Ongewijzigde servercontroles; via de cookie getest voor presidium, secretaris, hogeraadslid, ringbeheerder, lid van een andere ring en de beheerder | "Rollen en ringisolatie" (3 tests) + Playwright per rol |
+| Beheerdersaccount | 403 op gewone routes, 410 op `/admin/*`, ook via de cookie | 1 test |
+| Open doorverwijzing | Bestemming alleen als intern pad (`safeInternalPath`/`safeAppRoute`), voorstel-id alleen als gewoon id | `tests/webAppRedirect.test.ts`, `mobile/tests/webApp.test.tsx` |
+| Caches | API `Cache-Control: no-store`; schil `no-store`; serviceworker bewaart alleen iconen, bundels en de offlinepagina | Playwright "geen vertrouwelijke gegevens in caches" (leest de Cache Storage uit) |
+
+**Restpunten voor de beoordelaar:**
+1. De herkomstcontrole steunt op `APP_BASE_URL`; die moet in productie exact de publieke oorsprong zijn (schema, host, poort). Staat een reverse proxy ervoor die `Origin` herschrijft of verwijdert, dan weigert de API (fail-closed).
+2. `SameSite=Lax` is ongewijzigd gelaten omdat de bestaande e-maillinks naar de website ervan afhangen; de eigen header en de herkomstcontrole zijn de eigenlijke CSRF-bescherming.
+3. XSS blijft het belangrijkste restrisico van elke webapp: een script op de eigen oorsprong kan namens de gebruiker verzoeken doen (maar het token niet lezen). Maatregelen: strikte CSP in de schil (alleen eigen scripts, `connect-src 'self'`), geen inline scripts, React-escaping.
+4. Aanbevolen: laat §9 en `src/lib/api/auth.ts` door een tweede persoon lezen en draai vóór activering `tests/webCookieAuth.test.ts` en `e2e/webAppV2.spec.ts` tegen een kopie van de productieconfiguratie (achter dezelfde proxy).
+
+## 10. Testresultaten fase 2 (lokaal, synthetische gegevens, testdatabases `ringtools_test`/`ringtools_e2e`)
+
+| Controle | Resultaat |
+|---|---|
+| Server: `npx vitest run` | 48 bestanden, 726 tests geslaagd (waarvan 28 nieuw voor de cookie-aanmelding, 3 voor doorverwijzen) |
+| Server: `npx tsc --noEmit`, `npx eslint .`, `npx next build` | geslaagd (eslint: geen fouten) |
+| Client: `npm test` in `mobile/` | 48 bestanden, 440 tests geslaagd (13 nieuw) |
+| Client: `npm run typecheck`, `npm run build:web` | geslaagd |
+| Playwright, vlag **uit** (bestaande suites) | 53 geslaagd, 42 overgeslagen (horen bij andere vlaggen); twee daarvan slagen alleen als de testserver pushsleutels heeft (omgeving, code ongewijzigd) |
+| Playwright, vlag **aan** (`e2e/webAppV2.spec.ts`) | 10 geslaagd: telefoonprofiel (Pixel 7) en desktop (1366 px) |
+| iOS-compatibiliteit | alle 62 API-aanroepen van de client van build 1.1.2 bestaan ongewijzigd; `shared/api-types.ts` en `src/lib/api` zijn sinds die build niet gewijzigd op `main`; contracttest groen |
+| Docker | daemon hier niet beschikbaar; de nieuwe bouwstap is met dezelfde opdrachten nagespeeld in een schone map (geslaagd) – **de echte image-build is niet uitgevoerd** |
+
+**Gepubliceerde iOS-build:** de TestFlight-upload met versie **1.1.2 (build 11)** is workflow-run 11 van `ios-testflight.yml` op commit **`067b669`** (11 november, "UPLOAD SUCCEEDED"). Run 12 (versie 1.1.3, commit `aa071a6`) is bij het archiveren mislukt. Of build 11 ook de build is die in de App Store staat, is alleen in App Store Connect te zien.
+
+**Niet getest (eerlijk):**
+- Geen echt Android-toestel: "Android Chrome" is het Pixel-profiel van Playwright (Chromium met Android-kenmerken). Installeren op het beginscherm, de installatieprompt en het ontvangen van een webpushmelding zijn daardoor niet werkelijk uitgevoerd; wel het manifest, de serviceworker en dat er zonder tik geen toestemming wordt gevraagd.
+- Aanmelden met MFA (TOTP/passkey) is niet opnieuw via de nieuwe omgeving doorlopen; die stappen zijn de ongewijzigde webpagina's met hun bestaande tests. De terugkeer na herverificatie naar `/app?to=…` is alleen met unittests gedekt.
+- Geen iOS- of Android-build lokaal; dat doet de mobiele CI.
+- De openstaande inlogfout van de iOS-app is niet onderzocht en niet geraakt (de Bearer-weg is ongewijzigd).
+
+## 11. Vervolgstappen (niet in fase 2)
+
+1. **Fase 3 – acceptatie** door de eigenaar op een echt Android-toestel en desktop, per rol; daarna pas besluiten over activering.
+2. Filters op de voorstellenlijst (de web had negen filterchips; de app heeft er geen): in beide platforms toevoegen als dat gewenst is.
+3. Herverificatie met passkey/authenticator-app in de webomgeving zelf (nu: via de bestaande beveiligingspagina en terug).
+4. `start_url` van het manifest naar `/app` zodra de vlag definitief aan staat; de oude pagina's in `src/app/(app)` en hun componenten verwijderen na acceptatie.
+5. Webpush-tik opent nu het bestaande webadres, dat doorverwijst; rechtstreeks naar `/app` laten wijzen bij het opruimen.
+6. Inlogfout iOS-app: afzonderlijk onderzoek.

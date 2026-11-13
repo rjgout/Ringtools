@@ -7,7 +7,7 @@
 // het netwerk, zodat er nooit vertrouwelijke gegevens (stemmen, roepingen,
 // persoonsgegevens) offline bewaard worden.
 
-const CACHE_NAME = "ringtools-static-v1";
+const CACHE_NAME = "ringtools-static-v2";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_URLS = [
@@ -37,6 +37,8 @@ function isSafeToCacheStatic(url) {
   return (
     url.pathname.startsWith("/icons/") ||
     url.pathname.startsWith("/_next/static/") ||
+    // Gebundelde scripts en stijlen van de webomgeving (web/PWA v2): bestandsnamen met inhoudshash, geen gegevens.
+    url.pathname.startsWith("/app/assets/") ||
     url.pathname === "/manifest.webmanifest" ||
     url.pathname === "/favicon.ico" ||
     url.pathname === OFFLINE_URL

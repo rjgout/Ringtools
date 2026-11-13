@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:web": "vite build --config vite.web.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "assets": "capacitor-assets generate --iconBackgroundColor '#0b1220' --splashBackgroundColor '#0b1220' && npm run assets:splash",

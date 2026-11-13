@@ -89,6 +89,13 @@ export const env = {
       .map((f) => f.trim())
       .filter(Boolean);
   },
+  /**
+   * Web/PWA v2: de gedeelde React-client (dezelfde als de iOS-app) als beveiligde webomgeving onder /app, met de sessiecookie op /api/mobile/v1.
+   * Standaard UIT: zonder de vlag weigert de API elke cookie-aanmelding en blijft de bestaande website ongewijzigd. Alleen de eigenaar activeert dit.
+   */
+  get webAppV2Enabled() {
+    return process.env.WEB_APP_V2_ENABLED === "true";
+  },
   get cookieSecure() {
     return (process.env.COOKIE_SECURE ?? "true") === "true";
   },
