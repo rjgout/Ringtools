@@ -1,4 +1,4 @@
-name: iOS TestFlight – Ringtools Dev (handmatig)
+name: iOS TestFlight – Ringtools Dev (handmatig of via tag)
 
 # EXPLICIET HANDMATIG. DEV-variant "Ringtools Dev" (bundle-ID nl.ringapeldoorn.ringtools.dev, backend https://dev.ringapeldoorn.nl; naast de productieapp installeerbaar).
 # Past de variant alleen toe in de werkkopie op de runner (mobile/variants/dev.json); de productieconfiguratie in Git blijft ongewijzigd.
@@ -8,7 +8,13 @@ name: iOS TestFlight – Ringtools Dev (handmatig)
 # Dit is GEEN App Store-release: publiceren naar de App Store gebeurt uitsluitend handmatig in App Store Connect.
 # Vereist de secrets van de omgeving "testflight" (zie docs/IOS-TESTFLIGHT.md). Er staan geen certificaten of sleutels in Git;
 # de API-sleutel wordt alleen tijdelijk op de runner neergezet en nooit geprint.
+# Starten kan op twee manieren (beide expliciet door de eigenaar; nooit automatisch):
+#  1. Handmatig via Actions > "Run workflow" (alleen zichtbaar zodra dit bestand ook op de standaardbranch main staat).
+#  2. Door een tag te pushen: ios-dev-build-<versie>-<build> (bijv. ios-dev-build-1.0.0-1). Deze weg bouwt ALTIJD zonder upload.
 on:
+  push:
+    tags:
+      - "ios-dev-build-*"
   workflow_dispatch:
     inputs:
       marketing_version:
@@ -46,6 +52,14 @@ jobs:
       BUNDLE_ID: nl.ringapeldoorn.ringtools.dev
       LINK_HOST: dev.ringapeldoorn.nl
     steps:
+      - name: Versie en buildnummer uit de tag (alleen bij een tag-start; geen upload)
+        if: ${{ github.event_name == 'push' }}
+        working-directory: .
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          [[ "$TAG" =~ ^ios-dev-build-([0-9]+\.[0-9]+(\.[0-9]+)?)-([0-9]+)$ ]] || { echo "::error::Tag moet ios-dev-build-<versie>-<build> zijn, bijv. ios-dev-build-1.0.0-1."; exit 1; }
+          echo "MARKETING_VERSION=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=${BASH_REMATCH[3]}" >> "$GITHUB_ENV"
       - name: Secrets aanwezig? (alleen de namen worden gecontroleerd)
         working-directory: .
         env:
