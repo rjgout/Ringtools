@@ -1,4 +1,5 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiClient } from "../src/lib/api";
 import { useAuth } from "../src/lib/auth";
@@ -25,13 +26,15 @@ const headersOf = (c: Call) => c.init.headers as Record<string, string>;
 
 function Probe() {
   const a = useAuth();
+  const [err, setErr] = useState("");
   return (
     <div>
       <span data-testid="status">{a.status}</span>
       <span data-testid="ring">{a.ring?.id ?? "-"}</span>
       <button onClick={() => void a.selectRing("r2")}>ring2</button>
       <button onClick={() => void a.selectRing("vreemd")}>vreemd</button>
-      <button onClick={() => void a.signOut()}>uit</button>
+      <button onClick={() => void a.signOut().catch((e: Error) => setErr(e.message))}>uit</button>
+      <span data-testid="err">{err}</span>
       <button onClick={() => void a.reauth("12345678")}>reauth</button>
       <button onClick={() => void a.signIn("a@b.nl", "12345678").catch((e: Error) => { document.title = e.message; })}>signin</button>
     </div>
@@ -134,6 +137,89 @@ describe("WebAuthProvider", () => {
     act(() => screen.getByText("signin").click());
     await waitFor(() => expect(document.title).toMatch(/niet beschikbaar/));
     expect(calls.some((c) => c.url.includes("/auth/login"))).toBe(false);
+  });
+});
+
+describe("Veilig uitloggen in de webomgeving", () => {
+  const signedInHandler = (logout: () => { status: number; body: unknown }) => (path: string) => (path === "/me" ? { status: 200, body: ME } : path === "/auth/logout" ? logout() : { status: 200, body: { rotated: false } });
+  const mount = async (redirect = vi.fn()) => {
+    render(<WebAuthProvider redirect={redirect}><Probe /></WebAuthProvider>);
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("signedIn"));
+    return redirect;
+  };
+  const posted: unknown[] = [];
+  beforeEach(() => {
+    posted.length = 0;
+    vi.stubGlobal("BroadcastChannel", class { onmessage: ((e: { data: unknown }) => void) | null = null; postMessage(m: unknown) { posted.push(m); } close() {} });
+  });
+
+  it("lukt het intrekken niet (geen verbinding of serverfout), dan blijft de gebruiker ingelogd met een duidelijke melding en gebeurt er niets anders", async () => {
+    localStorage.setItem("ringtools.web.ring", "r2");
+    const calls = stubFetch(signedInHandler(() => ({ status: 503, body: { error: "storing", code: "server" } })));
+    const redirect = await mount();
+    act(() => screen.getByText("uit").click());
+    await waitFor(() => expect(screen.getByTestId("err").textContent).toMatch(/Uitloggen is niet gelukt\. Je bent nog ingelogd/));
+    expect(redirect).not.toHaveBeenCalled();
+    expect(screen.getByTestId("status").textContent).toBe("signedIn");
+    expect(localStorage.getItem("ringtools.web.ring")).toBe("r2");
+    expect(posted).toEqual([]);
+    expect(calls.filter((c) => c.url.endsWith("/auth/logout")).length).toBe(1);
+  });
+
+  it("een netwerkfout bij uitloggen telt ook als mislukt", async () => {
+    let offline = false;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (offline && String(url).endsWith("/auth/logout")) throw new TypeError("offline");
+      return new Response(JSON.stringify(String(url).endsWith("/me") ? ME : { rotated: false }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+    const redirect = await mount();
+    offline = true;
+    act(() => screen.getByText("uit").click());
+    await waitFor(() => expect(screen.getByTestId("err").textContent).toMatch(/nog ingelogd/));
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("na een geslaagde intrekking: naar de inlogpagina, ringkeuze gewist, andere tabbladen op de hoogte, geen inhoud meer", async () => {
+    localStorage.setItem("ringtools.web.ring", "r2");
+    stubFetch(signedInHandler(() => ({ status: 200, body: { ok: true } })));
+    const redirect = await mount();
+    act(() => screen.getByText("uit").click());
+    await waitFor(() => expect(redirect).toHaveBeenCalledWith("/login"));
+    expect(localStorage.getItem("ringtools.web.ring")).toBeNull();
+    expect(posted).toEqual(["logout"]);
+    expect(screen.getByTestId("status").textContent).toBe("loading");
+  });
+
+  it("een sessie die al ongeldig is (401) telt als uitgelogd", async () => {
+    stubFetch(signedInHandler(() => ({ status: 401, body: { error: "verlopen", code: "unauthenticated" } })));
+    const redirect = await mount();
+    act(() => screen.getByText("uit").click());
+    await waitFor(() => expect(redirect).toHaveBeenCalled());
+    expect(redirect.mock.calls.every(([url]) => url === "/login" || String(url).startsWith("/login?next="))).toBe(true);
+  });
+
+  it("meldt de pushregistratie van dit apparaat af vóór het uitloggen (gedeeld apparaat)", async () => {
+    const unsubscribe = vi.fn(async () => true);
+    vi.stubGlobal("PushManager", class {});
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: { getRegistration: async () => ({ pushManager: { getSubscription: async () => ({ endpoint: "https://fcm.googleapis.com/fcm/send/abc", unsubscribe }) } }) } });
+    const calls = stubFetch(signedInHandler(() => ({ status: 200, body: { ok: true } })));
+    const redirect = await mount();
+    act(() => screen.getByText("uit").click());
+    await waitFor(() => expect(redirect).toHaveBeenCalledWith("/login"));
+    const order = calls.map((c) => new URL(c.url, "http://x").pathname.replace("/api/mobile/v1", ""));
+    expect(order.indexOf("/web-push/unsubscribe")).toBeGreaterThan(-1);
+    expect(order.indexOf("/web-push/unsubscribe")).toBeLessThan(order.indexOf("/auth/logout"));
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: undefined });
+  });
+
+  it("een afmelding in een ander tabblad stuurt dit tabblad direct naar de inlogpagina", async () => {
+    let channel: { onmessage: ((e: { data: unknown }) => void) | null } | null = null;
+    vi.stubGlobal("BroadcastChannel", class { onmessage: ((e: { data: unknown }) => void) | null = null; constructor() { channel = this; } postMessage() {} close() {} });
+    stubFetch(signedInHandler(() => ({ status: 200, body: { ok: true } })));
+    const redirect = await mount();
+    act(() => channel!.onmessage?.({ data: "logout" }));
+    expect(redirect).toHaveBeenCalled();
   });
 });
 

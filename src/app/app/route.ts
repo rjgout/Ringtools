@@ -1,13 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { redirect } from "next/navigation";
-import { env } from "@/lib/env";
 import { getCurrentUser } from "@/lib/session";
 import { safeInternalPath } from "@/lib/safePath";
 
 /**
- * Webomgeving (web/PWA v2): serveert de gedeelde React-client (dezelfde als de iOS-app, gebouwd met `npm run build:web` in mobile/).
- * - Alleen met de vlag WEB_APP_V2_ENABLED; zonder de vlag bestaat dit adres niet (404) en blijft de bestaande website ongewijzigd.
+ * Webomgeving (web/PWA): serveert de gedeelde React-client (dezelfde als de iOS-app, gebouwd met `npm run build:web` in mobile/).
  * - Alleen voor een volledig ingelogde gewone gebruiker (sessiecookie, MFA voltooid); anders naar de bestaande inlogpagina, met behoud van de bestemming.
  * - Het beheerdersaccount hoort in de webmin-omgeving.
  * De pagina zelf bevat geen gegevens: alles komt via /api/mobile/v1 met de HttpOnly-cookie. Nooit cachen.
@@ -17,7 +15,6 @@ export const dynamic = "force-dynamic";
 const SHELL = path.join(process.cwd(), "public", "app", "index.html");
 
 export async function GET(request: Request) {
-  if (!env.webAppV2Enabled) return new Response("Niet gevonden.", { status: 404, headers: { "Cache-Control": "no-store" } });
   const url = new URL(request.url);
   const to = safeInternalPath(url.searchParams.get("to"));
   const self = to ? `/app?to=${encodeURIComponent(to)}` : "/app";

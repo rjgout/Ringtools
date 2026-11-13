@@ -2,8 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireRole, requireUser } from "@/lib/session";
-import { setActiveRing } from "@/lib/ringContext";
+import { requireRole } from "@/lib/session";
 import { createRingSchema, ringNameSchema } from "@/lib/validation";
 import { createRing, renameRing, RingError, AuthorizationError } from "@/lib/rings";
 
@@ -66,23 +65,4 @@ export async function renameRingAction(_prev: ActionResult | null, formData: For
   }
   revalidatePath("/ringen", "layout");
   return { ok: true, message: "Naam opgeslagen." };
-}
-
-/** Wisselt de actieve ring; alleen mogelijk voor ringen waarvan de gebruiker actief lid is. */
-export async function switchRingAction(formData: FormData): Promise<void> {
-  const user = await requireUser();
-  const ringId = String(formData.get("ringId") || "");
-  await setActiveRing(user.id, ringId);
-  revalidatePath("/", "layout");
-  redirect("/dashboard");
-}
-
-/**
- * Zet de actieve ring op de ring van het voorstel dat de gebruiker opent (bijv. via een
- * e-mail of melding), zodat menu en dashboard bij het voorstel passen. Het lidmaatschap
- * wordt server-side gecontroleerd; zonder lidmaatschap verandert er niets.
- */
-export async function activateRingAction(ringId: string): Promise<boolean> {
-  const user = await requireUser();
-  return setActiveRing(user.id, ringId);
 }

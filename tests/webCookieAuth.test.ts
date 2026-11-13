@@ -11,7 +11,7 @@ vi.mock("@/lib/mailer", async (original) => ({
 
 const { handleApi } = await import("@/lib/api/router");
 
-// Web/PWA v2: de sessiecookie op /api/mobile/v1. Deze tests beschrijven de beveiligingseisen: vlag, herkomst, eigen header, geen vermenging met
+// Web/PWA: de sessiecookie op /api/mobile/v1. Deze tests beschrijven de beveiligingseisen: herkomst, eigen header, geen vermenging met
 // Bearer, geen token in JSON, sessie-intrekking, rollen en ringisolatie. De native (Bearer-)weg moet daarbij ongewijzigd blijven.
 const ORIGIN = "https://ringtools.test";
 type Opts = { cookie?: string | null; headers?: Record<string, string | null>; body?: unknown; bearer?: string };
@@ -35,7 +35,6 @@ beforeEach(async () => {
   await resetDatabase();
   sendMailMock.mockReset();
   sendMailMock.mockResolvedValue(undefined);
-  vi.stubEnv("WEB_APP_V2_ENABLED", "true");
   vi.stubEnv("APP_BASE_URL", ORIGIN);
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -50,17 +49,8 @@ async function scene() {
   return { ringA, ringB, president, secretary, councillor, outsider };
 }
 
-describe("Cookie-aanmelding: vlag en basis", () => {
-  it("met de vlag uit telt de cookie nooit (401), ook met alle juiste headers", async () => {
-    const { president } = await scene();
-    const cookie = await login(president.id);
-    vi.stubEnv("WEB_APP_V2_ENABLED", "false");
-    expect((await web("GET", "/me", { cookie })).status).toBe(401);
-    vi.stubEnv("WEB_APP_V2_ENABLED", "");
-    expect((await web("GET", "/me", { cookie })).status).toBe(401);
-  });
-
-  it("met de vlag aan geeft een geldige sessiecookie toegang tot het eigen profiel; antwoorden zijn no-store en zonder CORS-headers", async () => {
+describe("Cookie-aanmelding: basis", () => {
+  it("een geldige sessiecookie toegang tot het eigen profiel; antwoorden zijn no-store en zonder CORS-headers", async () => {
     const { president, ringA } = await scene();
     const res = await web("GET", "/me", { cookie: await login(president.id) });
     expect(res.status).toBe(200);
@@ -165,8 +155,7 @@ describe("Geen vermenging van Bearer en cookie", () => {
     expect(((await res.json()) as { user: { id: string } }).user.id).toBe(president.id);
   });
 
-  it("de native weg werkt ook met de vlag uit en geeft bij herverificatie/rotatie nog steeds een token in de JSON", async () => {
-    vi.stubEnv("WEB_APP_V2_ENABLED", "false");
+  it("de native weg geeft bij herverificatie/rotatie nog steeds een token in de JSON (en zet nooit een cookie)", async () => {
     const { president } = await scene();
     const bearer = await login(president.id);
     const { code } = await createMagicLinkToken(president.id, { withCode: true });

@@ -1,8 +1,22 @@
 name: Build en publiceer Docker-image
 
+# Bij een pull request wordt de volledige Docker-image gebouwd en doorgelicht, zonder te publiceren. Alleen een push naar main publiceert.
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-entrypoint.sh"
+      - "package.json"
+      - "package-lock.json"
+      - "prisma/**"
+      - "src/**"
+      - "public/**"
+      - "shared/**"
+      - "mobile/**"
+      - ".github/workflows/docker-publish.yml"
   workflow_dispatch: {}
 
 env:
@@ -81,13 +95,53 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=short
 
-      - name: Image bouwen en publiceren
+      - name: Image bouwen (zonder publicatie) voor de controle
         uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/amd64
-          # Alleen main publiceert; een handmatige start vanaf een andere branch bouwt en test alleen.
-          push: ${{ github.ref == 'refs/heads/main' }}
+          load: true
+          push: false
+          tags: ringtools-controle:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image doorlichten (start, gezondheid, webomgeving, geen geheimen)
+        run: |
+          set -euo pipefail
+          docker run -d --name ringtools-controle --network host \
+            -e DATABASE_URL="postgresql://postgres:postgres@localhost:5432/ringtools_ci?schema=public" \
+            -e SETTINGS_ENCRYPTION_KEY="ci-test-encryptie-sleutel-niet-voor-productie" \
+            -e APP_BASE_URL="http://localhost:2809" -e COOKIE_SECURE=false -e PORT=2809 \
+            ringtools-controle:ci
+          for i in $(seq 1 40); do
+            curl -fsS http://localhost:2809/api/health >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://localhost:2809/api/health
+          echo
+          # API: openbaar capaciteitenoverzicht, en de beveiligde webomgeving verwijst zonder sessie naar de inlogpagina.
+          curl -fsS http://localhost:2809/api/mobile/v1/meta | grep -q '"apiVersion"'
+          test "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' http://localhost:2809/app)" = "307 http://localhost:2809/login?next=%2Fapp"
+          # Webomgeving: de gebundelde client zit in de image en wordt statisch geserveerd (zonder gegevens).
+          docker exec ringtools-controle test -f public/app/index.html
+          ASSET="$(docker exec ringtools-controle sh -c "grep -o '/app/assets/[^\"]*\.js' public/app/index.html | head -1")"
+          test -n "$ASSET"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:2809$ASSET")" = "200"
+          # Een cookie-verzoek zonder de eigen header wordt nooit als aangemeld beschouwd.
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Cookie: ringtools_session=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' http://localhost:2809/api/mobile/v1/me)" = "401"
+          # Geen geheimen of omgevingsbestanden in de image.
+          ! docker run --rm --entrypoint sh ringtools-controle:ci -c 'ls -A /app | grep -E "^\.env"' 
+          docker logs ringtools-controle 2>&1 | tail -15
+          docker rm -f ringtools-controle >/dev/null
+
+      - name: Image publiceren
+        if: github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

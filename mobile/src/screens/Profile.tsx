@@ -20,6 +20,7 @@ import { useServerCapabilities } from "../lib/useServerCapabilities";
 export function Profile() {
   const { me, ring, api, selectRing, signOut, enablePush } = useAuth();
   const [pushMessage, setPushMessage] = useState<string | null>(null);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const caps = nativeCapabilities();
   const sessions = useLoad(() => api.sessions(), []);
   const devices = useLoad(() => (IS_WEB_APP ? Promise.resolve({ devices: [] }) : api.devices()), []);
@@ -186,8 +187,12 @@ export function Profile() {
 
       {me?.user.reviewAccount && ring?.role === "RINGSECRETARIS" && <Link className="glass panel" to="/demo-beheer">Gebruikersbeheer – demo</Link>}
       {IS_WEB_APP ? <a className="glass panel" href="/accountverwijdering">Account en privacy</a> : <AccountPrivacy />}
+      {signOutError && <div className="error" role="alert">{signOutError}</div>}
       <button className="btn btn-ghost btn-block" onClick={() => void (async () => {
-        if (await confirm({ title: "Uitloggen?", message: IS_WEB_APP ? "Je moet daarna opnieuw inloggen met een e-mailcode." : "Je moet daarna opnieuw inloggen met een e-mailcode en je tweede factor.", confirmLabel: "Uitloggen" })) await signOut();
+        setSignOutError(null);
+        if (await confirm({ title: "Uitloggen?", message: IS_WEB_APP ? "Je moet daarna opnieuw inloggen met een e-mailcode." : "Je moet daarna opnieuw inloggen met een e-mailcode en je tweede factor.", confirmLabel: "Uitloggen" })) {
+          try { await signOut(); } catch (err) { setSignOutError(err instanceof ApiRequestError ? err.message : "Uitloggen is niet gelukt. Probeer het opnieuw."); }
+        }
       })()}>Uitloggen</button>
       <p className="muted">{IS_WEB_APP ? `Ringtools ${APP_VERSION} (web).` : `Ringtools ${APP_VERSION}. MFA en passkeys beheer je via de beveiligde website.`}</p>
     </div>

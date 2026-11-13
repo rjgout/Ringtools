@@ -237,7 +237,7 @@ authedRoute("POST", "/devices/:id/active", async ({ auth, params, body }) => svc
 
 // ---- Sessies (apparaten waarop dit account is ingelogd) ----
 
-// Webpush (VAPID) en e-mailvoorkeur voor de webomgeving (web/PWA v2). Alleen via de sessiecookie: de native app gebruikt APNs/FCM (`/devices`).
+// Webpush (VAPID) en e-mailvoorkeur voor de webomgeving (web/PWA). Alleen via de sessiecookie: de native app gebruikt APNs/FCM (`/devices`).
 const webOnly = (auth: ApiAuth) => {
   if (auth.via !== "cookie") throw new ApiError(404, "Niet gevonden.", "not-found");
 };

@@ -1,21 +1,29 @@
-import { env } from "./env";
-
 /**
- * Web/PWA v2: waar een pagina van de bestaande website voor een gewone gebruiker naartoe verwijst zodra de vlag aan staat.
- * Geeft `null` als er niet wordt doorverwezen (vlag uit, beheerder, of een pagina die blijft bestaan zoals de webmin-pagina's).
+ * Web/PWA: de gedeelde interface (`/app`, dezelfde React-client als de iOS-app) is de enige gebruikersomgeving voor gewone gebruikers.
+ * De adressen van de vroegere webpagina's blijven bestaan als doorverwijzing (e-maillinks, pushmeldingen, universele links en bladwijzers
+ * verwijzen ernaar) en wijzen naar hetzelfde scherm. De webmin (beheerder) houdt zijn eigen pagina's.
  * De bestemming is altijd een vast, intern pad; een voorstel-id wordt alleen overgenomen als het een gewoon id is.
  */
-export function webAppTargetFor(pathAndQuery: string | null | undefined, opts: { isAdmin: boolean; enabled?: boolean }): string | null {
-  const enabled = opts.enabled ?? env.webAppV2Enabled;
-  if (!enabled || opts.isAdmin || !pathAndQuery) return null;
-  const pathname = pathAndQuery.split("?")[0].replace(/\/+$/, "") || "/";
-  const to = (route: string) => (route === "/" ? "/app" : `/app?to=${encodeURIComponent(route)}`);
-  if (pathname === "/dashboard") return to("/");
-  if (pathname === "/roepingen") return to("/voorstellen");
-  if (pathname === "/roepingen/nieuw") return to("/voorstellen/nieuw");
+const toApp = (route: string) => (route === "/" ? "/app" : `/app?to=${encodeURIComponent(route)}`);
+
+/** Paden van de vroegere gebruikerspagina's die de webmin nooit gebruikt. */
+const isRetiredUserPath = (pathname: string) => pathname === "/roepingen" || pathname.startsWith("/roepingen/") || pathname === "/gebruikers";
+
+/**
+ * Waar een pagina uit de beveiligde website (`src/app/(app)`) naartoe verwijst:
+ * - gewone gebruiker: het bijbehorende scherm in `/app`, of het overzicht als er geen eigen scherm is;
+ * - beheerder: blijft op de webmin-pagina's; alleen de vroegere gebruikerspagina's gaan naar het webmin-overzicht (`/dashboard`).
+ * `null` = niet doorverwijzen.
+ */
+export function webAppTargetFor(pathAndQuery: string | null | undefined, opts: { isAdmin: boolean }): string | null {
+  const pathname = (pathAndQuery ?? "").split("?")[0].replace(/\/+$/, "") || "/";
+  if (opts.isAdmin) return isRetiredUserPath(pathname) ? "/dashboard" : null;
+  if (pathname === "/dashboard") return toApp("/");
+  if (pathname === "/roepingen") return toApp("/voorstellen");
+  if (pathname === "/roepingen/nieuw") return toApp("/voorstellen/nieuw");
   const detail = /^\/roepingen\/([A-Za-z0-9_-]{1,64})$/.exec(pathname);
-  if (detail) return to(`/roepingen/${detail[1]}`);
-  if (pathname === "/gebruikers") return to("/beheer/gebruikers");
-  if (pathname === "/profiel") return to("/profiel");
-  return null;
+  if (detail) return toApp(`/roepingen/${detail[1]}`);
+  if (pathname === "/gebruikers") return toApp("/beheer/gebruikers");
+  if (pathname === "/profiel") return toApp("/profiel");
+  return toApp("/");
 }

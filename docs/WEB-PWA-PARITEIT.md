@@ -1,6 +1,6 @@
 # Web/PWA gelijk trekken met de iOS-app
 
-Status: **fase 1 (analyse, §1–§7) afgerond; fase 2 (implementatie achter de vlag `WEB_APP_V2_ENABLED`, standaard uit) staat in §8–§11.** Niets is geactiveerd of gedeployed.
+Status: **fase 1 (analyse, §1–§7) en fase 2 (implementatie, §8–§11) zijn afgerond; na de koerswijziging van de eigenaar (§12) is de nieuwe webinterface de enige gebruikersomgeving – zonder featureflag.** Niets is gemerged of gedeployed zonder afzonderlijk akkoord.
 
 Fase 1 – Basis: `main` op `aa071a6`. Uitgangspunt is de iOS-app (`mobile/src`); de webomgeving is `src/app/(app)` (Next.js, Server Actions, sessiecookie).
 
@@ -228,3 +228,25 @@ Wijzigingen die ook de iOS-app raken (in de eerstvolgende app-build, niet in 1.1
 4. `start_url` van het manifest naar `/app` zodra de vlag definitief aan staat; de oude pagina's in `src/app/(app)` en hun componenten verwijderen na acceptatie.
 5. Webpush-tik opent nu het bestaande webadres, dat doorverwijst; rechtstreeks naar `/app` laten wijzen bij het opruimen.
 6. Inlogfout iOS-app: afzonderlijk onderzoek.
+
+---
+
+## 12. Koerswijziging (besluit eigenaar, binnen PR #7)
+
+Er zijn nog geen reguliere gebruikers; daarom geen testomgeving, geen tijdelijke oplossingen en **geen featureflags**: de nieuwe web/PWA-interface (dezelfde React-client als de iOS-app) vervangt de bestaande webinterface definitief. De passages hierboven over `WEB_APP_V2_ENABLED` en "vlag uit/aan" zijn daarmee vervallen; ze beschrijven de tussenstand.
+
+| Onderwerp | Nu |
+|---|---|
+| Vlag `WEB_APP_V2_ENABLED` | verwijderd (code, tests, CI, `.env.example`, documentatie); er is niets in Portainer om aan te zetten |
+| Gewone gebruikers | altijd in `/app`; `/login`, `/`, de magic link, MFA en `/open/<token>` leiden daar na inloggen naartoe; manifest `start_url` is `/app` |
+| Vroegere adressen | `/dashboard`, `/roepingen`, `/roepingen/<id>`, `/roepingen/nieuw`, `/gebruikers`, `/profiel` blijven als doorverwijzing bestaan (e-mails, pushmeldingen, universele links `/roepingen/*` in `apple-app-site-association`, bladwijzers); elk ander adres in `(app)` gaat voor een gewone gebruiker naar het overzicht |
+| Webmin | ongewijzigd: overzicht, ringen (incl. direct toevoegen van gebruikers en voorstellen verwijderen), instellingen, profiel; bovenbalk/onderbalk teruggebracht tot deze vier |
+| Behouden | publieke website, `/login`, `/mfa/*`, `/profiel/beveiliging` (TOTP, passkeys, herstelcodes, sessies, vertrouwde toestellen), accountverwijdering, `/open/<token>`, `/uitnodiging/<token>` |
+| Verwijderd (vastgesteld ongebruikt) | de vroegere gebruikerspagina's en hun bouwstenen: `NewCallingForm`, `SupportSection`, `TaskRow`, `Timeline`, `GroupDecisionForm`, `WhatsAppShareButton`, `StatCard`, `SubmitButton`, `ConfirmSubmitButton`, `RingSync`, `RingSwitcher`, `NotificationBell`, `NotificationPanel`, `AppBadgeUpdater`, `src/lib/ringContext.ts` (ringcookie van de oude webpagina's), `notification.actions.ts`, de routes `/api/notifications`, `/api/notifications/unread-count`, `/api/badge-count` en de Server Actions voor stemmen, taken, vrijgeven en nieuw voorstel. Methode: importgrafiek vanaf alle routes, layouts en `instrumentation.ts`, plus zoeken in tests/e2e; wat alleen nog door tests werd gebruikt is samen met de bijbehorende test verwijderd |
+| Bewust behouden | `MemberList`, `UserForm`, `DeleteCallingButton`, `deleteCallingAction` (ringpagina van de webmin), `push.actions.ts`, `InstallPwaCard`, `PushNotificationCard`, `DeviceList`, `EmailPreferenceForm` (profiel van de webmin) |
+| Overgenomen in de nieuwe interface | tijdlijn Voortgang, algemene herinnering delen, app-badge (aantal openstaande acties; verdwijnt bij uitloggen), webpush alleen na een tik, installatiehulp, e-mailvoorkeur |
+| Veilig uitloggen (reviewpunt) | zie hieronder |
+
+**Veilig uitloggen.** Eerder ging de browser naar de inlogpagina ook als het intrekken van de sessie op de server mislukt was; de gebruiker dacht dan uitgelogd te zijn terwijl de sessie nog gold. Nu: (1) eerst wordt de pushregistratie van dit apparaat afgemeld (op een gedeeld apparaat mogen meldingen niet bij de vorige gebruiker blijven aankomen), (2) daarna wordt de sessie op de server ingetrokken; mislukt dat (geen verbinding, serverfout) dan blijft de gebruiker ingelogd en ziet hij "Uitloggen is niet gelukt. Je bent nog ingelogd…", een sessie die al ongeldig is (401) telt als uitgelogd, (3) pas na succes wordt de ringkeuze gewist, de badge verwijderd, een bericht naar andere tabbladen gestuurd (die direct naar de inlogpagina gaan) en doorgestuurd naar `/login`, (4) een via de terug-knop uit de bfcache teruggezette pagina wordt herladen, zodat er geen oude gegevens zichtbaar zijn. De server wist de cookie in hetzelfde antwoord waarmee hij de sessie intrekt. Tests: `mobile/tests/webApp.test.tsx` (6), `tests/webCookieAuth.test.ts`, `e2e/webApp.spec.ts`.
+
+**Docker.** De CI bouwt nu bij elke pull request die de image raakt de volledige Docker-image (zonder publicatie), start die tegen de CI-database en controleert gezondheid, `/api/mobile/v1/meta`, de doorverwijzing van `/app` naar de inlogpagina, dat de gebundelde client in de image zit en geserveerd wordt, dat een cookie zonder de eigen header nooit toegang geeft, en dat er geen `.env`-bestanden in de image zitten. Alleen een push naar `main` publiceert.

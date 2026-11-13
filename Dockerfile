@@ -10,8 +10,8 @@ FROM base AS deps
 RUN npm ci --omit=dev
 RUN npx prisma generate
 
-# ---- Webomgeving (web/PWA v2): dezelfde React-client als de app, gebundeld voor de browser (uitvoer: /src/public/app) ----
-# Zonder de vlag WEB_APP_V2_ENABLED wordt deze bundel niet gebruikt. Geen native onderdelen, geen geheimen; postinstall (patches voor native plug-ins) is hier niet nodig.
+# ---- Webomgeving (web/PWA): dezelfde React-client als de iOS-app, gebundeld voor de browser (uitvoer: /src/public/app) ----
+# De gebruikersomgeving op /app. Geen native onderdelen, geen geheimen; postinstall (patches voor native plug-ins) is hier niet nodig.
 FROM node:22-alpine AS webapp
 WORKDIR /src
 COPY mobile/package.json mobile/package-lock.json ./mobile/

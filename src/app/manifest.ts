@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Ringtools",
     short_name: "Ringtools",
     description: "Beheer van roepingen en ondersteuningsprocedures – Ring Apeldoorn",
-    start_url: "/",
+    start_url: "/app",
     scope: "/",
     display: "standalone",
     background_color: "#eef1f8",

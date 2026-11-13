@@ -2,14 +2,6 @@ import { z } from "zod";
 
 export const emailSchema = z.string().trim().toLowerCase().email("Vul een geldig e-mailadres in.");
 
-export const createCallingSchema = z.object({
-  personName: z.string().trim().min(2, "Vul de naam van de persoon in.").max(200),
-  functionTitle: z.string().trim().min(2, "Vul de roeping/functie in.").max(200),
-  roepenAssigneeId: z.string().optional().nullable(),
-  ondersteunenAssigneeId: z.string().optional().nullable(),
-  aanstellenAssigneeId: z.string().optional().nullable(),
-});
-
 const membershipRoleSchema = z.enum(["RINGPRESIDIUM", "RINGSECRETARIS", "RINGADMINISTRATEUR", "HOGERAAD"], {
   message: "Kies een rol binnen Ringtools.",
 });

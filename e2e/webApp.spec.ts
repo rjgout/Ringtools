@@ -5,10 +5,9 @@ import { createCalling } from "../src/lib/workflow";
 import { loginWithMagicLink } from "./helpers/mfa";
 import { createE2eUser } from "./helpers/data";
 
-// Web/PWA v2: de gedeelde interface (dezelfde client als de iOS-app) onder /app, met de sessiecookie.
-// Draait alleen met E2E_WEB_APP_V2=on tegen een server met WEB_APP_V2_ENABLED=true (en `npm run build:web` in mobile/).
+// Web/PWA: de gedeelde interface (dezelfde client als de iOS-app) onder /app, met de sessiecookie.
+// Vereist een gebouwde webomgeving (`npm run build:web` in mobile/).
 // De telefoonprojecten gebruiken het Pixel-profiel van Playwright (Chromium met Android Chrome-kenmerken); dit is geen echt Android-toestel.
-const ON = process.env.E2E_WEB_APP_V2 === "on";
 const SHOTS = process.env.E2E_SHOTS_DIR;
 const pixel = { viewport: devices["Pixel 7"].viewport, userAgent: devices["Pixel 7"].userAgent, deviceScaleFactor: devices["Pixel 7"].deviceScaleFactor, isMobile: true, hasTouch: true };
 
@@ -18,21 +17,7 @@ async function login(page: Page, userId: string, target = "/app") {
 }
 const shot = async (page: Page, name: string) => { if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` }); };
 
-test.describe("webomgeving v2 – vlag uit", () => {
-  test.skip(ON, "alleen met de vlag uit");
-  test("/app bestaat niet en de API weigert de cookie; de bestaande website werkt ongewijzigd", async ({ page }) => {
-    const { user } = await createE2eUser("RINGPRESIDIUM", "Vlag Uit");
-    await login(page, user.id, "/dashboard");
-    await expect(page).toHaveURL(/\/dashboard/);
-    await expect(page.getByRole("heading", { name: /Welkom/ })).toBeVisible();
-    expect((await page.request.get("/app")).status()).toBe(404);
-    const me = await page.request.get("/api/mobile/v1/me", { headers: { "X-Ringtools-Web": "1", Origin: new URL(page.url()).origin } });
-    expect(me.status()).toBe(401);
-  });
-});
-
-test.describe("webomgeving v2 – telefoon (Android Chrome-profiel)", () => {
-  test.skip(!ON, "alleen met E2E_WEB_APP_V2=on");
+test.describe("webomgeving – telefoon (Android Chrome-profiel)", () => {
   test.use(pixel);
 
   test("niet ingelogd: /app gaat naar de bestaande inlogpagina en komt na inloggen terug op de gevraagde plek", async ({ page }) => {
@@ -137,6 +122,30 @@ test.describe("webomgeving v2 – telefoon (Android Chrome-profiel)", () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
+  test("veilig uitloggen: mislukt het intrekken, dan blijf je ingelogd met een melding; daarna lukt het, ook met de terug-knop geen gegevens", async ({ page, context }) => {
+    const { user } = await createE2eUser("RINGPRESIDIUM", "Uitloggen Web");
+    await login(page, user.id);
+    await page.getByRole("navigation", { name: "Hoofdnavigatie" }).getByRole("link", { name: /Profiel/ }).click();
+    await expect(page.getByRole("heading", { name: "Uitloggen Web" })).toBeVisible();
+
+    await page.route("**/api/mobile/v1/auth/logout", (route) => route.abort("connectionfailed"));
+    await page.getByRole("button", { name: "Uitloggen" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Uitloggen" }).click();
+    await expect(page.getByRole("alert")).toContainText("Uitloggen is niet gelukt. Je bent nog ingelogd");
+    await expect(page).toHaveURL(/\/app/);
+    expect(await prisma.session.count({ where: { userId: user.id } })).toBe(1);
+    expect((await context.cookies()).find((c) => c.name === SESSION_COOKIE_NAME)?.value).toBeTruthy();
+
+    await page.unroute("**/api/mobile/v1/auth/logout");
+    await page.getByRole("button", { name: "Uitloggen" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Uitloggen" }).click();
+    await expect(page).toHaveURL(/\/login/);
+    expect(await prisma.session.count({ where: { userId: user.id } })).toBe(0);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByText("Uitloggen Web")).toHaveCount(0);
+  });
+
   test("sessie ingetrokken terwijl de webomgeving open staat: terug naar inloggen, geen gegevens meer", async ({ page }) => {
     const { user } = await createE2eUser("RINGPRESIDIUM", "Intrekken Web");
     await login(page, user.id);
@@ -199,8 +208,7 @@ test.describe("webomgeving v2 – telefoon (Android Chrome-profiel)", () => {
   });
 });
 
-test.describe("webomgeving v2 – desktop", () => {
-  test.skip(!ON, "alleen met E2E_WEB_APP_V2=on");
+test.describe("webomgeving – desktop", () => {
   test.use({ viewport: { width: 1366, height: 850 } });
 
   test("zelfde schermen met de hoofdnavigatie links; toetsenbordbediening werkt", async ({ page }) => {

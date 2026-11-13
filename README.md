@@ -243,10 +243,9 @@ blijft normaal werken.
 
 ## Notificatiecentrum
 
-Naast e-mail en Web Push heeft elke ingelogde gebruiker een **notificatiebel**
-rechtsboven in de werkbalk (`src/components/NotificationBell.tsx`), die een
-dropdown/bottom sheet opent met de meldingenlijst
-(`src/components/NotificationPanel.tsx`).
+Naast e-mail en Web Push heeft elke ingelogde gebruiker een tab **Meldingen** met de
+meldingenlijst en een teller voor ongelezen meldingen. Dit is hetzelfde scherm in
+de iOS-app, de Android-app en de webomgeving (`mobile/src/screens/Notifications.tsx`).
 
 ### Eén centraal proces, geen tweede systeem
 
@@ -270,44 +269,30 @@ vanuit `src/lib/workflow.ts` wordt aangeroepen. Voor elke gebeurtenis doet
 Een mislukte push of e-mail (bijvoorbeeld: SMTP nog niet geconfigureerd, of
 een verlopen push-abonnement) gooit nooit een fout die de interne melding
 alsnog tegenhoudt — die drie stappen zijn bewust onafhankelijk van elkaar.
-Er is dus geen los, tweede notificatiesysteem: de bel hergebruikt exact
+Er is dus geen los, tweede notificatiesysteem: de tab Meldingen hergebruikt exact
 dezelfde koppelpunten als de bestaande e-mail/push-infrastructuur.
 
 ### Lezen, bijwerken en navigeren
 
-- De bel toont een badge met het aantal **ongelezen** meldingen (verdwijnt
-  bij 0) en haalt dit lichtgewicht op via `GET /api/notifications/unread-count`.
-- Het openen van het paneel haalt de volledige lijst op via
-  `GET /api/notifications` (laatste 30, nieuwste eerst) — beide endpoints
-  zijn server-side gescoped op de ingelogde gebruiker (`getCurrentUser()`),
-  nooit op basis van client-input.
-- Een melding **openen** markeert hem meteen als gelezen
-  (`markNotificationReadAction`) en navigeert naar de bijbehorende pagina
-  (`targetUrl`) — dit voert **nooit** automatisch een ondersteuningsreactie uit of rondt een
-  taak af, dat vereist altijd een expliciete actie van de gebruiker op die
-  pagina zelf. Omdat de doelpagina's zelf server-side autorisatie afdwingen,
-  kan een meldingslink die rechten nooit omzeilen.
-- **"Alles als gelezen markeren"** (`markAllNotificationsReadAction`) werkt
-  voor de hele lijst in één keer.
-- Beide server actions filteren altijd op `userId: <ingelogde gebruiker>` in
-  de Prisma-query, zodat een gebruiker nooit de melding van iemand anders kan
-  lezen of als gelezen kan markeren.
+- De tab toont een teller met het aantal **ongelezen** meldingen (verdwijnt bij 0). De lijst komt uit `GET /api/mobile/v1/notifications`
+  en is server-side gescoped op de ingelogde gebruiker en de gekozen ring, nooit op basis van client-input.
+- Een melding **openen** markeert hem als gelezen (`POST /notifications/read`) en navigeert naar het bijbehorende scherm — dit voert
+  **nooit** automatisch een ondersteuningsreactie uit of rondt een taak af; dat vereist altijd een expliciete actie van de gebruiker op
+  dat scherm. Omdat de server per scherm autorisatie afdwingt, kan een meldingslink die rechten nooit omzeilen.
+- **"Alles als gelezen markeren"** werkt voor de hele lijst in één keer.
+- De routes filteren altijd op de ingelogde gebruiker, zodat iemand nooit de melding van een ander kan lezen of als gelezen markeren.
 
 ### Automatisch bijwerken zonder herladen
 
-De bel pollt elke 20 seconden `GET /api/notifications/unread-count`, maar
-**pauzeert** zodra het tabblad niet zichtbaar is (Page Visibility API) om
-onnodige databasebelasting te voorkomen. Dit is een bewuste, lichte keuze
-die past bij een enkele NAS-instantie — geen WebSockets, Server-Sent Events
-of externe realtime-dienst.
+De teller wordt bijgewerkt bij elke schermwissel en bij terugkeren naar de app; de webomgeving ververst bovendien elke 15 minuten de
+sessie en het aantal openstaande acties. Geen WebSockets, Server-Sent Events of externe realtime-dienst: een bewuste, lichte keuze die
+past bij een enkele NAS-instantie.
 
 ### App-badge blijft gescheiden
 
-De bestaande PWA **app-badge** (`navigator.setAppBadge`, het aantal
-openstaande acties op het app-icoon) en de **bel-badge** (ongelezen
-meldingen) zijn volledig losse tellingen met eigen endpoints
-(`/api/badge-count` respectievelijk `/api/notifications/unread-count`) en
-updaten onafhankelijk van elkaar.
+De **app-badge** op het pictogram van de geïnstalleerde webapp (`navigator.setAppBadge`, het aantal openstaande acties over alle ringen,
+`pendingCount` uit `GET /me`) en de **teller van de tab Meldingen** (ongelezen meldingen) zijn losse tellingen en updaten onafhankelijk van
+elkaar. Bij uitloggen verdwijnt de badge.
 
 ### Privacy en opruiming
 
@@ -320,7 +305,7 @@ updaten onafhankelijk van elkaar.
   dus geen persoonsgegeven achter in het notificatiecentrum.
 - Meldingen worden nooit door de service worker offline gecachet (de
   bestaande cache-allowlist in `public/sw.js` bevat uitsluitend statische,
-  niet-gevoelige assets; `/api/notifications*` valt daarbuiten).
+  niet-gevoelige assets (iconen, gebundelde scripts en stijlen, de offlinepagina); `/api/*` valt daarbuiten).
 
 ### Database en migratie
 
@@ -464,7 +449,7 @@ willekeurig token (de database bewaart er uitsluitend de hash van).
 |---|---|---|
 | Inactiviteit | **60 dagen** | Elk geauthenticeerd gebruik schuift de verloopdatum op (hooguit eens per 15 minuten wordt dit weggeschreven). 60 dagen niet gebruikt = opnieuw inloggen. |
 | Absolute levensduur | **180 dagen** | Na 180 dagen is opnieuw inloggen altijd nodig, ook bij dagelijks gebruik. Opnieuw verifiëren voor een gevoelige actie telt als nieuwe login. |
-| Tokenrotatie | **24 uur** | De app (`SessionKeepAlive`) roept bij openen en terugkeren `POST /api/session/refresh` aan; is het token ouder dan 24 uur, dan krijgt de sessie een nieuw token (nieuw cookie). Het vorige token blijft 5 minuten geldig zodat gelijktijdige verzoeken of een verloren antwoord niet uitloggen. |
+| Tokenrotatie | **24 uur** | De webomgeving (`/app`) en de app roepen bij openen en terugkeren `POST /auth/refresh` aan (de webmin: `SessionKeepAlive` → `POST /api/session/refresh`); is het token ouder dan 24 uur, dan krijgt de sessie een nieuw token (nieuw cookie). Het vorige token blijft 5 minuten geldig zodat gelijktijdige verzoeken of een verloren antwoord niet uitloggen. |
 | Wacht-op-MFA-sessie | 10 minuten | Alleen tussen de identiteitscontrole en de tweede factor; geeft geen toegang en wordt nooit verlengd. |
 | Recente MFA | 15 minuten | Nodig voor gevoelige acties (beveiligingsinstellingen, admin-reset). Voor gebruikers zonder ingeschakelde passkey-verificatie is er geen tweede factor om te herhalen. |
 
