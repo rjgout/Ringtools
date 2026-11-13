@@ -136,3 +136,12 @@ export async function loginWithMagicLink(page: Page, magicLinkPath: string, auth
     await completePasskeyStep(page);
   }
 }
+
+/** Uitloggen in de webomgeving (/app): Profiel → Uitloggen → bevestigen; wacht tot de inlogpagina verschijnt. */
+export async function logoutFromApp(page: Page) {
+  if (!new URL(page.url()).pathname.startsWith("/app")) await page.goto("/app");
+  await page.getByRole("navigation", { name: "Hoofdnavigatie" }).getByRole("link", { name: /Profiel/ }).click();
+  await page.getByRole("button", { name: "Uitloggen" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Uitloggen" }).click();
+  await page.waitForURL(/\/login/);
+}

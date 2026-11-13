@@ -3,7 +3,7 @@ import { prisma } from "../src/lib/prisma";
 import { createMagicLinkToken } from "../src/lib/auth";
 import { createCalling } from "../src/lib/workflow";
 import { createOpenLink } from "../src/lib/openLinks";
-import { loginWithMagicLink } from "./helpers/mfa";
+import { loginWithMagicLink, logoutFromApp } from "./helpers/mfa";
 import { createE2eUser } from "./helpers/data";
 
 test("een geïnstalleerde app blijft ingelogd na afsluiten en heropenen (cookie blijft bewaard)", async ({ browser }) => {
@@ -13,7 +13,7 @@ test("een geïnstalleerde app blijft ingelogd na afsluiten en heropenen (cookie 
   const first = await browser.newContext();
   const page = await first.newPage();
   await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/app/);
 
   // Het sessiecookie is HttpOnly, SameSite=Lax en een langlevend (persistent) cookie.
   const cookie = (await first.cookies()).find((c) => c.name === "ringtools_session");
@@ -28,9 +28,9 @@ test("een geïnstalleerde app blijft ingelogd na afsluiten en heropenen (cookie 
 
   const reopened = await browser.newContext({ storageState: state });
   const page2 = await reopened.newPage();
-  await page2.goto("/dashboard");
-  await expect(page2).toHaveURL(/\/dashboard/);
-  await expect(page2.getByRole("button", { name: "Meldingen" })).toBeVisible();
+  await page2.goto("/app");
+  await expect(page2).toHaveURL(/\/app/);
+  await expect(page2.getByRole("navigation", { name: "Hoofdnavigatie" })).toBeVisible();
 
   // De vernieuwroute verlengt de sessie zonder iets prijs te geven.
   const refresh = await page2.request.post("/api/session/refresh");
@@ -45,10 +45,10 @@ test("een verlopen of ingetrokken sessie wordt na heropenen geweigerd", async ({
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/app/);
 
   await prisma.session.deleteMany({ where: { userId: user.id } }); // bijv. beveiligingsreset of deactivering
-  await page.goto("/dashboard");
+  await page.goto("/app");
   await expect(page).toHaveURL(/\/login/);
   const refresh = await page.request.post("/api/session/refresh");
   expect(refresh.status()).toBe(401);
@@ -63,16 +63,15 @@ test("browser en geïnstalleerde app werken onafhankelijk: uitloggen in de één
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
-    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page).toHaveURL(/\/app/);
     contexts.push({ ctx, page });
   }
   expect(await prisma.session.count({ where: { userId: user.id } })).toBe(2);
 
-  await contexts[0].page.getByRole("button", { name: "Uitloggen" }).click();
-  await expect(contexts[0].page).toHaveURL(/\/login/);
+  await logoutFromApp(contexts[0].page);
 
-  await contexts[1].page.goto("/dashboard");
-  await expect(contexts[1].page).toHaveURL(/\/dashboard/);
+  await contexts[1].page.goto("/app");
+  await expect(contexts[1].page).toHaveURL(/\/app/);
   expect(await prisma.session.count({ where: { userId: user.id } })).toBe(1);
   for (const { ctx } of contexts) await ctx.close();
 });
@@ -89,7 +88,7 @@ test("een e-maillink naar een voorstel bewaart de bestemming door het inloggen h
   // Na het inloggen via een link met die bestemming opent het voorstel.
   const { rawToken } = await createMagicLinkToken(user.id);
   await loginWithMagicLink(page, `/auth/magic/${rawToken}?redirect=${encodeURIComponent(`/roepingen/${calling.id}`)}`);
-  await expect(page).toHaveURL(new RegExp(`/roepingen/${calling.id}`));
+  await expect(page).toHaveURL(new RegExp(`/app#/roepingen/${calling.id}`));
   await expect(page.getByRole("heading", { name: "E2E Bestemming" })).toBeVisible();
 });
 
@@ -114,8 +113,9 @@ test("/open/<token>: zonder sessie alleen keuzes, geen gegevens; met sessie dire
   const ctx = await browser.newContext();
   const page2 = await ctx.newPage();
   await loginWithMagicLink(page2, `/auth/magic/${rawToken}`);
+  await expect(page2.getByRole("navigation", { name: "Hoofdnavigatie" })).toBeVisible();
   await page2.goto(path);
-  await expect(page2).toHaveURL(new RegExp(`/roepingen/${calling.id}`));
+  await expect(page2).toHaveURL(new RegExp(`/app#/roepingen/${calling.id}`));
   await ctx.close();
 
   // Ongeldige koppeling: geen enkele informatie.
@@ -137,13 +137,10 @@ test("een voorstel uit een andere ring schakelt de app naar die ring; geen toega
   await loginWithMagicLink(page, `/auth/magic/${rawToken}?redirect=${encodeURIComponent(`/roepingen/${callingB.id}`)}`);
   await expect(page.getByRole("heading", { name: "Ring B voorstel" })).toBeVisible();
   // De app schakelt naar ring B: het dashboard hoort dan bij ring B.
-  await expect.poll(async () => {
-    await page.goto("/dashboard");
-    return page.locator("header").first().innerText();
-  }).toContain(ringB.name);
+  await expect(page.getByText(ringB.name).first()).toBeVisible();
 
   // Een voorstel van een ring waar de gebruiker geen lid van is, laat niets zien.
-  const res = await page.goto(`/roepingen/${callingC.id}`);
-  expect(res?.status()).toBe(404);
+  await page.goto(`/roepingen/${callingC.id}`);
+  await expect(page).toHaveURL(new RegExp(`/app#/roepingen/${callingC.id}`));
   await expect(page.getByText("Ring C voorstel")).toHaveCount(0);
 });

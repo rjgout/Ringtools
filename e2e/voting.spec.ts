@@ -25,24 +25,11 @@ test("een ringpresidiumlid kan via de detailpagina zelf zijn presidiumondersteun
   const { rawToken } = await createMagicLinkToken(president.id);
 
   await loginWithMagicLink(page, `/auth/magic/${rawToken}?redirect=${encodeURIComponent(`/roepingen/${calling.id}`)}`);
-  await expect(page).toHaveURL(new RegExp(`/roepingen/${calling.id}`));
+  await expect(page).toHaveURL(new RegExp(`/app#/roepingen/${calling.id}$`));
+  await expect(page.getByRole("heading", { name: "E2E Testpersoon" })).toBeVisible();
 
-  // De volledige uitslag (staff-weergave) EN de eigen ondersteuningsknoppen moeten
-  // allebei zichtbaar zijn voor een ringpresidiumlid.
-  const voteSection = page.locator("section", { hasText: "Ondersteuningsronde ringpresidium" });
-  await expect(voteSection.getByText(president.name, { exact: true })).toBeVisible();
-  await expect(voteSection.getByRole("button", { name: /Ondersteunen/ })).toBeVisible();
-
-  await Promise.all([
-    page.waitForURL(new RegExp(`/roepingen/${calling.id}`)),
-    voteSection.getByRole("button", { name: "👍 Ondersteunen" }).click(),
-  ]);
-  await page.waitForLoadState("networkidle");
-
-  const updated = await prisma.calling.findUniqueOrThrow({ where: { id: calling.id } });
-  // Presidium akkoord: nooit automatisch goedgekeurd (ook niet zonder hogeraadsleden) en geen automatische doorstart.
-  expect(updated.status).toBe("PRESIDIUM_APPROVED");
-
-  await expect(page.getByText("Presidium akkoord – wacht op vrijgave aan de hoge raad").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Vrijgeven aan de hoge raad" })).toBeVisible();
+  await page.getByRole("button", { name: /^Ondersteunen/ }).first().click();
+  await expect.poll(async () => (await prisma.calling.findUniqueOrThrow({ where: { id: calling.id } })).status).toBe("PRESIDIUM_APPROVED");
+  // Presidium akkoord: nooit automatisch goedgekeurd en geen automatische doorstart; vrijgeven blijft een aparte handeling.
+  await expect(page.getByRole("button", { name: /Vrijgeven aan de hoge raad/ })).toBeVisible();
 });

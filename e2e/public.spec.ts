@@ -42,6 +42,7 @@ test("een bestaande sessie gaat vanaf de startpagina direct naar het overzicht (
   const { user } = await createE2eUser("RINGSECRETARIS", `Startpagina ${Date.now()}`);
   const { rawToken } = await createMagicLinkToken(user.id);
   await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
+  await expect(page.getByRole("navigation", { name: "Hoofdnavigatie" })).toBeVisible();
   await page.goto("/");
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/app/);
 });

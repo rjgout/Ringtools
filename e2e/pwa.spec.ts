@@ -8,7 +8,7 @@ test("het Web App Manifest bevat de vereiste velden", async ({ page, request }) 
 
   expect(manifest.name).toBe("Ringtools");
   expect(manifest.short_name).toBe("Ringtools");
-  expect(manifest.start_url).toBe("/");
+  expect(manifest.start_url).toBe("/app");
   expect(manifest.scope).toBe("/");
   expect(manifest.display).toBe("standalone");
   expect(manifest.theme_color).toBeTruthy();

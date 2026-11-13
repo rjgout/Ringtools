@@ -3,7 +3,7 @@ import { prisma } from "../src/lib/prisma";
 import { createMagicLinkToken } from "../src/lib/auth";
 import { regenerateRecoveryCodes } from "../src/lib/mfa";
 import { createE2eUser } from "./helpers/data";
-import { loginAsAdmin, loginWithMagicLink, addVirtualAuthenticator } from "./helpers/mfa";
+import { loginAsAdmin, loginWithMagicLink, addVirtualAuthenticator, logoutFromApp } from "./helpers/mfa";
 
 test("een ongeldige TOTP-code wordt afgewezen bij het inloggen", async ({ page }) => {
   await page.goto("/login");
@@ -28,7 +28,7 @@ test("een magic link alleen geeft geen toegang: de passkey-stap is verplicht", a
   await page.getByRole("button", { name: "Inloggen" }).click();
   await expect(page).toHaveURL(/\/mfa\/passkey/);
 
-  await page.goto("/dashboard");
+  await page.goto("/app");
   await expect(page).toHaveURL(/\/login/);
 });
 
@@ -48,7 +48,7 @@ test("met alleen de eerste factor kun je geen extra passkey inschrijven en de lo
   expect(verify.status()).toBe(403);
 
   // ...en blijft buiten de beveiligde pagina's.
-  await page.goto("/dashboard");
+  await page.goto("/app");
   await expect(page).toHaveURL(/\/login/);
 });
 
@@ -57,11 +57,10 @@ test("passkeyregistratie en een latere passkeylogin werken met user verification
 
   const { rawToken: firstToken } = await createMagicLinkToken(user.id);
   await loginWithMagicLink(page, `/auth/magic/${firstToken}`);
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/app/);
   expect(await prisma.webAuthnCredential.count({ where: { userId: user.id } })).toBe(1);
 
-  await page.getByRole("button", { name: "Uitloggen" }).click();
-  await expect(page).toHaveURL(/\/login/);
+  await logoutFromApp(page);
 
   // Tweede login: nu al een passkey geregistreerd, dus geen registratieknop
   // meer nodig — het verificatiepaneel start de ceremonie zelf.
@@ -70,7 +69,7 @@ test("passkeyregistratie en een latere passkeylogin werken met user verification
   await page.getByRole("button", { name: "Inloggen" }).click();
   await expect(page).toHaveURL(/\/mfa\/passkey/);
   await expect(page.getByRole("button", { name: "Passkey registreren" })).not.toBeVisible();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/app/);
 });
 
 test("zonder user verification door de authenticator wordt de passkey geweigerd", async ({ page }) => {
@@ -132,17 +131,18 @@ test("een API-route geeft geen toegang zonder volledig afgeronde MFA", async ({ 
   await page.getByRole("button", { name: "Inloggen", exact: true }).click();
   await expect(page).toHaveURL(/\/mfa\/totp/);
 
-  const res = await page.request.get("/api/notifications");
+  const origin = new URL(page.url()).origin;
+  const res = await page.request.get("/api/mobile/v1/me", { headers: { "X-Ringtools-Web": "1", Origin: origin } });
   expect(res.status()).toBe(401);
-  expect(await res.json()).toEqual({ notifications: [], unreadCount: 0 });
+  expect(JSON.stringify(await res.json())).not.toContain("webmin");
 });
 
 test("een admin kan de MFA van een gebruiker resetten; de gebruiker moet daarna opnieuw registreren", async ({ page }) => {
   const { user, ringId } = await createE2eUser("HOGERAAD", `Reset Mij ${Date.now()}`, { mfaEnabled: true });
   const { rawToken: enrollToken } = await createMagicLinkToken(user.id);
   await loginWithMagicLink(page, `/auth/magic/${enrollToken}`);
-  await expect(page).toHaveURL(/\/dashboard/);
-  await page.getByRole("button", { name: "Uitloggen" }).click();
+  await expect(page).toHaveURL(/\/app/);
+  await logoutFromApp(page);
 
   await loginAsAdmin(page, "webmin", "e2e-test-wachtwoord-123");
   await page.goto(`/ringen/${ringId}`);
@@ -169,10 +169,11 @@ test("een ringbeheerder (geen webmin) ziet geen 'MFA resetten'-knop in gebruiker
   const { user: manager } = await createE2eUser("RINGSECRETARIS", `Manager ${Date.now()}`, { isRingManager: true });
   const { rawToken } = await createMagicLinkToken(manager.id);
   await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/app/);
 
-  await page.goto("/gebruikers");
-  await expect(page.getByRole("button", { name: "Verificatie resetten", exact: true })).toHaveCount(0);
+  await page.goto("/app?to=%2Fbeheer%2Fgebruikers");
+  await expect(page.getByRole("heading", { name: /Gebruikers/ }).first()).toBeVisible();
+  await expect(page.getByText("Verificatie resetten")).toHaveCount(0);
 });
 
 test.describe("Mobiele interface", () => {
@@ -198,7 +199,7 @@ test("passkey-verificatie staat standaard uit: een magic link geeft meteen toega
 
   await page.goto(`/auth/magic/${rawToken}`);
   await page.getByRole("button", { name: "Inloggen" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/app/);
   expect(await prisma.webAuthnCredential.count({ where: { userId: user.id } })).toBe(0);
 });
 
@@ -206,7 +207,7 @@ test("een gebruiker kan passkey-verificatie zelf inschakelen; daarna is de passk
   const { user } = await createE2eUser("HOGERAAD", `Optie ${Date.now()}`);
   const { rawToken } = await createMagicLinkToken(user.id);
   await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/app/);
 
   await page.goto("/profiel/beveiliging");
   await expect(page.getByRole("button", { name: "Verificatie inschakelen" })).toBeDisabled();
@@ -216,8 +217,8 @@ test("een gebruiker kan passkey-verificatie zelf inschakelen; daarna is de passk
   await page.getByRole("button", { name: "Verificatie inschakelen" }).click();
   await expect.poll(async () => (await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).mfaEnabled).toBe(true);
 
-  await page.goto("/dashboard");
-  await page.getByRole("button", { name: "Uitloggen" }).click();
+  await page.goto("/app");
+  await logoutFromApp(page);
   const { rawToken: second } = await createMagicLinkToken(user.id);
   await page.goto(`/auth/magic/${second}`);
   await page.getByRole("button", { name: "Inloggen" }).click();
