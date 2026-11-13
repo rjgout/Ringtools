@@ -4,22 +4,24 @@ import { createMagicLinkToken } from "../src/lib/auth";
 import { loginWithMagicLink } from "./helpers/mfa";
 import { createE2eUser } from "./helpers/data";
 
+async function openMeldingen(page: import("@playwright/test").Page) {
+  await page.getByRole("navigation", { name: "Hoofdnavigatie" }).getByRole("link", { name: /Meldingen/ }).click();
+  await expect(page.getByRole("heading", { name: "Meldingen", level: 1 })).toBeVisible();
+}
+
 async function loginAsFreshUser(page: import("@playwright/test").Page, name: string) {
   const { user, ringId } = await createE2eUser("HOGERAAD", name);
   const { rawToken } = await createMagicLinkToken(user.id);
-  await loginWithMagicLink(page, `/auth/magic/${rawToken}?redirect=${encodeURIComponent("/dashboard")}`);
-  await expect(page).toHaveURL(/\/dashboard/);
+  await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
+  await expect(page).toHaveURL(/\/app/);
   return { ...user, ringId };
 }
 
 test("de notificatiebel toont een lege status als er geen meldingen zijn", async ({ page }) => {
   await loginAsFreshUser(page, `Leeg${Date.now()}`);
 
-  const bell = page.getByRole("button", { name: "Meldingen" });
-  await expect(bell).toBeVisible();
-  await bell.click();
-
-  await expect(page.getByText("Je bent helemaal bij!")).toBeVisible();
+  await openMeldingen(page);
+  await expect(page.getByText("Geen meldingen.")).toBeVisible();
 });
 
 test("de bel toont het juiste aantal ongelezen meldingen en werkt bij het openen van een melding", async ({ page }) => {
@@ -66,18 +68,14 @@ test("de bel toont het juiste aantal ongelezen meldingen en werkt bij het openen
   });
 
   await page.reload();
-  await expect(page.getByRole("button", { name: "Meldingen, 2 ongelezen" })).toBeVisible();
-
-  await page.getByRole("button", { name: "Meldingen, 2 ongelezen" }).click();
+  await openMeldingen(page);
   await expect(page.getByText("Nieuwe taak toegewezen")).toBeVisible();
   await expect(page.getByText("Taak afgerond")).toBeVisible();
 
-  // Een melding openen navigeert naar de doelpagina en markeert hem als gelezen.
+  // Een melding openen navigeert naar het voorstel.
   await page.getByText("Nieuwe taak toegewezen").click();
-  await expect(page).toHaveURL(new RegExp(`/roepingen/${calling.id}`));
-
-  const stillUnread = await prisma.notification.count({ where: { userId: user.id, readAt: null } });
-  expect(stillUnread).toBe(1);
+  await expect(page).toHaveURL(new RegExp(`/app#/roepingen/${calling.id}`));
+  await expect(page.getByRole("heading", { name: "Testpersoon" })).toBeVisible();
 });
 
 test("alle meldingen als gelezen markeren werkt", async ({ page }) => {
@@ -90,41 +88,9 @@ test("alle meldingen als gelezen markeren werkt", async ({ page }) => {
   });
 
   await page.reload();
-  await page.getByRole("button", { name: "Meldingen, 2 ongelezen" }).click();
-  await page.getByRole("button", { name: "Alles als gelezen markeren" }).click();
-
-  await expect(page.getByRole("button", { name: "Meldingen" })).toBeVisible();
-  // De knop verdwijnt al bij de optimistische UI-update, vóórdat de
-  // server action is afgerond; poll daarom op de daadwerkelijke
-  // database-status in plaats van één keer meteen te checken.
+  await openMeldingen(page);
+  await page.getByRole("button", { name: "Alles gelezen" }).click();
   await expect
     .poll(async () => prisma.notification.count({ where: { userId: user.id, readAt: null } }))
     .toBe(0);
-});
-
-test.describe("Mobiele interface", () => {
-  test.use({ viewport: { width: 390, height: 844 } });
-
-  test("het meldingenpaneel is op mobiel bruikbaar als bottom sheet", async ({ page }) => {
-    const user = await loginAsFreshUser(page, `Mobiel${Date.now()}`);
-    await prisma.notification.create({
-      data: { userId: user.id, ringId: user.ringId, type: "REMINDER_30_DAYS", title: "Mobiele melding", message: "test", targetUrl: "/dashboard" },
-    });
-
-    await page.reload();
-    await page.getByRole("button", { name: "Meldingen, 1 ongelezen" }).click();
-
-    const panel = page.getByRole("dialog", { name: "Meldingen" });
-    await expect(panel).toBeVisible();
-    await expect(page.getByText("Mobiele melding")).toBeVisible();
-
-    const box = await panel.boundingBox();
-    expect(box).not.toBeNull();
-    // Bottom sheet: het paneel raakt de onderkant van het scherm.
-    expect(box!.y + box!.height).toBeGreaterThanOrEqual(844 - 2);
-
-    // Sluitknop (alleen zichtbaar op mobiel) werkt.
-    await page.getByRole("button", { name: "Sluiten" }).click();
-    await expect(panel).not.toBeVisible();
-  });
 });

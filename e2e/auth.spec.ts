@@ -1,7 +1,4 @@
 import { test, expect } from "@playwright/test";
-import { loginAsAdmin, loginWithMagicLink } from "./helpers/mfa";
-import { createMagicLinkToken } from "../src/lib/auth";
-import { createE2eUser } from "./helpers/data";
 
 test("niet-ingelogde gebruiker wordt naar de inlogpagina gestuurd", async ({ page }) => {
   await page.goto("/dashboard");
@@ -35,15 +32,4 @@ test("fout wachtwoord wordt geweigerd", async ({ page }) => {
 // (ring aanmaken met eerste ringbeheerder), om de rate-limit op
 // admin-inlogpogingen niet onnodig te belasten.
 
-test("uitloggen werkt en blokkeert daarna weer toegang", async ({ page }) => {
-  const { user } = await createE2eUser("HOGERAAD", `Uitlogger ${Date.now()}`);
-  const { rawToken } = await createMagicLinkToken(user.id);
-  await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
-  await expect(page).toHaveURL(/\/dashboard/);
-
-  await page.getByRole("button", { name: "Uitloggen" }).click();
-  await expect(page).toHaveURL(/\/login/);
-
-  await page.goto("/dashboard");
-  await expect(page).toHaveURL(/\/login/);
-});
+// Uitloggen (veilig, met serversessie-intrekking) wordt gedekt in e2e/webApp.spec.ts.

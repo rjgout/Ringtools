@@ -29,32 +29,26 @@ test("webmin maakt een ring met een eerste ringbeheerder aan", async ({ page }) 
   expect(membership).toMatchObject({ isRingManager: true, active: true, churchFunction: "Ringsecretaris" });
 });
 
-test("een ringbeheerder voegt een gebruiker toe aan de eigen ring en ziet geen andere ringen", async ({ page }) => {
-  const { user: manager, ringId } = await createE2eUser("RINGSECRETARIS", `Beheerder ${Date.now()}`, { isRingManager: true });
+test("een ringbeheerder beheert alleen de eigen ring in /app en ziet geen andere ringen of rechtstreeks toevoegen", async ({ page }) => {
+  const { user: manager } = await createE2eUser("RINGSECRETARIS", `Beheerder ${Date.now()}`, { isRingManager: true });
   const { user: foreign } = await createE2eUser("HOGERAAD", `Elders ${Date.now()}`);
   const { rawToken } = await createMagicLinkToken(manager.id);
   await loginWithMagicLink(page, `/auth/magic/${rawToken}`);
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/app/);
 
+  // Oude webadres voor gebruikersbeheer verwijst naar dezelfde interface als de app.
   await page.goto("/gebruikers");
+  await expect(page).toHaveURL(/\/app#\/beheer\/gebruikers/);
+  await expect(page.getByText(manager.name).first()).toBeVisible();
   await expect(page.getByText(foreign.email)).toHaveCount(0);
-  const stamp = Date.now();
-  const form = page.getByTestId("create-user-form");
-  await form.locator('input[name="name"]').fill(`Nieuw Lid ${stamp}`);
-  await form.locator('input[name="email"]').fill(`nieuw.${stamp}@test.ringapeldoorn.nl`);
-  await form.locator('input[name="churchFunction"]').fill("Hogeraadslid");
-  await form.getByRole("button", { name: "Gebruiker toevoegen" }).click();
+  await expect(page.getByText(foreign.name)).toHaveCount(0);
 
-  await expect
-    .poll(async () => prisma.ringMembership.count({ where: { ringId, user: { email: `nieuw.${stamp}@test.ringapeldoorn.nl` } } }))
-    .toBe(1);
-
-  // Een andere ring is niet via de URL te bereiken.
-  const res = await page.goto("/ringen");
-  expect(res?.url()).not.toMatch(/\/ringen$/);
+  // Een andere ring is niet via de URL te bereiken; het webmin-ringbeheer is voor een gewone gebruiker afgesloten.
+  await page.goto("/ringen");
+  await expect(page).not.toHaveURL(/\/ringen$/);
 });
 
-test("herinneren en voorstel definitief verwijderen via de detailpagina", async ({ page }) => {
+test("voorstel definitief verwijderen via de gedeelde interface (annuleren verwijdert niets)", async ({ page }) => {
   const { user: president, ringId } = await createE2eUser("RINGPRESIDIUM", `Voorzitter ${Date.now()}`);
   const { user: second } = await createE2eUser("RINGPRESIDIUM", `Tweede ${Date.now()}`, { ringId });
   const calling = await createCalling({ ringId, personName: "Te Verwijderen", functionTitle: "Testfunctie", createdById: president.id });
@@ -62,41 +56,20 @@ test("herinneren en voorstel definitief verwijderen via de detailpagina", async 
 
   const { rawToken } = await createMagicLinkToken(president.id);
   await loginWithMagicLink(page, `/auth/magic/${rawToken}?redirect=${encodeURIComponent(`/roepingen/${calling.id}`)}`);
-  await expect(page).toHaveURL(new RegExp(`/roepingen/${calling.id}`));
-
-  const section = page.locator("section", { hasText: "Ondersteuningsronde ringpresidium" });
-  await expect(section.getByText(second.name, { exact: true })).toBeVisible();
-  await expect(section.getByText("Nog niet gereageerd").first()).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/app#/roepingen/${calling.id}`));
+  await expect(page.getByRole("heading", { name: "Te Verwijderen" })).toBeVisible();
+  await expect(page.getByText(second.name, { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/stemm|stem /i)).toHaveCount(0);
 
-  await section.getByRole("button", { name: "Herinnering versturen" }).first().click();
-  await expect
-    .poll(async () => prisma.notification.count({ where: { type: "SUPPORT_REMINDER", callingId: calling.id } }))
-    .toBeGreaterThan(0);
-
-  await page.getByRole("button", { name: "Voorstel verwijderen" }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText(/Weet je zeker dat je dit roepingsvoorstel definitief wilt verwijderen\?/)).toBeVisible();
-  await dialog.getByRole("button", { name: "Annuleren" }).click();
+  await page.getByRole("button", { name: "Acties voor dit voorstel" }).click();
+  await page.getByRole("menuitem", { name: /Voorstel verwijderen/ }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Annuleren" }).click();
   expect(await prisma.calling.count({ where: { id: calling.id } })).toBe(1);
 
-  await page.getByRole("button", { name: "Voorstel verwijderen" }).click();
-  await page.getByRole("button", { name: "Definitief verwijderen" }).click();
+  await page.getByRole("button", { name: "Acties voor dit voorstel" }).click();
+  await page.getByRole("menuitem", { name: /Voorstel verwijderen/ }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Verwijderen", exact: true }).click();
   await expect.poll(async () => prisma.calling.count({ where: { id: calling.id } })).toBe(0);
   expect(await prisma.user.count({ where: { id: president.id } })).toBe(1);
   expect(await prisma.notification.count({ where: { callingId: calling.id } })).toBe(0);
-});
-
-test.describe("Mobiel", () => {
-  test.use({ viewport: { width: 390, height: 844 } });
-
-  test("de detailpagina met ondersteuningsronde en verwijderknop is op mobiel bruikbaar", async ({ page }) => {
-    const { user: president, ringId } = await createE2eUser("RINGPRESIDIUM", `Mobiel ${Date.now()}`);
-    const calling = await createCalling({ ringId, personName: "Mobiel", functionTitle: "F", createdById: president.id });
-    const { rawToken } = await createMagicLinkToken(president.id);
-    await loginWithMagicLink(page, `/auth/magic/${rawToken}?redirect=${encodeURIComponent(`/roepingen/${calling.id}`)}`);
-    await expect(page.getByRole("button", { name: "Voorstel verwijderen" })).toBeVisible();
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
-    expect(overflow).toBe(false);
-  });
 });

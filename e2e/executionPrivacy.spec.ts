@@ -6,7 +6,7 @@ import { createCalling, castVote, releaseToHogeraad, assignTask } from "../src/l
 import { createE2eUser } from "./helpers/data";
 import { provisionReviewDemo, resetReviewDemo } from "../src/lib/reviewDemo";
 
-test("vooraf aangewezen uitvoerder ziet niets tot expliciete vrijgave; web en mobiele API volgen dezelfde grens", async ({ page, request }) => {
+test("vooraf aangewezen uitvoerder ziet niets tot expliciete vrijgave; web (/app) en mobiele API volgen dezelfde grens", async ({ page, request }) => {
   const stamp = Date.now();
   const { user: p, ringId } = await createE2eUser("RINGPRESIDIUM", `Fictieve vrijgever ${stamp}`);
   const { user: h } = await createE2eUser("HOGERAAD", `Fictieve beoordelaar ${stamp}`, { ringId });
@@ -24,14 +24,17 @@ test("vooraf aangewezen uitvoerder ziet niets tot expliciete vrijgave; web en mo
   expect(dashboard.myTasks).toEqual([]);
   expect((await (await request.get(`/api/mobile/v1/notifications?ring=${ringId}`, { headers })).json()).unreadCount).toBe(0);
   const url = test.info().project.use.baseURL as string;
+  // De webomgeving gebruikt dezelfde API-grens: zolang niet is vrijgegeven, toont /app niets van het dossier.
   await page.context().addCookies([{ name: SESSION_COOKIE_NAME, value: target.rawToken, url }]);
   await page.goto(`/roepingen/${c.id}`);
-  await expect(page).toHaveURL(/geen-toegang/);
+  await expect(page).toHaveURL(new RegExp(`/app#/roepingen/${c.id}`));
   await expect(page.getByText(c.personName)).toHaveCount(0);
   const staff = await createVerifiedSession(p.id);
   await page.context().addCookies([{ name: SESSION_COOKIE_NAME, value: staff.rawToken, url }]);
   await page.goto(`/roepingen/${c.id}`);
+  await expect(page.getByRole("heading", { name: c.personName, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Vrijgeven voor uitvoering", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Vrijgeven voor uitvoering", exact: true }).click();
   await expect.poll(async () => !!(await prisma.calling.findUniqueOrThrow({ where: { id: c.id } })).executionReleasedAt).toBe(true);
   await page.context().addCookies([{ name: SESSION_COOKIE_NAME, value: target.rawToken, url }]);
   await page.goto(`/roepingen/${c.id}`);
