@@ -39,6 +39,7 @@ on:
       - "src/lib/loginMail.ts"
       - "src/lib/invitations.ts"
       - "src/lib/mailer.ts"
+      - "src/lib/devGuard.ts"
       - "src/lib/safePath.ts"
       - "src/lib/rings.ts"
       - "src/lib/workflow.ts"
@@ -102,6 +103,7 @@ on:
       - "src/lib/loginMail.ts"
       - "src/lib/invitations.ts"
       - "src/lib/mailer.ts"
+      - "src/lib/devGuard.ts"
       - "src/lib/safePath.ts"
       - "src/lib/rings.ts"
       - "src/lib/workflow.ts"
@@ -177,7 +179,7 @@ jobs:
           tests/simpleLogin.test.ts tests/nativeTotpLogin.test.ts tests/webTotp.test.ts
           tests/trustedDevices.test.ts tests/deviceLogin.test.ts tests/deviceLoginConcurrency.test.ts
           tests/deviceEnrollment.test.ts tests/deviceAuthorization.test.ts
-          tests/webCookieAuth.test.ts tests/webAppRedirect.test.ts tests/ios112Compat.test.ts
+          tests/webCookieAuth.test.ts tests/webAppRedirect.test.ts tests/ios112Compat.test.ts tests/devGuard.test.ts
 
   client:
     name: Client en native configuratie
@@ -237,6 +239,17 @@ jobs:
           name: ringtools-android-debug
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
+      # Dev-variant (Ringtools Dev): zelfde code, eigen application-ID en App Links-host, naast de productieapp installeerbaar.
+      # Alleen een controle dat de variant bouwt en het juiste ID/de juiste host draagt; er wordt niets gepubliceerd.
+      - name: Dev-variant bouwen en controleren (alleen in deze werkkopie)
+        run: |
+          node scripts/configure-variant.mjs dev
+          node scripts/configure-variant.mjs dev --print-env >> "$GITHUB_ENV"
+          (cd android && ./gradlew assembleDebug --no-daemon)
+          M="$(find android/app/build/intermediates -path '*merged_manifests/debug*' -name AndroidManifest.xml | head -1)"
+          grep -q '"applicationId": *"nl.ringapeldoorn.ringtools.dev"' android/app/build/outputs/apk/debug/output-metadata.json
+          grep -q 'android:host="dev.ringapeldoorn.nl"' "$M"
+          ! grep -q 'android:host="ringapeldoorn.nl"' "$M"
 
   ios:
     name: iOS simulator-build (zonder signing)

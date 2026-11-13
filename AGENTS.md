@@ -246,6 +246,7 @@ gebruikers, ringbeheerders en `webmin` voor hun werk nodig hebben, moet in de ap
 
 ## Werkwijze repository
 
-- Ontwikkelbranch: `claude/ringpresidium-webapp-veccye` → na groene validatie fast-forward naar `main`.
+- **Branchstrategie (besluit eigenaar):** `main` = productie, `develop` = permanente ontwikkelbranch, nieuwe functionaliteit op `feature/*` → pull request naar `develop` → testen op de development-omgeving (`https://dev.ringapeldoorn.nl`) → **alleen na uitdrukkelijk akkoord van de eigenaar** een pull request `develop` → `main`. Een develop-image heeft uitsluitend de tags `develop`/`develop-<kort>` en overschrijft nooit `latest`. Geen automatische deployments of containerupdates voor dev; de eigenaar werkt de Portainer-stack `ringtools-dev` zelf bij. De dev-omgeving is volledig gescheiden (eigen database, sleutels, secrets, SMTP/push) en stuurt e-mail/push alleen naar `DEV_MAIL_ALLOWLIST` (`src/lib/devGuard.ts`, `APP_ENVIRONMENT=development`). Dev-apps ("Ringtools Dev", `nl.ringapeldoorn.ringtools.dev`) worden in CI uit een variant (`mobile/variants/dev.json`) gebouwd; de productieconfiguratie in Git blijft ongewijzigd. Zie `docs/DEV-OMGEVING.md`.
+- Eerdere werkbranches (`claude/*`) zijn historisch; nieuwe opdrachten starten op een `feature/*`-branch vanaf `develop` (tenzij de eigenaar anders bepaalt).
 - Commit-berichten in het Nederlands, beschrijvend; eindig met de gevraagde attributieregels.
 - Stel alleen vragen bij een essentiële functionele keuze; voeg geen ongevraagde functionaliteit toe.

@@ -1,9 +1,12 @@
+import { existsSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
 import { assertSafeTestDatabaseUrl } from "./tests/dbGuard";
 
 // De e2e-tests maken veel gegevens aan en delen de database met de server onder test: alleen een afzonderlijke testdatabase (E2E_DATABASE_URL of DATABASE_URL).
 // Start de server met dezelfde DATABASE_URL.
 process.env.DATABASE_URL = assertSafeTestDatabaseUrl(process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL);
+
+const LOCAL_CHROMIUM = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -26,7 +29,8 @@ export default defineConfig({
       use: {
         channel: undefined,
         launchOptions: {
-          executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
+          // Lokaal (vooraf geïnstalleerde browser) of via PLAYWRIGHT_CHROMIUM_PATH; anders de door Playwright beheerde Chromium (zoals in GitHub Actions).
+          executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || (existsSync(LOCAL_CHROMIUM) ? LOCAL_CHROMIUM : undefined),
         },
       },
     },

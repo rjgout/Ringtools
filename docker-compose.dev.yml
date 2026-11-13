@@ -1,0 +1,79 @@
+# Ringtools – DEVELOPMENT-omgeving (Portainer-stack "ringtools-dev", https://dev.ringapeldoorn.nl)
+#
+# Volledig gescheiden van productie: eigen PostgreSQL-database + volume, eigen secrets/sleutels, eigen SMTP-/push-/link-configuratie.
+# Gebruik NOOIT de waarden van productie in deze stack en kopieer geen productiegegevens naar deze omgeving.
+# Updates gebeuren uitsluitend handmatig (zie docs/DEV-OMGEVING.md); er is geen Watchtower- of andere automatische update.
+#
+# Plak dit bestand in Portainer (Stacks > Add stack > Web editor, naam: ringtools-dev) en vul de variabelen in het
+# veld "Environment variables" in (lijst en uitleg: docs/DEV-OMGEVING.md en .env.dev.example). Verplichte variabelen
+# zonder waarde laten het starten bewust mislukken.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "false" # database nooit automatisch bijwerken
+    environment:
+      POSTGRES_USER: ${DEV_POSTGRES_USER:-ringtools_dev}
+      POSTGRES_PASSWORD: ${DEV_POSTGRES_PASSWORD:?zet DEV_POSTGRES_PASSWORD (uniek, niet gelijk aan productie)}
+      POSTGRES_DB: ${DEV_POSTGRES_DB:-ringtools_dev}
+    volumes:
+      - ringtools_dev_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DEV_POSTGRES_USER:-ringtools_dev} -d ${DEV_POSTGRES_DB:-ringtools_dev}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Geen gepubliceerde poort: de database is alleen bereikbaar voor de app in deze stack.
+
+  app:
+    image: ghcr.io/rjgout/ringtools:develop
+    pull_policy: always # bij "Update the stack" / "Re-pull image" in Portainer wordt de nieuwste :develop opgehaald
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "false" # ontwikkelomgeving wordt uitsluitend handmatig bijgewerkt
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENVIRONMENT: development # activeert de mail-/pushbeveiliging (alleen DEV_MAIL_ALLOWLIST) en noindex
+      DATABASE_URL: postgresql://${DEV_POSTGRES_USER:-ringtools_dev}:${DEV_POSTGRES_PASSWORD:?zet DEV_POSTGRES_PASSWORD}@db:5432/${DEV_POSTGRES_DB:-ringtools_dev}?schema=public
+      APP_BASE_URL: ${DEV_APP_BASE_URL:-https://dev.ringapeldoorn.nl}
+      DEV_MAIL_ALLOWLIST: ${DEV_MAIL_ALLOWLIST:-} # leeg = er verlaat GEEN enkele e-mail of push de omgeving (fail-closed)
+      BOOTSTRAP_ADMIN_USERNAME: ${DEV_BOOTSTRAP_ADMIN_USERNAME:-webmin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${DEV_BOOTSTRAP_ADMIN_PASSWORD:?zet DEV_BOOTSTRAP_ADMIN_PASSWORD (uniek, niet gelijk aan productie)}
+      SETTINGS_ENCRYPTION_KEY: ${DEV_SETTINGS_ENCRYPTION_KEY:?zet DEV_SETTINGS_ENCRYPTION_KEY (unieke sleutel, niet gelijk aan productie)}
+      COOKIE_SECURE: ${DEV_COOKIE_SECURE:-true}
+      # Web Push (optioneel; leeg = uit). Genereer eigen VAPID-sleutels: npx web-push generate-vapid-keys
+      VAPID_PUBLIC_KEY: ${DEV_VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${DEV_VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${DEV_VAPID_SUBJECT:-mailto:dev@ringapeldoorn.nl}
+      # Native push voor de DEV-apps (optioneel; leeg = uit). Eigen Firebase-project/serviceaccount en eigen APNs-sleutel voor de dev-bundle-ID.
+      FCM_SERVICE_ACCOUNT_JSON: ${DEV_FCM_SERVICE_ACCOUNT_JSON:-}
+      FCM_SERVICE_ACCOUNT_FILE: ${DEV_FCM_SERVICE_ACCOUNT_FILE:-}
+      APNS_KEY_P8: ${DEV_APNS_KEY_P8:-}
+      APNS_KEY_P8_FILE: ${DEV_APNS_KEY_P8_FILE:-}
+      APNS_KEY_ID: ${DEV_APNS_KEY_ID:-}
+      APNS_TEAM_ID: ${DEV_APNS_TEAM_ID:-}
+      APNS_BUNDLE_ID: ${DEV_APNS_BUNDLE_ID:-nl.ringapeldoorn.ringtools.dev}
+      APNS_PRODUCTION: ${DEV_APNS_PRODUCTION:-true} # TestFlight gebruikt productie-APNs; false alleen voor rechtstreekse Xcode-builds
+      # Universal Links / App Links van de DEV-apps
+      APPLE_APP_ID: ${DEV_APPLE_APP_ID:-} # <Team-ID>.nl.ringapeldoorn.ringtools.dev
+      ANDROID_PACKAGE: ${DEV_ANDROID_PACKAGE:-nl.ringapeldoorn.ringtools.dev}
+      ANDROID_SHA256_FINGERPRINTS: ${DEV_ANDROID_SHA256_FINGERPRINTS:-}
+      # Functievlaggen blijven standaard uit (zoals productie); alleen aanzetten om ze bewust in development te testen.
+      WEB_TOTP_ENABLED: ${DEV_WEB_TOTP_ENABLED:-false}
+      NATIVE_TOTP_LOGIN_ENABLED: ${DEV_NATIVE_TOTP_LOGIN_ENABLED:-false}
+      TRUSTED_DEVICES_ENABLED: ${DEV_TRUSTED_DEVICES_ENABLED:-false}
+      NATIVE_DEVICE_LOGIN_ENABLED: ${DEV_NATIVE_DEVICE_LOGIN_ENABLED:-false}
+      NATIVE_DEVICE_AUTO_ENROLL_ENABLED: ${DEV_NATIVE_DEVICE_AUTO_ENROLL_ENABLED:-false}
+      NATIVE_PASSKEYS_ENABLED: ${DEV_NATIVE_PASSKEYS_ENABLED:-false}
+      AUTO_ENABLE_MFA: ${DEV_AUTO_ENABLE_MFA:-false}
+      PORT: 2809
+    ports:
+      # Interne poort 2809; op de NAS een andere hostpoort dan productie (2809). De reverse proxy van dev.ringapeldoorn.nl verwijst hiernaartoe.
+      - "${DEV_HTTP_PORT:-2819}:2809"
+
+volumes:
+  ringtools_dev_db:
+    name: ringtools_dev_db # vaste eigen naam, nooit gelijk aan het productievolume (ringtools_db)

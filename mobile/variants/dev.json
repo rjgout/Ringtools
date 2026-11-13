@@ -1,0 +1,7 @@
+{
+  "name": "dev",
+  "appId": "nl.ringapeldoorn.ringtools.dev",
+  "appName": "Ringtools Dev",
+  "host": "dev.ringapeldoorn.nl",
+  "apiUrl": "https://dev.ringapeldoorn.nl"
+}

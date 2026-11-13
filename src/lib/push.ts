@@ -1,5 +1,6 @@
 import { isAllowedPushEndpoint } from "./pushEndpoint";
 import { sendApns, sendFcm } from "./nativePush";
+import { isRecipientAllowed } from "./devGuard";
 import webpush from "web-push";
 import { prisma } from "./prisma";
 import { env } from "./env";
@@ -81,6 +82,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
     include: { pushSubscriptions: true, devicePushTokens: true },
   });
   if (!user || !user.active || user.accountKind !== "NORMAL") return 0;
+  if (!isRecipientAllowed(user.email)) return 0; // development-omgeving: alleen naar toegestane testers
 
   // Alleen interne doelpaden: een push kan nooit naar een externe site verwijzen.
   const safe = { ...payload, url: safeInternalPath(payload.url) ?? "/dashboard" };

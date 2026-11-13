@@ -1,0 +1,86 @@
+name: Android – Ringtools Dev (release-build, handmatig)
+
+# EXPLICIET HANDMATIG. DEV-variant "Ringtools Dev" (application-ID nl.ringapeldoorn.ringtools.dev, backend https://dev.ringapeldoorn.nl; naast de productieapp installeerbaar).
+# Past de variant alleen toe in de werkkopie op de runner. Bouwt een ondertekende Android App Bundle (AAB) als artifact voor de INTERNE testtrack. iOS (TestFlight) loopt via
+# .github/workflows/ios-testflight.yml (App Store Connect API-sleutel, automatische signing).
+# Dit workflow PUBLICEERT NIETS naar de Play Store: uploaden doet de eigenaar zelf (Play Console). Vereist signing-secrets die
+# NIET in de repository staan; zie docs/MOBILE.md. Zonder die secrets stopt de job met een duidelijke melding.
+on:
+  workflow_dispatch:
+    inputs:
+      bevestig:
+        description: Typ "dev" om een Dev-build te maken (voorkomt een vergissing met de productiebuild)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    if: ${{ inputs.bevestig == 'dev' }}
+    runs-on: ubuntu-latest
+    environment: mobile-release
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Signing-secrets aanwezig?
+        run: |
+          for v in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            [ -n "${!v}" ] || { echo "::error::Secret $v ontbreekt (zie docs/MOBILE.md)."; exit 1; }
+          done
+        working-directory: .
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      # De runner heeft de Android SDK al (ANDROID_HOME); Gradle haalt ontbrekende onderdelen zelf op.
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:native-config # valideert eerst de (ongewijzigde) productieconfiguratie
+      - name: Dev-variant toepassen (alleen in deze werkkopie)
+        run: |
+          node scripts/configure-variant.mjs dev
+          node scripts/configure-variant.mjs dev --print-env >> "$GITHUB_ENV"
+      - name: Firebase-configuratie voor de dev-app (eigen Firebase-project; staat niet in Git)
+        env:
+          DEV_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.DEV_GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -n "$DEV_GOOGLE_SERVICES_JSON_BASE64" ]; then echo "$DEV_GOOGLE_SERVICES_JSON_BASE64" | base64 -d > android/app/google-services.json; else echo "::warning::Geen DEV_GOOGLE_SERVICES_JSON_BASE64: de dev-app krijgt geen pushmeldingen."; fi
+      - run: npm run build # VITE_API_URL=https://dev.ringapeldoorn.nl komt uit de variant
+      - run: npx cap sync android # RINGTOOLS_APP_ID/-NAME komen uit de variant
+      - name: Keystore tijdelijk neerzetten (wordt niet gecommit of geüpload)
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.keystore"
+          {
+            echo "storeFile=$RUNNER_TEMP/upload.keystore"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > keystore.properties
+      - name: App Bundle (AAB) bouwen
+        working-directory: mobile/android
+        run: ./gradlew bundleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ringtools-dev-android-aab
+          path: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 7

@@ -41,7 +41,7 @@ def truthy(value):
     return value is True
 
 
-def check_distribution(ent, profile, authorities, team_identifier, expected_team=None):
+def check_distribution(ent, profile, authorities, team_identifier, expected_team=None, link_host="ringapeldoorn.nl"):
     """Geeft een lijst fouten voor een distributiebuild (leeg = in orde). Pure functie, getest."""
     errors = []
     if truthy(ent.get("get-task-allow")):
@@ -49,7 +49,7 @@ def check_distribution(ent, profile, authorities, team_identifier, expected_team
     if ent.get("aps-environment") != "production":
         errors.append("aps-environment is %r; TestFlight en de App Store vereisen 'production'." % ent.get("aps-environment"))
     domains = ent.get("com.apple.developer.associated-domains") or []
-    for needed in ("applinks:ringapeldoorn.nl", "webcredentials:ringapeldoorn.nl"):
+    for needed in ("applinks:" + link_host, "webcredentials:" + link_host):
         if needed not in domains:
             errors.append("Associated Domains mist %s." % needed)
     if not authorities or not authorities[0].startswith("Apple Distribution"):
@@ -81,6 +81,7 @@ def main():
     ap.add_argument("--bundle-id", required=True)
     ap.add_argument("--version", required=True)
     ap.add_argument("--build", required=True)
+    ap.add_argument("--link-host", default="ringapeldoorn.nl", help="Host van Universal Links/webcredentials (dev-variant: dev.ringapeldoorn.nl).")
     ap.add_argument("--team-id", default=os.environ.get("IOS_TEAM_ID", ""))
     a = ap.parse_args()
 
@@ -133,7 +134,7 @@ def main():
     print("::endgroup::")
 
     if a.stage == "ipa":
-        failures += check_distribution(ent, profile, authorities, team_identifier, a.team_id or None)
+        failures += check_distribution(ent, profile, authorities, team_identifier, a.team_id or None, a.link_host)
 
     if failures:
         for f in failures:

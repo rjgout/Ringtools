@@ -1,0 +1,136 @@
+name: End-to-end (Playwright)
+
+# Draait de Playwright-suite tegen een echte `next start` met de gebundelde webclient (/app) en een afzonderlijke Postgres-testdatabase (…_e2e).
+# Gebruikt uitsluitend CI-waarden; geen productie- of ontwikkelgegevens. Draait los (pull requests, pushes) en wordt door docker-publish.yml
+# aangeroepen als voorwaarde voor het publiceren van de :develop-image. De functievlag-modi zijn aparte legs, zodat ook de nog uitgeschakelde
+# functies (web-TOTP, vertrouwde toestellen, toestelinlog) onder hun eigen vlag blijven worden getest.
+on:
+  pull_request:
+    paths:
+      - "e2e/**"
+      - "src/**"
+      - "mobile/**"
+      - "shared/**"
+      - "prisma/**"
+      - "public/**"
+      - "package.json"
+      - "package-lock.json"
+      - "playwright.config.ts"
+      - ".github/workflows/e2e.yml"
+  push:
+    branches: [main]
+  workflow_call: {}
+  workflow_dispatch: {}
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: "Playwright (${{ matrix.name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: standaard (alle vlaggen uit)
+            specs: ""
+            server: "X=1"
+            client: "E2E_WEB_TOTP=off E2E_TRUSTED_DEVICES=off E2E_NATIVE_DEVICE=off"
+          - name: web-TOTP en vertrouwde toestellen aan
+            specs: "e2e/webTotp.spec.ts e2e/mfaKeuze.spec.ts e2e/vertrouwdeToestellen.spec.ts"
+            server: "WEB_TOTP_ENABLED=true TRUSTED_DEVICES_ENABLED=true"
+            client: "E2E_WEB_TOTP=on E2E_TRUSTED_DEVICES=on TRUSTED_DEVICES_ENABLED=true"
+          - name: toestelinlog aan
+            specs: "e2e/nativeDevice.spec.ts"
+            server: "TRUSTED_DEVICES_ENABLED=true NATIVE_DEVICE_LOGIN_ENABLED=true"
+            client: "E2E_NATIVE_DEVICE=login TRUSTED_DEVICES_ENABLED=true NATIVE_DEVICE_LOGIN_ENABLED=true"
+          - name: toestelinrichting aan
+            specs: "e2e/nativeDevice.spec.ts"
+            server: "TRUSTED_DEVICES_ENABLED=true NATIVE_DEVICE_LOGIN_ENABLED=true NATIVE_DEVICE_AUTO_ENROLL_ENABLED=true"
+            client: "E2E_NATIVE_DEVICE=auto TRUSTED_DEVICES_ENABLED=true NATIVE_DEVICE_LOGIN_ENABLED=true NATIVE_DEVICE_AUTO_ENROLL_ENABLED=true"
+          - name: gebundelde app-client (Bearer) tegen de server
+            specs: "e2e/executionPrivacy.spec.ts e2e/pr4Recovery.spec.ts e2e/reviewPrivacy.spec.ts"
+            server: "X=1"
+            client: "E2E_MOBILE_URL=http://127.0.0.1:5199"
+            vite: "true"
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ringtools_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ringtools_e2e?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ringtools_e2e?schema=public
+      SETTINGS_ENCRYPTION_KEY: ci-e2e-encryptie-sleutel-niet-voor-productie
+      APP_BASE_URL: http://localhost:2810
+      COOKIE_SECURE: "false"
+      BOOTSTRAP_ADMIN_USERNAME: webmin
+      BOOTSTRAP_ADMIN_PASSWORD: e2e-test-wachtwoord-123
+      VAPID_SUBJECT: mailto:ci@example.invalid
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+      - name: Webclient bouwen (public/app)
+        working-directory: mobile
+        run: |
+          npm ci
+          npm run build:web
+      - name: Next.js bouwen
+        run: npx next build
+      - name: Playwright-browser installeren
+        run: npx playwright install --with-deps chromium
+      - name: VAPID-testsleutels (alleen voor deze run)
+        run: |
+          node -e 'const k=require("web-push").generateVAPIDKeys(); console.log("VAPID_PUBLIC_KEY="+k.publicKey); console.log("VAPID_PRIVATE_KEY="+k.privateKey)' >> "$GITHUB_ENV"
+      - name: Server starten
+        run: |
+          set -a
+          eval "export ${{ matrix.server }}"
+          set +a
+          nohup npx next start -p 2810 > "$RUNNER_TEMP/next.log" 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://localhost:2810/api/health >/dev/null 2>&1 && break; sleep 2; done
+          curl -fsS http://localhost:2810/api/health
+      - name: Mobiele client starten (Vite, alleen voor de Bearer-leg)
+        if: ${{ matrix.vite == 'true' }}
+        working-directory: mobile
+        run: |
+          VITE_API_URL=http://localhost:2810 nohup npx vite --port 5199 --host 127.0.0.1 > "$RUNNER_TEMP/vite.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:5199/ >/dev/null 2>&1 && break; sleep 2; done
+      - name: Playwright draaien
+        run: |
+          eval "export ${{ matrix.client }}"
+          npx playwright test ${{ matrix.specs }} --trace off --reporter=list
+      - name: Serverlog bij een fout
+        if: failure()
+        run: tail -80 "$RUNNER_TEMP/next.log" || true
+      - name: Rapporten bij een fout bewaren
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ strategy.job-index }}
+          path: test-results
+          retention-days: 7
