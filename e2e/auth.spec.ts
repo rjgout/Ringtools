@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { loginAsAdmin } from "./helpers/mfa";
 
 test("niet-ingelogde gebruiker wordt naar de inlogpagina gestuurd", async ({ page }) => {
   await page.goto("/dashboard");
