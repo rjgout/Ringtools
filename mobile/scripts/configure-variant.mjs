@@ -62,4 +62,26 @@ edit("android/app/src/main/res/values/strings.xml", `>${appName}<`, (s) =>
     .replace(/(<string name="package_name">)[^<]*(<\/string>)/, `$1${appId}$2`)
     .replace(/(<string name="custom_url_scheme">)[^<]*(<\/string>)/, `$1${appId}$2`));
 edit("android/app/src/main/AndroidManifest.xml", `android:host="${host}"`, (s) => s.replace(/android:host="[^"]*"/g, `android:host="${host}"`));
+// Handmatige distributiesigning (alleen in de werkkopie, nooit in Git): Release gebruikt een vast Apple Distribution-profiel dat door
+// scripts/ios_distribution.py wordt geïmporteerd (RINGTOOLS_DISTRIBUTION_PROFILE_UUID komt van de opdrachtregel), met productie-APNs.
+// Zo hoeft Xcode nooit nieuwe certificaten of profielen aan te maken. De productieconfiguratie in Git blijft automatisch/onaangeroerd.
+if (process.argv.includes("--manual-signing")) {
+  const APP_RELEASE = "504EC3181FED79650016851F";
+  const PROJECT_RELEASE = "504EC3151FED79650016851F";
+  const block = (s, id, fn) => {
+    const re = new RegExp(`(\\t\\t${id} /\\* Release \\*/ = \\{[\\s\\S]*?\\n\\t\\t\\};)`);
+    if (!re.test(s)) fail(`project.pbxproj: configuratieblok ${id} (Release) niet gevonden; het Xcode-project wijkt af van wat dit script verwacht.`);
+    return s.replace(re, (m) => fn(m));
+  };
+  edit("ios/App/App.xcodeproj/project.pbxproj", `PROVISIONING_PROFILE_SPECIFIER = "$(RINGTOOLS_DISTRIBUTION_PROFILE_UUID)";`, (s) => {
+    s = block(s, APP_RELEASE, (m) => {
+      if (m.includes("RINGTOOLS_DISTRIBUTION_PROFILE_UUID")) return m;
+      if (!m.includes("CODE_SIGN_STYLE = Automatic;")) fail("App-Release: CODE_SIGN_STYLE = Automatic verwacht.");
+      return m.replace("CODE_SIGN_STYLE = Automatic;", `CODE_SIGN_STYLE = Manual;\n\t\t\t\tCODE_SIGN_IDENTITY = "Apple Distribution";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "$(RINGTOOLS_DISTRIBUTION_PROFILE_UUID)";`);
+    });
+    return block(s, PROJECT_RELEASE, (m) => m.replace('CODE_SIGN_IDENTITY = "iPhone Developer";', 'CODE_SIGN_IDENTITY = "Apple Distribution";'));
+  });
+  edit("ios/App/App/App.entitlements", `<string>production</string>`, (s) => s.replace(/(<key>aps-environment<\/key>\s*<string>)[^<]*(<\/string>)/, "$1production$2"));
+  console.log("Handmatige distributiesigning ingesteld (alleen werkkopie).");
+}
 console.log(`Variant "${name}" toegepast: ${appName} (${appId}), links ${host}, backend ${apiUrl}.`);

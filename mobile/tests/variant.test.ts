@@ -47,6 +47,23 @@ describe("Variant dev (Ringtools Dev)", () => {
     expect([...new Set([...manifest.matchAll(/android:host="([^"]+)"/g)].map((m) => m[1]))]).toEqual(["dev.ringapeldoorn.nl"]);
   });
 
+  it("--manual-signing zet alleen in de werkkopie de handmatige distributiesigning (Release) en productie-APNs", () => {
+    const dir = copyTree();
+    expect(run(["dev", "--manual-signing"], dir).status).toBe(0);
+    const pbx = read(dir, FILES[0]);
+    expect(pbx).toContain('PROVISIONING_PROFILE_SPECIFIER = "$(RINGTOOLS_DISTRIBUTION_PROFILE_UUID)";');
+    expect(pbx.match(/CODE_SIGN_STYLE = Manual;/g)?.length).toBe(1); // alleen de App-target in Release
+    expect(pbx.match(/CODE_SIGN_IDENTITY = "Apple Distribution";/g)?.length).toBe(2); // project- en target-Release
+    expect(pbx.match(/CODE_SIGN_STYLE = Automatic;/g)?.length).toBeGreaterThanOrEqual(2); // Debug en PersonalTeam blijven automatisch
+    expect(read(dir, FILES[2])).toMatch(/<key>aps-environment<\/key>\s*<string>production<\/string>/);
+    const again = FILES.map((f) => read(dir, f));
+    expect(run(["dev", "--manual-signing"], dir).status).toBe(0); // idempotent
+    expect(FILES.map((f) => read(dir, f))).toEqual(again);
+    // de productieconfiguratie in Git blijft automatisch
+    expect(read(mobile, FILES[0])).not.toContain("RINGTOOLS_DISTRIBUTION_PROFILE_UUID");
+    expect(read(mobile, FILES[2])).toMatch(/<key>aps-environment<\/key>\s*<string>development<\/string>/);
+  });
+
   it("is idempotent", () => {
     const dir = copyTree();
     run(["dev"], dir);

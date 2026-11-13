@@ -86,7 +86,7 @@ Eén codebase, een **variant** (`mobile/variants/dev.json`) die in CI de native 
 
 Eenmalige stappen door de eigenaar (niet door deze repository te doen): app-record voor `nl.ringapeldoorn.ringtools.dev` in App Store Connect (en de capabilities Push + Associated Domains op dat App-ID in het Apple-developerportaal); Firebase-project/app voor de dev-package met eigen `google-services.json`; eigen upload-keystore of dezelfde `mobile-release`-secrets; interne testtrack-app voor het dev-package in de Play Console. GitHub-secrets: dezelfde als bij productie (`testflight`-omgeving) plus optioneel `DEV_GOOGLE_SERVICES_JSON_BASE64` (omgeving `mobile-release`).
 
-Starten: GitHub → Actions → *iOS TestFlight – Ringtools Dev* (versie invullen; **upload staat standaard uit** – eerst alleen archiveren/controleren) of *Android – Ringtools Dev* (typ `dev`). Er wordt niets gepubliceerd zonder dat jij het doet.
+Starten iOS: zie `docs/IOS-DEV-TESTFLIGHT.md` (tag `ios-dev-check|build|upload-<versie>-<build>` op een commit op `develop`; handmatige signing met het bestaande Apple Distribution-certificaat; **upload alleen met `ios-dev-upload-…`**). Android: GitHub → Actions → *Android – Ringtools Dev* (typ `dev`). Er wordt niets gepubliceerd zonder dat jij het doet.
 
 ## 8. Portainer: stack installeren en handmatig bijwerken
 
