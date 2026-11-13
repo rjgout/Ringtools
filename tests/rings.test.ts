@@ -486,22 +486,6 @@ describe("Lopende ondersteuningsrondes bij nieuwe en gewijzigde leden", () => {
   });
 });
 
-describe("Gedeactiveerde ring en account (overgangswebapp)", () => {
-  it("getActiveMembership geeft geen toegang tot een gedeactiveerde ring of voor een gedeactiveerd account", async () => {
-    const { getActiveMembership } = await import("@/lib/ringContext");
-    const ring = await createTestRing("Ring");
-    const staff = await createTestUser("RINGPRESIDIUM", "Staf", { ringId: ring.id });
-    expect((await getActiveMembership(staff.id, ring.id))?.ringId).toBe(ring.id);
-
-    await prisma.ring.update({ where: { id: ring.id }, data: { active: false } });
-    expect(await getActiveMembership(staff.id, ring.id)).toBeNull();
-
-    await prisma.ring.update({ where: { id: ring.id }, data: { active: true } });
-    await prisma.user.update({ where: { id: staff.id }, data: { active: false } });
-    expect(await getActiveMembership(staff.id, ring.id)).toBeNull();
-  });
-});
-
 describe("Tenantisolatie", () => {
   it("voorstellen, verantwoordelijken en meldingen blijven binnen de eigen ring", async () => {
     const ringA = await createTestRing("Ring A");

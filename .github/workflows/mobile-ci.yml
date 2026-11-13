@@ -34,7 +34,6 @@ on:
       - "src/lib/callingAccess.ts"
       - "src/lib/status.ts"
       - "src/lib/actions/calling.actions.ts"
-      - "src/app/api/notifications/**"
       - "src/lib/openLinks.ts"
       - "src/lib/invitationLogin.ts"
       - "src/lib/loginMail.ts"
@@ -54,7 +53,7 @@ on:
       - "src/app/api/mobile/**"
       - "src/app/.well-known/**"
       - "src/app/open/**"
-      # Web/PWA v2 (gedeelde client met sessiecookie): beveiligingsgevoelig, altijd mee testen.
+      # Web/PWA (gedeelde client met sessiecookie): beveiligingsgevoelig, altijd mee testen.
       - "src/app/app/**"
       - "src/lib/webPush.ts"
       - "src/lib/webAppRedirect.ts"
@@ -98,7 +97,6 @@ on:
       - "src/lib/callingAccess.ts"
       - "src/lib/status.ts"
       - "src/lib/actions/calling.actions.ts"
-      - "src/app/api/notifications/**"
       - "src/lib/openLinks.ts"
       - "src/lib/invitationLogin.ts"
       - "src/lib/loginMail.ts"
@@ -118,7 +116,7 @@ on:
       - "src/app/api/mobile/**"
       - "src/app/.well-known/**"
       - "src/app/open/**"
-      # Web/PWA v2 (gedeelde client met sessiecookie): beveiligingsgevoelig, altijd mee testen.
+      # Web/PWA (gedeelde client met sessiecookie): beveiligingsgevoelig, altijd mee testen.
       - "src/app/app/**"
       - "src/lib/webPush.ts"
       - "src/lib/webAppRedirect.ts"
@@ -200,7 +198,7 @@ jobs:
         run: npm run check:splash
       - run: npm test
       - run: npm run build
-      - name: Webomgeving bouwen (web/PWA v2, dezelfde client)
+      - name: Webomgeving bouwen (web/PWA, dezelfde client)
         run: npm run build:web
       - name: Tests van de iOS-bundlecontrole (signing, get-task-allow, APNs)
         run: python3 scripts/test_verify_ios_bundle.py

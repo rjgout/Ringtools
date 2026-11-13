@@ -1,50 +1,26 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
-import { webAppTargetFor } from "@/lib/webAppRedirect";
-import { getRingContext } from "@/lib/ringContext";
-import { canManageRingUsers, canManageSettings, canManageWorkflow } from "@/lib/rbac";
-import { ROLE_LABELS } from "@/lib/format";
 import { TopBar } from "@/components/TopBar";
 import { BottomNav } from "@/components/BottomNav";
-import { AppBadgeUpdater } from "@/components/AppBadgeUpdater";
 import { SessionKeepAlive } from "@/components/SessionKeepAlive";
+import { webAppTargetFor } from "@/lib/webAppRedirect";
 
+/**
+ * Beveiligde website voor de systeembeheerder (webmin): overzicht, ringbeheer, instellingen en profiel.
+ * Gewone gebruikers werken in de gedeelde interface onder /app (dezelfde React-client als de iOS-app); de vroegere adressen van hun
+ * webpagina's blijven bestaan en verwijzen daarheen door (zie `src/lib/webAppRedirect.ts`).
+ */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  // Web/PWA v2 (vlag WEB_APP_V2_ENABLED, standaard uit): gewone gebruikers gaan naar de gedeelde interface onder /app. De webmin blijft hier.
   const target = webAppTargetFor((await headers()).get("x-ringtools-path"), { isAdmin: user.role === "ADMIN" });
   if (target) redirect(target);
-  const ctx = await getRingContext();
-  const isAdmin = user.role === "ADMIN";
-
-  const nav = {
-    dashboard: true,
-    roepingen: !!ctx && canManageWorkflow(ctx.membership.role),
-    gebruikers: !!ctx && canManageRingUsers(user.role, ctx.membership),
-    ringen: isAdmin,
-    instellingen: canManageSettings(user.role),
-    profiel: true,
-  };
-
-  const subtitle = isAdmin
-    ? "Systeembeheerder"
-    : ctx
-      ? `${ctx.ring.name} · ${ROLE_LABELS[ctx.membership.role]}`
-      : "Geen actieve ring";
 
   return (
     <div className="min-h-dvh app-content-padding">
-      <TopBar
-        user={{ name: user.name }}
-        subtitle={subtitle}
-        rings={ctx ? ctx.memberships.map((m) => ({ id: m.ringId, name: m.ring.name })) : []}
-        activeRingId={ctx?.ring.id ?? null}
-        nav={nav}
-      />
+      <TopBar user={{ name: user.name }} subtitle="Systeembeheerder" />
       <main className="mx-auto max-w-5xl px-4 pt-4 sm:px-6">{children}</main>
-      <BottomNav nav={nav} />
-      <AppBadgeUpdater />
+      <BottomNav />
       <SessionKeepAlive />
     </div>
   );

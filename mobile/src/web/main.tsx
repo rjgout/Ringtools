@@ -15,6 +15,9 @@ document.documentElement.dataset.platform = "web";
 // Bestaande serviceworker van de website (alleen statische bestanden en de offlinepagina; nooit API-antwoorden of paginagegevens).
 if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js").catch(() => {});
 
+// Terug-knop na uitloggen: een uit de bfcache teruggezette pagina wordt opnieuw geladen, zodat er nooit oude gegevens zichtbaar zijn (het verzoek krijgt dan 401).
+window.addEventListener("pageshow", (e) => { if (e.persisted) window.location.reload(); });
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <HashRouter>

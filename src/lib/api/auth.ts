@@ -3,7 +3,7 @@ import { getActiveSession, SESSION_ABSOLUTE_TTL_MS, SESSION_COOKIE_NAME } from "
 import { env } from "../env";
 import { ApiError } from "./http";
 
-/** `via`: hoe de aanvrager zich bekendmaakte. "cookie" = de beveiligde webomgeving (web/PWA v2); "bearer" = de native app. */
+/** `via`: hoe de aanvrager zich bekendmaakte. "cookie" = de beveiligde webomgeving (web/PWA); "bearer" = de native app. */
 export type ApiAuth = { user: User; token: string; sessionId: string; mfaAt: Date; via: "bearer" | "cookie" };
 
 /** Vaste eigen header van de webclient. Een formulier, afbeelding of link van een andere site kan deze nooit meesturen (CSRF-bescherming, dwingt bij cross-origin een preflight af die de API nooit toestaat). */
@@ -35,17 +35,15 @@ function sessionCookie(request: Request): string | null {
 
 /**
  * Controleert dat een verzoek van de webclient werkelijk uit de eigen webomgeving komt. Alle voorwaarden moeten gelden (fail-closed):
- * 1. de functievlag staat aan;
- * 2. er is GEEN Authorization-header (geen vermenging van token- en cookie-aanmelding);
- * 3. de eigen header heeft exact de waarde "1";
- * 4. `Origin` is, indien aanwezig, exact de oorsprong van APP_BASE_URL; `Sec-Fetch-Site` is, indien aanwezig, exact "same-origin";
+ * 1. er is GEEN Authorization-header (geen vermenging van token- en cookie-aanmelding);
+ * 2. de eigen header heeft exact de waarde "1";
+ * 3. `Origin` is, indien aanwezig, exact de oorsprong van APP_BASE_URL; `Sec-Fetch-Site` is, indien aanwezig, exact "same-origin";
  *    minstens één van beide moet aanwezig zijn (een verzoek zonder enige herkomst wordt geweigerd);
- * 5. wijzigende verzoeken (POST) hebben een JSON-inhoudstype (geen formulierinzending).
+ * 4. wijzigende verzoeken (POST) hebben een JSON-inhoudstype (geen formulierinzending).
  * Er worden bewust nergens CORS-headers gezet: een andere oorsprong kan de API met cookies niet aanroepen of uitlezen.
  */
 export function assertTrustedWebRequest(request: Request): void {
   const refuse = (code: string) => new ApiError(403, "Dit verzoek is niet toegestaan.", code);
-  if (!env.webAppV2Enabled) throw new ApiError(401, "Je bent niet ingelogd of je sessie is verlopen.", "unauthenticated");
   if (request.headers.has("authorization")) throw new ApiError(400, "Dit verzoek is niet toegestaan.", "mixed-auth");
   if (request.headers.get(WEB_CLIENT_HEADER) !== "1") throw refuse("web-header");
   const origin = request.headers.get("origin");
@@ -66,7 +64,7 @@ export function assertTrustedWebRequest(request: Request): void {
  * Authenticeert een API-verzoek met dezelfde server-side sessies als de webapp (zelfde verlenging,
  * intrekking en deactivering). Sessies zonder voltooide MFA tellen nooit mee.
  * - Native app: Bearer-token in de Authorization-header (ongewijzigd).
- * - Webomgeving (vlag WEB_APP_V2_ENABLED): de HttpOnly-sessiecookie, uitsluitend na `assertTrustedWebRequest`. Een cookie zonder de
+ * - Webomgeving: de HttpOnly-sessiecookie, uitsluitend na `assertTrustedWebRequest`. Een cookie zonder de
  *   eigen header telt nooit; een Bearer-token samen met de eigen header wordt geweigerd.
  * - "user": gewone gebruikers; het beheerdersaccount (webmin) wordt hier geweigerd.
  */

@@ -21,6 +21,35 @@ const readRing = () => {
 const writeRing = (id: string) => {
   try { window.localStorage.setItem(RING_KEY, id); } catch { /* opslag niet beschikbaar: de eerste ring geldt */ }
 };
+const clearRing = () => {
+  try { window.localStorage.removeItem(RING_KEY); } catch { /* opslag niet beschikbaar */ }
+};
+const AUTH_CHANNEL = "ringtools-auth";
+/** Laat andere tabbladen van deze browser weten dat er is uitgelogd (zij gaan dan direct naar de inlogpagina). */
+const announceLogout = () => {
+  try {
+    const channel = new BroadcastChannel(AUTH_CHANNEL);
+    channel.postMessage("logout");
+    channel.close();
+  } catch { /* BroadcastChannel niet beschikbaar: andere tabbladen merken het bij hun volgende verzoek (401) */ }
+};
+type BadgeNavigator = Navigator & { setAppBadge?: (count?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
+const clearBadge = async () => {
+  try { await (navigator as BadgeNavigator).clearAppBadge?.(); } catch { /* niet ondersteund */ }
+};
+const setBadge = async (count: number) => {
+  const nav = navigator as BadgeNavigator;
+  try { await (count > 0 ? nav.setAppBadge?.(count) : nav.clearAppBadge?.()); } catch { /* niet ondersteund */ }
+};
+/** Meldt de pushmelding-registratie van deze browser af (server én browser). Alleen de eigen registratie. */
+async function unsubscribeThisBrowser(api: ApiClient): Promise<void> {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  const registration = await navigator.serviceWorker.getRegistration("/");
+  const subscription = await registration?.pushManager.getSubscription();
+  if (!subscription) return;
+  await api.webPushUnsubscribe(subscription.endpoint).catch(() => {});
+  await subscription.unsubscribe().catch(() => {});
+}
 const notOnWeb = async (): Promise<never> => {
   throw new ApiRequestError(0, "Dit is niet beschikbaar in de webomgeving.", "web-not-allowed");
 };
@@ -81,6 +110,7 @@ export function WebAuthProvider({ children, redirect = (url: string) => window.l
       if (document.visibilityState !== "visible" || Date.now() - last < REFRESH_INTERVAL_MS) return;
       last = Date.now();
       void api.refresh().catch(() => {});
+      void api.me().then(applyMe).catch(() => {});
     };
     void api.refresh().catch(() => {});
     document.addEventListener("visibilitychange", tick);
@@ -89,7 +119,22 @@ export function WebAuthProvider({ children, redirect = (url: string) => window.l
       document.removeEventListener("visibilitychange", tick);
       window.clearInterval(timer);
     };
-  }, [api, status]);
+  }, [api, status, applyMe]);
+
+  // App-badge op het pictogram (geïnstalleerde webapp): het aantal openstaande acties, net als de bel-teller in de app.
+  useEffect(() => {
+    if (status === "signedIn" && me) void setBadge(me.pendingCount);
+  }, [status, me]);
+
+  // Uitgelogd in een ander tabblad: hier ook direct naar de inlogpagina.
+  useEffect(() => {
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel(AUTH_CHANNEL);
+      channel.onmessage = (e) => { if (e.data === "logout") goLogin(); };
+    } catch { /* niet beschikbaar */ }
+    return () => channel?.close();
+  }, [goLogin]);
 
   const reloadMe = useCallback(async () => applyMe(await api.me()), [api, applyMe]);
   const selectRing = useCallback(async (id: string) => {
@@ -97,9 +142,26 @@ export function WebAuthProvider({ children, redirect = (url: string) => window.l
     writeRing(id);
     setRingId(id);
   }, [me]);
+  /**
+   * Veilig uitloggen: de sessie wordt eerst op de server ingetrokken; pas daarna gaat de browser naar de inlogpagina. Lukt het intrekken niet
+   * (geen verbinding, serverfout), dan blijft de gebruiker hier en krijgt hij een duidelijke melding: er wordt nooit "uitgelogd" getoond terwijl
+   * de sessie nog geldt. Een sessie die al ongeldig is (401) telt als uitgelogd. Daarnaast: pushmeldingen van dit apparaat worden afgemeld
+   * (op een gedeeld apparaat mogen meldingen niet bij de vorige gebruiker blijven aankomen), de onthouden ringkeuze wordt gewist, het
+   * app-badge verdwijnt en andere geopende tabbladen gaan direct naar de inlogpagina.
+   */
   const signOut = useCallback(async () => {
+    try { await unsubscribeThisBrowser(api); } catch { /* best effort: de serversessie wordt hieronder in elk geval ingetrokken */ }
+    try {
+      await api.logout();
+    } catch (err) {
+      if (!(err instanceof ApiRequestError && err.status === 401)) {
+        throw new ApiRequestError(err instanceof ApiRequestError ? err.status : 0, "Uitloggen is niet gelukt. Je bent nog ingelogd. Controleer je verbinding en probeer het opnieuw.", "logout-failed");
+      }
+    }
     leaving.current = true;
-    try { await api.logout(); } catch { /* ook zonder antwoord naar de inlogpagina; de server-sessie verloopt of is al weg */ }
+    clearRing();
+    void clearBadge();
+    announceLogout();
     setMe(null);
     setStatus("loading");
     redirectRef.current("/login");

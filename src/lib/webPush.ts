@@ -3,7 +3,7 @@ import { isAllowedPushEndpoint, isValidPushKey, MAX_PUSH_SUBSCRIPTIONS_PER_USER 
 import { getPublicVapidKey, isPushConfigured, PushNotConfiguredError, sendPushToUser } from "./push";
 
 /**
- * Webpush (VAPID) per gebruiker: gedeeld door de Server Actions van de bestaande website en de API van de webomgeving (web/PWA v2).
+ * Webpush (VAPID) per gebruiker: gedeeld door de Server Actions van de bestaande website en de API van de webomgeving (web/PWA).
  * Alle functies werken uitsluitend op de eigen abonnementen van `userId`; meldingen bevatten nooit namen of functies (zie `push.ts`).
  */
 export type WebPushResult = { ok: boolean; message: string };
