@@ -9,7 +9,10 @@ import { NextResponse, type NextRequest } from "next/server";
 export function proxy(request: NextRequest) {
   const headers = new Headers(request.headers);
   headers.set("x-ringtools-path", request.nextUrl.pathname + request.nextUrl.search);
-  return NextResponse.next({ request: { headers } });
+  const response = NextResponse.next({ request: { headers } });
+  // Development-omgeving: nooit indexeren door zoekmachines.
+  if ((process.env.APP_ENVIRONMENT || "").trim().toLowerCase() === "development") response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  return response;
 }
 
 export const config = {

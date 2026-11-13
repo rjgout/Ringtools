@@ -1,6 +1,9 @@
 /** Build-time configuratie. Alles hier is publiek; geheimen horen nooit in de app. */
 const raw = (import.meta.env.VITE_API_URL as string | undefined) ?? "https://ringapeldoorn.nl";
 
+/** Variant van de app ("dev" = Ringtools Dev, alleen via de dev-workflows). Leeg = productie. */
+export const APP_VARIANT = ((import.meta.env.VITE_APP_VARIANT as string | undefined) ?? "").trim();
+
 export const API_URL = raw.replace(/\/+$/, "");
 export const API_HOST = new URL(API_URL).host;
 /** In de browser-dev-server proxyt Vite /api naar de backend; native gebruikt de volledige URL. */

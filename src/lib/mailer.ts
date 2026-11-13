@@ -1,3 +1,4 @@
+import { isRecipientAllowed } from "./devGuard";
 import { functionalActionEmail } from "./notificationText";
 import nodemailer from "nodemailer";
 import { prisma } from "./prisma";
@@ -59,6 +60,11 @@ export async function sendMail({ to, subject, text }: { to: string | string[]; s
   const destinations = Array.isArray(to) ? to : [to];
   // Gereserveerde fictieve adressen zijn nooit externe afleverbestemmingen.
   if (destinations.some(address => /@[^>\s,]*\.invalid(?:[>\s,]|$)/i.test(address))) return;
+  // Development-omgeving: alleen naar expliciet toegestane testers (DEV_MAIL_ALLOWLIST); anders niet versturen (zonder het adres te loggen).
+  if (!destinations.every((address) => isRecipientAllowed(address.replace(/^.*<([^>]+)>\s*$/, "$1")))) {
+    console.warn("[devGuard] E-mail niet verstuurd: ontvanger staat niet op DEV_MAIL_ALLOWLIST.");
+    return;
+  }
   let timer: NodeJS.Timeout | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new SmtpDeadlineError()), smtpSendDeadlineMs());

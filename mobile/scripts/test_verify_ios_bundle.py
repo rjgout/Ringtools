@@ -37,5 +37,15 @@ class T(unittest.TestCase):
         out = "Identifier=nl.x\nAuthority=Apple Distribution: X\nAuthority=Apple Root CA\nTeamIdentifier=ABC\n"
         self.assertEqual(v.parse_authorities(out), (["Apple Distribution: X", "Apple Root CA"], "ABC", "nl.x"))
 
+class DevVariantHost(unittest.TestCase):
+    def test_dev_host_vereist_eigen_domeinen(self):
+        e = dict(GOOD_ENT)
+        e["com.apple.developer.associated-domains"] = ["applinks:dev.ringapeldoorn.nl", "webcredentials:dev.ringapeldoorn.nl"]
+        self.assertEqual(v.check_distribution(e, GOOD_PROFILE, AUTH, "ABC", "ABC", "dev.ringapeldoorn.nl"), [])
+        # een dev-build met de productiedomeinen wordt afgekeurd (en andersom)
+        self.assertTrue(any("Associated Domains" in x for x in v.check_distribution(GOOD_ENT, GOOD_PROFILE, AUTH, "ABC", "ABC", "dev.ringapeldoorn.nl")))
+        self.assertTrue(any("Associated Domains" in x for x in v.check_distribution(e, GOOD_PROFILE, AUTH, "ABC", "ABC")))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -7,6 +7,7 @@ import { emailSchema } from "../validation";
 import { sendLoginMail } from "../loginMail";
 import { resolveOpenLink } from "../openLinks";
 import * as webPush from "../webPush";
+import { isDevelopmentEnvironment } from "../devGuard";
 import { prisma } from "../prisma";
 import { assertTrustedWebRequest, authenticate, isWebClientRequest, sessionCookieHeader, type ApiAuth } from "./auth";
 import { ApiError, jsonResponse, errorResponse, readJson, str } from "./http";
@@ -122,7 +123,7 @@ publicRoute("POST", "/trusted-devices/pair/claim", async ({ request, body }) => 
 publicRoute("POST", "/trusted-devices/pair/complete", async ({ request, body }) => trustedDevicesApi.completePairingApi(body, clientKeyOf(request)));
 
 // Versie en capaciteiten van de API; de app controleert hiermee of ze nog compatibel is.
-publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION, nativePasskeys: env.nativePasskeysEnabled, nativeTotpLogin: env.nativeTotpLoginEnabled, trustedDevices: env.trustedDevicesEnabled, deviceLogin: env.nativeDeviceLoginEnabled, deviceAutoEnroll: env.nativeDeviceAutoEnrollEnabled }));
+publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION, nativePasskeys: env.nativePasskeysEnabled, nativeTotpLogin: env.nativeTotpLoginEnabled, trustedDevices: env.trustedDevicesEnabled, deviceLogin: env.nativeDeviceLoginEnabled, deviceAutoEnroll: env.nativeDeviceAutoEnrollEnabled, ...(isDevelopmentEnvironment() ? { environment: "development" as const } : {}) }));
 
 // Het pushtoken is een geheim van het toestel; wie het kent mag het afmelden. Zo kan de app het
 // ook afmelden als de sessie al is verlopen of ingetrokken (401).

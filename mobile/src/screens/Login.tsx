@@ -1,5 +1,5 @@
 import { DeletionReceipt } from "../components/AccountPrivacy";
-import { API_URL } from "../config";
+import { API_URL, APP_VARIANT } from "../config";
 import logo from "../../resources/icon.png";
 import { digitsOnly } from "../lib/codeInput";
 import { useEffect, useState } from "react";
@@ -165,6 +165,7 @@ export function Login({ initialEmail = "" }: { initialEmail?: string; onHaveInvi
         <div>
           <img src={logo} alt="Ringtools-logo" width="64" height="64" />
           <h1>Ringtools</h1>
+          {APP_VARIANT === "dev" && <p role="note"><strong>Ontwikkelomgeving</strong> – alleen testaccounts en testgegevens.</p>}
           <span className="muted">Welkom bij Ringtools. Vul je e-mailadres in om verder te gaan.</span>
         </div>
         {step === "email" && deviceLoginAvailable && (

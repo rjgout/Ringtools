@@ -1,10 +1,15 @@
 name: Build en publiceer Docker-image
 
-# Bij een pull request wordt de volledige Docker-image gebouwd en doorgelicht, zonder te publiceren. Alleen een push naar main publiceert.
+# Bij een pull request wordt de volledige Docker-image gebouwd en doorgelicht, zonder te publiceren.
+# - Push naar main (productie): tests, image bouwen en doorlichten, daarna publiceren als :latest en :sha-<kort> (ongewijzigd proces).
+# - Push naar develop (ontwikkelomgeving): tests, image bouwen en doorlichten, Playwright (e2e.yml) en pas daarna publiceren als
+#   :develop en :develop-<kort>. Een develop-image krijgt NOOIT de tags :latest of :sha-… en kan dus geen productie-image overschrijven.
+# Er wordt nergens automatisch gedeployed: containers worden uitsluitend door de eigenaar bijgewerkt (Portainer / Watchtower).
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
+    branches: [main, develop]
     paths:
       - "Dockerfile"
       - ".dockerignore"
@@ -19,16 +24,20 @@ on:
       - ".github/workflows/docker-publish.yml"
   workflow_dispatch: {}
 
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
+    # Naam blijft gelijk (bestaande vereiste checks); bouwt en controleert alleen. Publiceren gebeurt in de job "publish" hieronder.
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     services:
       postgres:
@@ -75,25 +84,8 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ringtools_ci?schema=public
           SETTINGS_ENCRYPTION_KEY: ci-test-encryptie-sleutel-niet-voor-productie
 
-      - name: Inloggen bij GitHub Container Registry
-        if: github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Docker Buildx opzetten
         uses: docker/setup-buildx-action@v3
-
-      - name: Metadata voor de image bepalen
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=short
 
       - name: Image bouwen (zonder publicatie) voor de controle
         uses: docker/build-push-action@v5
@@ -135,8 +127,61 @@ jobs:
           docker logs ringtools-controle 2>&1 | tail -15
           docker rm -f ringtools-controle >/dev/null
 
+  # Playwright is voorwaarde voor het publiceren van de :develop-image. Voor main blijft het productieproces ongewijzigd
+  # (e2e.yml draait daar los); een push naar main slaat deze job over.
+  e2e:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    uses: ./.github/workflows/e2e.yml
+    permissions:
+      contents: read
+
+  publish:
+    name: Image publiceren
+    needs: [build-and-push, e2e]
+    # main: build-and-push moet geslaagd zijn (e2e is dan overgeslagen). develop: build-and-push én e2e moeten geslaagd zijn.
+    if: >-
+      ${{ !cancelled() && github.event_name == 'push' && needs.build-and-push.result == 'success' &&
+      ((github.ref == 'refs/heads/main' && needs.e2e.result == 'skipped') ||
+       (github.ref == 'refs/heads/develop' && needs.e2e.result == 'success')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Code uitchecken
+        uses: actions/checkout@v4
+
+      - name: Inloggen bij GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker Buildx opzetten
+        uses: docker/setup-buildx-action@v3
+
+      - name: Metadata voor de image bepalen
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Strikt gescheiden tags per branch: main -> latest + sha-<kort>; develop -> develop + develop-<kort>.
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,format=short,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=sha,prefix=develop-,format=short,enable=${{ github.ref == 'refs/heads/develop' }}
+
+      - name: Taggcontrole (geen productietags vanaf develop)
+        run: |
+          set -euo pipefail
+          echo "${{ steps.meta.outputs.tags }}"
+          if [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            ! echo "${{ steps.meta.outputs.tags }}" | grep -E ':(latest|sha-)' 
+          fi
+
       - name: Image publiceren
-        if: github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v5
         with:
           context: .
