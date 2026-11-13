@@ -145,7 +145,7 @@ bijwerken van deze tabel en van `docs/MOBILE.md`.
   (`APNS_PRODUCTION=true`, `aps-environment=production` in de IPA); sandbox is alleen voor rechtstreekse Xcode-builds. Valideer
   development, TestFlight en store-release apart; pushsleutels staan alleen op de server, nooit in GitHub.
 - **iOS-testconfiguratie voor een gratis Personal Team** (`Debug-PersonalTeam`, scheme `App-PersonalTeam`, `ios/PersonalTeam.xcconfig`) is
-  een aparte configuratie zonder entitlements. Haal Push/Associated Domains **nooit** uit `Debug`/`Release` of `App/App.entitlements`
+  een aparte configuratie zonder entitlements. Haal Push/Associated Domains **nooit** uit `Debug`/`Release` of `App/App.entitlements` (Debug) / `App/App-Store.entitlements` (Release)
   voor deze test, en gebruik de Personal Team-configuratie nooit voor TestFlight/App Store. Code die push/links gebruikt moet het
   buildprofiel (`lib/buildProfile.ts`) respecteren en zonder die capabilities nooit crashen of blijven hangen. Wijzigingen aan het
   iOS-project of de entitlements: draai `npm run check:native-config` en `scripts/verify-ios-configs.sh` (CI doet dat op macOS).
@@ -234,12 +234,14 @@ gebruikers, ringbeheerders en `webmin` voor hun werk nodig hebben, moet in de ap
 
 ## Releases
 
+- **iOS Distribution-signing:** Release archive én IPA-export gebruiken uitsluitend handmatige signing met het bestaande Apple Distribution-P12/App Store-profiel in een tijdelijke keychain. Geen automatische provisioning of ASC-authenticatie bij archive/export; ASC alleen bij expliciet gekozen upload, standaard `false`. Echte importcontrole, signingbuild en upload vragen elk afzonderlijke eigenaarstoestemming. Alleen handmatige workflows op `main` krijgen de beschermde `testflight`-omgeving; PR-CI gebruikt uitsluitend synthetische middelen. Geen certificaten/profielen aanmaken/intrekken of secrets wijzigen. Eerst onafhankelijke review en expliciete merge-toestemming. Zie `docs/IOS-TESTFLIGHT.md`.
+
 - **Beleid minimale iOS-versie (beveiliging):** de minimale iOS-versie (nu 18) wordt periodiek herzien op basis van Apple's actuele beveiligingsondersteuning (welke iOS-versies nog beveiligingsupdates krijgen). Verhogen volgt een expliciet besluit van de eigenaar, met bijwerken van alle `IPHONEOS_DEPLOYMENT_TARGET`-regels, `ios/App/CapApp-SPM/Package.swift` en de documentatie.
 - **Eén omgeving:** er is geen aparte testserver; `main` op de Synology NAS (Watchtower) is de enige gedeployde omgeving. Nieuwe functievlaggen staan standaard uit en worden door de eigenaar gecontroleerd geactiveerd, na een vooraf gecontroleerde databaseback-up (`docs/BACKUP-HERSTEL.md`); nooit automatische tests op de productiedatabase.
 
 - Mobiele builds publiceren nooit automatisch naar App Store of Play Store. Publicatie loopt via een aparte, expliciet
   gestarte procedure door de eigenaar: Android `.github/workflows/mobile-release.yml` (handmatig, alleen artifact), iOS
-  `.github/workflows/ios-testflight.yml` (handmatig, omgeving `testflight`, upload naar TestFlight; geen publieke App Store-release). Zie `docs/IOS-TESTFLIGHT.md`.
+  `.github/workflows/ios-testflight.yml` (handmatig, omgeving `testflight`, upload standaard uit; geen publieke App Store-release). Zie `docs/IOS-TESTFLIGHT.md`.
   Credentials (App Store Connect API-sleutel, APNs-sleutel) staan nooit in Git; de APNs-sleutel alleen op de server.
 - Definitieve app-ID's (`RINGTOOLS_APP_ID`: nu voorlopig `nl.ringapeldoorn.ringtools`), Team-ID's, signing-vingerafdrukken
   en pushsleutels verzin je nooit; ze komen van de eigenaar en staan alleen in secrets/omgevingsvariabelen.

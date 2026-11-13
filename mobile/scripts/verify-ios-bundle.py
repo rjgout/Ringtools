@@ -1,23 +1,16 @@
 #!/usr/bin/env python3
-"""Controleert een iOS-app (uit een .xcarchive of een uitgepakte .ipa) met echte plist-parsers.
-
-Gebruik:  verify-ios-bundle.py --stage archive|ipa --app <pad naar .app> --bundle-id ID --version X --build N [--team-id ID]
-
-- stage "archive": de archive wordt met automatische signing met een Apple Development-identiteit gemaakt (zo werkt Xcode);
-  hier wordt alleen gerapporteerd én gecontroleerd op bundle-ID, versie, buildnummer en privacymanifest.
-- stage "ipa": de geëxporteerde IPA moet een echte distributiebuild zijn (Apple Distribution, App Store-profiel zonder
-  apparaatlijst, get-task-allow uit, productie-APNs, Associated Domains).
-
-Er worden nooit certificaten, sleutels of profielinhoud geprint, alleen namen, UUID's en ja/nee-uitkomsten.
-Zie docs/IOS-TESTFLIGHT.md. Het verwerken van de gegevens staat in losse functies zodat ze getest kunnen worden
-(scripts/test_verify_ios_bundle.py).
+"""Identical fail-closed Distribution gates for both archive and exported IPA.
+No certificate names, profile contents or private signing diagnostics are logged.
 """
 import argparse
 import os
 import plistlib
-import re
 import subprocess
 import sys
+import hashlib
+import tempfile
+from pathlib import Path
+from ios_signing_policy import distribution_errors, profile_errors
 
 
 def run(cmd):
@@ -37,36 +30,8 @@ def parse_authorities(codesign_stderr):
     return auth, team, ident
 
 
-def truthy(value):
-    return value is True
-
-
 def check_distribution(ent, profile, authorities, team_identifier, expected_team=None):
-    """Geeft een lijst fouten voor een distributiebuild (leeg = in orde). Pure functie, getest."""
-    errors = []
-    if truthy(ent.get("get-task-allow")):
-        errors.append("get-task-allow staat aan in de entitlements van de app (dit is een ontwikkelbuild).")
-    if ent.get("aps-environment") != "production":
-        errors.append("aps-environment is %r; TestFlight en de App Store vereisen 'production'." % ent.get("aps-environment"))
-    domains = ent.get("com.apple.developer.associated-domains") or []
-    for needed in ("applinks:ringapeldoorn.nl", "webcredentials:ringapeldoorn.nl"):
-        if needed not in domains:
-            errors.append("Associated Domains mist %s." % needed)
-    if not authorities or not authorities[0].startswith("Apple Distribution"):
-        errors.append("De app is niet met 'Apple Distribution' ondertekend (eerste autoriteit: %r)." % (authorities[0] if authorities else None))
-    if profile is None:
-        errors.append("Er is geen ingebed provisioningprofiel (embedded.mobileprovision).")
-    else:
-        pent = profile.get("Entitlements", {})
-        if profile.get("ProvisionedDevices"):
-            errors.append("Het profiel bevat een apparatenlijst (ProvisionedDevices): dat is een ad-hoc/ontwikkelprofiel, geen App Store-profiel.")
-        if truthy(profile.get("ProvisionsAllDevices")):
-            errors.append("Het profiel is een enterprise-profiel (ProvisionsAllDevices).")
-        if truthy(pent.get("get-task-allow")):
-            errors.append("Het profiel staat get-task-allow toe (ontwikkelprofiel).")
-    if expected_team and team_identifier and team_identifier != expected_team:
-        errors.append("TeamIdentifier van de handtekening wijkt af van het verwachte team.")
-    return errors
+    return distribution_errors(ent, profile, authorities, team_identifier, expected_team)
 
 
 def load_plist_from_file(path):
@@ -78,6 +43,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage", choices=["archive", "ipa"], required=True)
     ap.add_argument("--app", required=True)
+    ap.add_argument("--certificate-sha1", required=True)
     ap.add_argument("--bundle-id", required=True)
     ap.add_argument("--version", required=True)
     ap.add_argument("--build", required=True)
@@ -85,24 +51,30 @@ def main():
     a = ap.parse_args()
 
     failures = []
+    if run(["codesign", "--verify", "--deep", "--strict", a.app]).returncode:
+        failures.append("Handtekeningcontrole mislukt.")
     info = load_plist_from_file(os.path.join(a.app, "Info.plist"))
     if info.get("CFBundleIdentifier") != a.bundle_id:
-        failures.append("Bundle-ID is %r, verwacht %r." % (info.get("CFBundleIdentifier"), a.bundle_id))
+        failures.append("Bundle-ID wijkt af.")
     if info.get("CFBundleShortVersionString") != a.version:
-        failures.append("Versie is %r, verwacht %r." % (info.get("CFBundleShortVersionString"), a.version))
+        failures.append("Versie wijkt af.")
     if info.get("CFBundleVersion") != a.build:
-        failures.append("Buildnummer is %r, verwacht %r." % (info.get("CFBundleVersion"), a.build))
+        failures.append("Buildnummer wijkt af.")
     if not os.path.isfile(os.path.join(a.app, "PrivacyInfo.xcprivacy")):
         failures.append("PrivacyInfo.xcprivacy ontbreekt in de app.")
 
     r = run(["codesign", "-d", "--entitlements", ":-", a.app])
     try:
         ent = plistlib.loads(r.stdout)
+        if r.returncode or not isinstance(ent, dict):
+            raise ValueError()
     except Exception:
         ent = {}
         failures.append("Entitlements zijn niet uit de handtekening te lezen (codesign gaf geen geldige plist).")
     r2 = run(["codesign", "-dvv", a.app])
     authorities, team_identifier, identifier = parse_authorities(r2.stderr.decode("utf-8", "replace"))
+    if r2.returncode or identifier != a.bundle_id:
+        failures.append("Codehandtekening heeft geen overeenkomende appidentiteit.")
 
     profile = None
     prof_path = os.path.join(a.app, "embedded.mobileprovision")
@@ -110,38 +82,27 @@ def main():
         r3 = run(["security", "cms", "-D", "-i", prof_path])
         try:
             profile = plistlib.loads(r3.stdout)
+            if r3.returncode:
+                raise ValueError()
         except Exception:
             failures.append("Het ingebedde provisioningprofiel is niet te decoderen.")
 
-    # Diagnostiek: alleen namen en ja/nee, nooit sleutels of certificaten.
-    print("::group::Ondertekening (%s)" % a.stage)
-    print("Identifier (codesign):      %s" % identifier)
-    print("Handtekeningautoriteiten:   %s" % " > ".join(authorities) if authorities else "Handtekeningautoriteiten:   (geen)")
-    print("Team in handtekening:       %s" % ("aanwezig" if team_identifier else "ontbreekt"))
-    print("get-task-allow (app):       %s" % ent.get("get-task-allow", "afwezig"))
-    print("aps-environment (app):      %s" % ent.get("aps-environment", "afwezig"))
-    print("Associated Domains (app):   %s" % ", ".join(ent.get("com.apple.developer.associated-domains", []) or ["afwezig"]))
-    if profile is not None:
-        pe = profile.get("Entitlements", {})
-        print("Profiel:                    %s (%s)" % (profile.get("Name"), profile.get("UUID")))
-        print("Profiel, apparatenlijst:    %s" % ("JA (ontwikkel/ad-hoc)" if profile.get("ProvisionedDevices") else "nee (App Store)"))
-        print("Profiel, get-task-allow:    %s" % pe.get("get-task-allow", "afwezig"))
-        print("Profiel, aps-environment:   %s" % pe.get("aps-environment", "afwezig"))
-        print("Profiel, verloopt:          %s" % profile.get("ExpirationDate"))
-    else:
-        print("Profiel:                    geen embedded.mobileprovision")
-    print("::endgroup::")
-
-    if a.stage == "ipa":
-        failures += check_distribution(ent, profile, authorities, team_identifier, a.team_id or None)
+    failures += distribution_errors(ent, profile, authorities, team_identifier, a.team_id, a.bundle_id)
+    with tempfile.TemporaryDirectory() as directory:
+        prefix = str(Path(directory) / "certificate-")
+        result = run(["codesign", "-d", "--extract-certificates", prefix, a.app])
+        leaf = Path(prefix + "0")
+        if result.returncode or not leaf.is_file():
+            failures.append("Ondertekeningscertificaat niet te controleren.")
+        else:
+            certificate = leaf.read_bytes()
+            if hashlib.sha1(certificate).hexdigest().upper() != a.certificate_sha1.upper():
+                failures.append("Ondertekeningscertificaat wijkt af van geselecteerde Distribution-identiteit.")
+            failures += profile_errors(profile, a.team_id, a.bundle_id, certificate)
 
     if failures:
         for f in failures:
             print("::error::%s" % f)
-        if a.stage == "ipa":
-            print("::error::Hint: de export moet de archive (Apple Development) opnieuw ondertekenen met Apple Distribution en een App Store-profiel. "
-                  "Controleer dat de App Store Connect API-sleutel de rol Admin heeft, dat de export-opties 'signingCertificate' = 'Apple Distribution' bevatten "
-                  "en dat het App ID de capabilities Push Notifications en Associated Domains heeft.")
         sys.exit(1)
     print("Controle '%s' geslaagd." % a.stage)
 

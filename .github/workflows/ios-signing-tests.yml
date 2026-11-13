@@ -1,0 +1,32 @@
+name: iOS signing policy (synthetisch)
+on:
+  push:
+    paths:
+      - '.github/workflows/ios-*.yml'
+      - 'mobile/scripts/**'
+      - 'mobile/ios/**'
+      - 'docs/IOS-TESTFLIGHT.md'
+  pull_request:
+    paths:
+      - '.github/workflows/ios-*.yml'
+      - 'mobile/scripts/**'
+      - 'mobile/ios/**'
+      - 'docs/IOS-TESTFLIGHT.md'
+permissions:
+  contents: read
+jobs:
+  signing-policy:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install -r mobile/scripts/signing-requirements.txt
+      - run: python3 -m unittest discover -s mobile/scripts -p 'test_*signing*.py' -v
+      - run: python3 mobile/scripts/test_verify_ios_bundle.py -v

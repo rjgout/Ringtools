@@ -33,3 +33,9 @@ ExportOptions.plist
 
 # Lokale iOS-instellingen (Team-ID enz.)
 ios/Local.xcconfig
+
+# Tijdelijke Distribution-signingmiddelen horen nooit in Git
+*.pfx
+*.keychain
+*.keychain-db
+__pycache__/
