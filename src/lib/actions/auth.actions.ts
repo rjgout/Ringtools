@@ -16,6 +16,7 @@ import { setSessionCookie, clearSessionCookie, getSessionCookieValue, safeIntern
 import { rateLimit } from "@/lib/rateLimit";
 import { emailSchema } from "@/lib/validation";
 import { loginInvitedPerson } from "@/lib/invitationLogin";
+import { loginRegisteringPerson } from "@/lib/registration";
 import { sendLoginMail } from "@/lib/loginMail";
 
 export type ActionResult = { ok: boolean; message: string };
@@ -81,7 +82,8 @@ export async function loginWithCodeAction(_prev: ActionResult | null, formData: 
 
   const user = await consumeLoginCode(parsed.data, code);
   if (!user) {
-    const invited = await loginInvitedPerson(parsed.data, code, (await getRequestUserAgent()) ?? "Browser");
+    const agent = (await getRequestUserAgent()) ?? "Browser";
+    const invited = (await loginInvitedPerson(parsed.data, code, agent)) ?? (await loginRegisteringPerson(parsed.data, code, agent));
     if (!invited) return failure;
     const previous = await getSessionCookieValue();
     if (previous) await destroySession(previous);

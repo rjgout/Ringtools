@@ -72,6 +72,13 @@ export const env = {
   get nativeDeviceAutoEnrollEnabled() {
     return process.env.NATIVE_DEVICE_AUTO_ENROLL_ENABLED === "true" && this.nativeDeviceLoginEnabled;
   },
+  /**
+   * Declaratiemodule (afzonderlijk van de roepingenmodule). Standaard UIT: zonder deze vlag verandert er niets voor bestaande gebruikers
+   * (geen zelfregistratie, geen declaratieroutes, geen tabs). In development te activeren met DEV_… via de stack-variabele DECLARATIONS_ENABLED.
+   */
+  get declarationsEnabled() {
+    return process.env.DECLARATIONS_ENABLED === "true";
+  },
   get autoEnableMfa() {
     return process.env.AUTO_ENABLE_MFA === "true";
   },
