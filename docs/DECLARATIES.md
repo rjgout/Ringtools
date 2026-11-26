@@ -44,3 +44,6 @@ Uitgangspunt (besluit eigenaar): zes maanden na administratieve verwerking. Er i
 - iOS: `NSCameraUsageDescription` (akkoord eigenaar) – "Ringtools gebruikt de camera alleen om een foto van een bon bij een declaratie te maken." In `docs/STORE-PRIVACY.md` vastgelegd; bij de App Privacy-verklaring moeten foto's/bonnen en financiële gegevens (declaraties) worden meegenomen zodra de module in een store-build wordt geactiveerd.
 - Android-camera via de bestandskiezer en beide platformen: **niet op een toestel getest**.
 - Meldingen/e-mail bevatten geen bedragen of omschrijvingen (fase 1 verstuurt geen declaratiemeldingen).
+
+## Migratienamen
+Migraties heten `<jjjjmmddhhmmss>_<naam>` en worden op naam gesorteerd. De bestaande reeks loopt voor op de kalenderdatum (laatste vóór deze module: `20261204110000`); `20261205100000_declaraties_basis` sluit daar direct op aan. Geef een volgende migratie altijd een naam die **na** de laatste bestaande sorteert, ook als `prisma migrate dev` een eerdere (kalender)datum voorstelt: een eerdere naam draait op een nieuwe database vóór zijn voorganger en faalt. Hernoem een migratie nooit nadat die ergens is toegepast.
