@@ -17,7 +17,17 @@ function currentCounter(): number {
   return Math.floor(Date.now() / 1000 / TOTP_PERIOD_SECONDS);
 }
 
+/** Laatst door de SERVER geaccepteerde teller van het adminaccount: blijft correct als de worker na een mislukte test opnieuw start en `lastSubmittedCounter` verloren is. */
+async function serverLastUsedCounter(): Promise<number | null> {
+  const admin = await prisma.user.findFirst({ where: { role: "ADMIN" } });
+  if (!admin) return null;
+  const credential = await prisma.totpCredential.findUnique({ where: { userId: admin.id } });
+  return credential?.lastUsedCounter ?? null;
+}
+
 async function waitForFreshTotpWindow() {
+  const server = await serverLastUsedCounter();
+  if (server !== null && (lastSubmittedCounter === null || server > lastSubmittedCounter)) lastSubmittedCounter = server;
   while (lastSubmittedCounter !== null && currentCounter() <= lastSubmittedCounter) {
     const msIntoPeriod = Date.now() % (TOTP_PERIOD_SECONDS * 1000);
     const msToWait = TOTP_PERIOD_SECONDS * 1000 - msIntoPeriod + 250;

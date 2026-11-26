@@ -3,7 +3,7 @@ import { prisma } from "../src/lib/prisma";
 import { createMagicLinkToken } from "../src/lib/auth";
 import { createCalling } from "../src/lib/workflow";
 import { createOpenLink } from "../src/lib/openLinks";
-import { loginWithMagicLink, logoutFromApp } from "./helpers/mfa";
+import { loginWithMagicLink, logoutFromApp, gotoStable } from "./helpers/mfa";
 import { createE2eUser } from "./helpers/data";
 
 test("een geïnstalleerde app blijft ingelogd na afsluiten en heropenen (cookie blijft bewaard)", async ({ browser }) => {
@@ -48,7 +48,7 @@ test("een verlopen of ingetrokken sessie wordt na heropenen geweigerd", async ({
   await expect(page).toHaveURL(/\/app/);
 
   await prisma.session.deleteMany({ where: { userId: user.id } }); // bijv. beveiligingsreset of deactivering
-  await page.goto("/app");
+  await gotoStable(page, "/app"); // wacht tot /app zijn eigen doorverwijzing heeft afgerond (anders ERR_ABORTED)
   await expect(page).toHaveURL(/\/login/);
   const refresh = await page.request.post("/api/session/refresh");
   expect(refresh.status()).toBe(401);
