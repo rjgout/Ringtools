@@ -26,9 +26,21 @@ Type op magic bytes (niet op naam/MIME van de client), max. 10 MB per bestand, 2
 Ingelogd blijven met biometrie, berichten per declaratie, meldingen en voorkeuren, PDF-exports (bonnen/overzicht/dossier), persoonlijke namenlijst, minimaal twee ringbeheerders + noodfuncties centrale beheerder, en automatische verwijdering.
 
 ## Bewaartermijn (onderzoek nog open)
-Uitgangspunt ca. 6 maanden na administratieve verwerking. Er is **geen** automatische verwijdering gebouwd. Onderzoek naar wettelijke en kerkelijke bewaartermijnen moet vóór activering van verwijdering plaatsvinden; geen juridische grondslagen zijn aangenomen.
+Uitgangspunt (besluit eigenaar): zes maanden na administratieve verwerking. Er is **geen** automatische verwijdering gebouwd. Onderzoek naar wettelijke en kerkelijke bewaartermijnen moet vóór activering van verwijdering plaatsvinden; geen juridische grondslagen zijn aangenomen.
+
+## Accountverwijdering (besluit eigenaar: een declaratie met naam is niet anoniem)
+- Een declaratie bevat persoonsgegevens (declarant, begunstigde, omschrijving, bonnen) en wordt **nooit als anoniem** aangemerkt, ook niet na verwijdering van het account.
+- Een account met een nog niet afgehandelde declaratie (Ingediend/Gezien/In behandeling/Aanvulling nodig) kan niet worden verwijderd (blokkade `OPEN_DECLARATIONS`); eerst afhandelen.
+- Bij verwijdering van het account: koppeling aan het account (`ownerId`) en het declaratieprofiel verdwijnen en de directe naam wordt vervangen door "Verwijderde gebruiker". De afgehandelde declaratie zelf blijft als administratie bestaan tot het einde van de bewaartermijn (zes maanden na verwerking als uitgangspunt) en wordt nog **niet** automatisch verwijderd.
+- Onderzoek/voorstel voor minimale historische gegevens: na de bewaartermijn alleen bedrag, ring/unit, status en tijdstempels bewaren (geen bonnen, geen vrije tekst, geen namen); tot die tijd de volledige inhoud versleuteld laten staan. Vereist akkoord van de eigenaar en juridische toetsing; geen grondslag aangenomen.
+- Open punt: namen binnen de versleutelde tekst (bijv. "voor wie") worden bij verwijdering niet herschreven.
+
+## Opslag: grootte, sleutels, back-up en herstel
+- Limieten: 10 MB per bestand, 25 MB totaal, 10 bijlagen (client verkleint foto's). Upload gaat als JSON (base64, ~34 MB bij het maximum): controleer op de Synology/reverse proxy dat `client_max_body_size` (of vergelijkbaar) minimaal 40 MB toestaat, anders falen grote declaraties met een proxyfout. **Nog te testen op dev.**
+- Sleutel: afgeleid van `SETTINGS_ENCRYPTION_KEY`. Zonder deze sleutel zijn alle declaraties onleesbaar. Bewaar de sleutel apart van de database-dump (wachtwoordkluis); wijzig hem niet zonder een herversleutelingsprocedure (niet gebouwd; het formaat bevat een versienummer voor latere rotatie).
+- Back-up: `pg_dump` bevat de versleutelde bytea-gegevens; de dump alleen is dus nuttig zonder de sleutel niet. Hersteltest: dump terugzetten in een `_test`-database met dezelfde sleutel en een declaratie openen (nog uit te voeren; zie `docs/BACKUP-HERSTEL.md`). De databasegrootte groeit met bonnen; houd het volume in de gaten.
 
 ## Privacy/store
-- Accountverwijdering: `Declaration.ownerId` wordt `NULL` (naamsnapshot blijft voor de administratie); beoordeling samen met `docs/STORE-PRIVACY.md` nodig.
-- iOS: `NSCameraUsageDescription` toegevoegd (foto van een bon). Android-camera via de bestandskiezer en beide platformen: **niet op een toestel getest**.
+- iOS: `NSCameraUsageDescription` (akkoord eigenaar) – "Ringtools gebruikt de camera alleen om een foto van een bon bij een declaratie te maken." In `docs/STORE-PRIVACY.md` vastgelegd; bij de App Privacy-verklaring moeten foto's/bonnen en financiële gegevens (declaraties) worden meegenomen zodra de module in een store-build wordt geactiveerd.
+- Android-camera via de bestandskiezer en beide platformen: **niet op een toestel getest**.
 - Meldingen/e-mail bevatten geen bedragen of omschrijvingen (fase 1 verstuurt geen declaratiemeldingen).

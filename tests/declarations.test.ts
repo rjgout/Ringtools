@@ -378,17 +378,75 @@ describe("API en functievlag", () => {
   });
 });
 
+describe("verificatie van openstaande functies en uitgeschakelde module", () => {
+  it("een klaarstaande functie voor een onbekend adres is pas actief na geverifieerde code; verkeerde code activeert niets", async () => {
+    const { ring } = await activatedRing("Verif", false);
+    const mgr = await createTestUser("RINGADMINISTRATEUR", "Mgr V", { ringId: ring.id, isRingManager: true });
+    await fin.assignFinanceRole({ actorId: mgr.id, ringId: ring.id, unitId: null, email: "wacht@example.nl", role: "ADMIN" });
+    expect(await prisma.user.count({ where: { email: "wacht@example.nl" } })).toBe(0);
+    expect(await prisma.financeAssignment.count({ where: { ringId: ring.id, role: "ADMIN" } })).toBe(1); // alleen de bestaande administrateur
+    const reg = await import("@/lib/registration");
+    sendMailMock.mockClear();
+    await reg.sendRegistrationCode("wacht@example.nl");
+    expect(await reg.loginRegisteringPerson("wacht@example.nl", "00000000", "t")).toBeNull();
+    expect(await prisma.user.count({ where: { email: "wacht@example.nl" } })).toBe(0);
+    expect(await prisma.financeAssignment.count({ where: { ringId: ring.id, role: "ADMIN" } })).toBe(1);
+    expect((await prisma.pendingFinanceAssignment.findFirstOrThrow({ where: { email: "wacht@example.nl" } })).claimedAt).toBeNull();
+    // Een andere persoon die zich met een ander adres registreert, claimt niets
+    await reg.sendRegistrationCode("ander@example.nl");
+    const code2 = /(\d{8})/.exec(String((sendMailMock.mock.calls.at(-1)![0] as { text: string }).text))![1];
+    const other = await reg.loginRegisteringPerson("ander@example.nl", code2, "t");
+    expect(await prisma.financeAssignment.count({ where: { userId: other!.userId } })).toBe(0);
+  });
+  it("een onverifieerde claim geeft geen toegang: zonder code geen sessie, na verificatie wel", async () => {
+    const { ring } = await activatedRing("Verif2", false);
+    const mgr = await createTestUser("RINGADMINISTRATEUR", "Mgr V2", { ringId: ring.id, isRingManager: true });
+    await fin.assignFinanceRole({ actorId: mgr.id, ringId: ring.id, unitId: null, email: "echt@example.nl", role: "SUBADMIN" });
+    const reg = await import("@/lib/registration");
+    sendMailMock.mockClear();
+    await reg.sendRegistrationCode("echt@example.nl");
+    const code = /(\d{8})/.exec(String((sendMailMock.mock.calls.at(-1)![0] as { text: string }).text))![1];
+    const ok = await reg.loginRegisteringPerson("echt@example.nl", code, "t");
+    expect((await fin.loadScopes(ok!.userId)).map((s) => s.role)).toEqual(["SUBADMIN"]);
+  });
+  it("met DECLARATIONS_ENABLED uit: geen registratie, geen declaratieroutes, geen claim; bestaande inlogmail ongewijzigd", async () => {
+    delete process.env.DECLARATIONS_ENABLED;
+    const reg = await import("@/lib/registration");
+    expect(await reg.sendRegistrationCode("nieuw@example.nl")).toBe(false);
+    expect(await reg.loginRegisteringPerson("nieuw@example.nl", "12345678", "t")).toBeNull();
+    const ring = await createTestRing("Uit");
+    const u = await createTestUser("RINGSECRETARIS", "Bestaand lid", { ringId: ring.id, email: "lid@example.nl" });
+    const t = await tokenFor(u.id);
+    for (const [m, path] of [["GET", "/declarations"], ["GET", "/declarations/context"], ["GET", "/declarations/official"], ["POST", "/declarations"], ["GET", `/rings/${ring.id}/finance`]] as const) {
+      expect((await call(m, path, { token: t, body: {} })).status).toBe(404);
+    }
+    expect((await call("GET", "/meta")).body.declarations).toBe(false);
+    sendMailMock.mockClear();
+    expect((await call("POST", "/auth/request-code", { body: { email: "lid@example.nl" } })).status).toBe(200);
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    expect((await call("GET", "/me", { token: t })).body.rings).toHaveLength(1);
+  });
+});
+
 describe("accountverwijdering", () => {
-  it("verwijderen van de eigenaar laat de declaratie anoniem bestaan (naamsnapshot) en verwijdert zijn functies", async () => {
+  it("open declaratie blokkeert verwijdering; afgehandelde blijft zonder accountkoppeling en zonder directe naam (niet anoniem)", async () => {
+    const { completeAccountDeletion } = await import("@/lib/accountDeletion");
     const A = await activatedRing("Omega", false);
     const owner = await member("Lid", A.ring.id);
+    const web = await createTestUser("ADMIN", "Webmin");
     const d = await decl.submitDeclaration(owner.id, base(A.ring.id, null));
-    await prisma.user.delete({ where: { id: owner.id } });
+    const req = await prisma.accountDeletionRequest.create({ data: { userId: owner.id, status: "REQUESTED", receiptHash: `h-${Date.now()}`, dueAt: new Date(Date.now() + 86400000) } });
+    const blocked = await completeAccountDeletion(web.id, req.id, { identityChecked: true });
+    expect(blocked.completed).toBe(false);
+    expect(blocked.blockers.map((b) => b.kind)).toContain("OPEN_DECLARATIONS");
+    await decl.openDeclaration(A.admin.id, d.id);
+    await decl.setStatus(A.admin.id, d.id, "PROCESSED");
+    const done = await completeAccountDeletion(web.id, req.id, { identityChecked: true });
+    expect(done.completed).toBe(true);
     const row = await prisma.declaration.findUniqueOrThrow({ where: { id: d.id } });
     expect(row.ownerId).toBeNull();
-    expect(row.ownerName).toBe("Lid");
-    await prisma.user.delete({ where: { id: A.admin.id } });
-    expect(await prisma.financeAssignment.count({ where: { userId: A.admin.id } })).toBe(0);
+    expect(row.ownerName).toBe("Verwijderde gebruiker");
+    expect(row.status).toBe("PROCESSED");
   });
 });
 
