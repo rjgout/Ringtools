@@ -144,10 +144,7 @@ export async function submitDeclaration(userId: string, input: DeclarationInput)
 
 type Row = Pick<Declaration, "id" | "ownerName" | "ringId" | "unitId" | "ringName" | "unitName" | "amountCents" | "status" | "sealed" | "submittedAt" | "seenAt" | "processedAt">;
 
-export type DeclarationListItem = {
-  id: string; status: DeclarationStatus; statusLabel: string; amountCents: number; ringName: string; unitName: string | null; ownerName: string;
-  organization: string; description: string; submittedAt: string; seenAt: string | null; processedAt: string | null;
-};
+export type DeclarationListItem = import("@shared/api-types").DeclarationListItem;
 
 function toItem(r: Row): DeclarationListItem {
   const s = openJson<Sealed>(r.sealed, sealAad(r.id));
@@ -184,13 +181,7 @@ export async function listForOfficial(userId: string, filter: { status?: unknown
   return { items: rows.map(toItem), roles };
 }
 
-export type DeclarationDetail = DeclarationListItem & {
-  viewerRole: "owner" | "administrator" | "president";
-  approverName: string; forWhom: string; payeeName: string; notes: string;
-  attachments: { id: string; fileName: string; mimeType: string; sizeBytes: number }[];
-  history: { fromStatus: DeclarationStatus | null; toStatus: DeclarationStatus; toLabel: string; at: string; note: string | null; byOwner: boolean }[];
-  canProcess: boolean;
-};
+export type DeclarationDetail = import("@shared/api-types").DeclarationDetail;
 
 async function resolveAccess(userId: string, d: { ownerId: string | null; ringId: string; unitId: string | null }): Promise<"owner" | "administrator" | "president" | null> {
   if (d.ownerId === userId) return "owner";

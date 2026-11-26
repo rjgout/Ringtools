@@ -378,6 +378,20 @@ describe("API en functievlag", () => {
   });
 });
 
+describe("accountverwijdering", () => {
+  it("verwijderen van de eigenaar laat de declaratie anoniem bestaan (naamsnapshot) en verwijdert zijn functies", async () => {
+    const A = await activatedRing("Omega", false);
+    const owner = await member("Lid", A.ring.id);
+    const d = await decl.submitDeclaration(owner.id, base(A.ring.id, null));
+    await prisma.user.delete({ where: { id: owner.id } });
+    const row = await prisma.declaration.findUniqueOrThrow({ where: { id: d.id } });
+    expect(row.ownerId).toBeNull();
+    expect(row.ownerName).toBe("Lid");
+    await prisma.user.delete({ where: { id: A.admin.id } });
+    expect(await prisma.financeAssignment.count({ where: { userId: A.admin.id } })).toBe(0);
+  });
+});
+
 describe("bestaande roepingen blijven ongemoeid", () => {
   it("getMe/lidmaatschappen van een kerklid zonder ring is leeg maar geldig; hashToken ongewijzigd", async () => {
     const u = await prisma.user.create({ data: { name: "Kerklid", email: "k@example.nl", role: "KERKLID", active: true } });

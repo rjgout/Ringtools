@@ -39,6 +39,7 @@ services:
       APP_ENVIRONMENT: development # activeert de mail-/pushbeveiliging (alleen DEV_MAIL_ALLOWLIST) en noindex
       DATABASE_URL: postgresql://${DEV_POSTGRES_USER:-ringtools_dev}:${DEV_POSTGRES_PASSWORD:?zet DEV_POSTGRES_PASSWORD}@db:5432/${DEV_POSTGRES_DB:-ringtools_dev}?schema=public
       APP_BASE_URL: ${DEV_APP_BASE_URL:-https://dev.ringapeldoorn.nl}
+      DECLARATIONS_ENABLED: ${DECLARATIONS_ENABLED:-false} # declaratiemodule (functievlag, standaard uit)
       DEV_MAIL_ALLOWLIST: ${DEV_MAIL_ALLOWLIST:-} # leeg = er verlaat GEEN enkele e-mail of push de omgeving (fail-closed)
       BOOTSTRAP_ADMIN_USERNAME: ${DEV_BOOTSTRAP_ADMIN_USERNAME:-webmin}
       BOOTSTRAP_ADMIN_PASSWORD: ${DEV_BOOTSTRAP_ADMIN_PASSWORD:?zet DEV_BOOTSTRAP_ADMIN_PASSWORD (uniek, niet gelijk aan productie)}

@@ -404,3 +404,34 @@ export type ReviewManagementView = {
   users: { name: string; role: Role; churchFunction: string; active: boolean }[];
   units: { name: string; kind: "WIJK" | "GEMEENTE" }[];
 };
+
+
+// ---- Declaraties (functievlag DECLARATIONS_ENABLED) ----
+
+export type DeclarationStatusCode = "SUBMITTED" | "SEEN" | "IN_PROGRESS" | "NEEDS_INFO" | "PROCESSED" | "REJECTED";
+export type FinanceRoleCode = "ADMIN" | "SUBADMIN" | "RING_PRESIDENT_READ" | "UNIT_LEADER";
+export type DeclarationListItem = {
+  id: string; status: DeclarationStatusCode; statusLabel: string; amountCents: number; ringName: string; unitName: string | null; ownerName: string;
+  organization: string; description: string; submittedAt: string; seenAt: string | null; processedAt: string | null;
+};
+export type DeclarationDetail = DeclarationListItem & {
+  viewerRole: "owner" | "administrator" | "president";
+  approverName: string; forWhom: string; payeeName: string; notes: string;
+  attachments: { id: string; fileName: string; mimeType: string; sizeBytes: number }[];
+  history: { fromStatus: DeclarationStatusCode | null; toStatus: DeclarationStatusCode; toLabel: string; at: string; note: string | null; byOwner: boolean }[];
+  canProcess: boolean;
+};
+export type DeclarationDestination = { ringId: string; ringName: string; activated: boolean; units: { unitId: string; name: string; kind: UnitKind; activated: boolean }[] };
+export type DeclarationContext = {
+  name: string; onboarded: boolean; preferredRingId: string | null; preferredUnitId: string | null;
+  destinations: DeclarationDestination[]; official: { administer: boolean; president: boolean };
+};
+export type FinanceAssignmentView = { id: string; role: FinanceRoleCode; roleLabel: string; unitId: string | null; unitName: string | null; name: string | null; email: string; pending: boolean };
+export type FinanceOverview = {
+  assignments: FinanceAssignmentView[];
+  activation: { ring: { activated: boolean; missing: string[] }; units: { unitId: string; name: string; activation: { activated: boolean; missing: string[] } }[] };
+};
+export type DeclarationSubmitInput = {
+  clientRequestId: string; ringId: string; unitId: string | null; ringDirectConfirmed?: boolean; organization: string; approverName: string; approvalConfirmed: boolean;
+  forWhom: string; payeeName: string; amount: string; description: string; notes?: string; files: { fileName: string; dataBase64: string }[];
+};

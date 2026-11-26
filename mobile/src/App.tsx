@@ -6,6 +6,8 @@ import { HashRouter, Route, Routes, useLocation, useNavigate, Navigate } from "r
 import { App as CapApp } from "@capacitor/app";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { AuthProvider, useAuth } from "./lib/auth";
+import { useDeclarationsEnabled } from "./lib/useDeclarationsEnabled";
+import { DeclaratieRoutes } from "./screens/Declaraties";
 import { API_HOST, APP_VARIANT } from "./config";
 import { watchKeyboard, isNative, onBackButton, onNetworkChange, setupNativeChrome } from "./lib/native";
 import { installDeepLinkHandlers } from "./lib/deeplinks";
@@ -70,6 +72,7 @@ export function Shell() {
   const [activation, setActivation] = useState<{ token?: string } | null>(null);
   const [linkingDevice, setLinkingDevice] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
+  const declarations = useDeclarationsEnabled(api, status === "signedIn");
 
   useEffect(() => void setupNativeChrome(), []);
   useEffect(() => watchKeyboard(), []); // tabbalk weg zolang het toetsenbord open is
@@ -166,7 +169,15 @@ export function Shell() {
       )}
       <main className="page">
         {!ring ? (
-          <div className="glass card"><strong>Geen ring</strong><p className="muted">Je account is nog niet aan een ring gekoppeld.</p></div>
+          declarations ? (
+            // Kerklid zonder ring: alleen de declaratiemodule (geen roepingen, geen tabbalk).
+            <div className="stack">
+              <Routes><Route path="/declaraties/*" element={<DeclaratieRoutes />} /><Route path="*" element={<Navigate to="/declaraties" replace />} /></Routes>
+              <button className="btn btn-ghost" onClick={() => void signOut()}>Uitloggen</button>
+            </div>
+          ) : declarations === null && status === "signedIn" ? <Spinner /> : (
+            <div className="glass card"><strong>Geen ring</strong><p className="muted">Je account is nog niet aan een ring gekoppeld.</p></div>
+          )
         ) : (
           <Routes>
             <Route path="/" element={<Home />} />
@@ -179,6 +190,7 @@ export function Shell() {
             <Route path="/ontheffingen/concept/:id" element={<OntheffingForm />} />
             <Route path="/ontheffingen/:id" element={<OntheffingDetail />} />
             <Route path="/open/:token" element={<OpenLink />} />
+            {declarations && <Route path="/declaraties/*" element={<DeclaratieRoutes />} />}
             {ring.isRingManager && <Route path="/beheer" element={<Navigate to="/beheer/gebruikers" replace />} />}
             {ring.isRingManager && <Route path="/beheer/:section" element={<Beheer />} />}
             {ring.isRingManager && <Route path="/inrichting" element={<Navigate to="/beheer/inrichting" replace />} />}

@@ -1,9 +1,12 @@
+import { Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
+import { useDeclarationsEnabled } from "../lib/useDeclarationsEnabled";
 import { useLoad } from "../lib/useLoad";
 import { CallingLink, ErrorState, OntheffingLink, Spinner } from "../components/ui";
 
 export function Home() {
   const { api, ring } = useAuth();
+  const declarations = useDeclarationsEnabled(api, true);
   const { data, error, loading, reload } = useLoad(() => api.dashboard(ring!.id), [ring?.id]);
   // Ontheffingen staan niet meer als knop in het overzicht: alleen wat jouw actie vraagt verschijnt hier als rij.
   const needAction = (data?.ontheffingen?.needsMyVote ?? 0) + (data?.ontheffingen?.needsReview ?? 0) > 0;
@@ -16,6 +19,7 @@ export function Home() {
         <h1>{ring?.name}</h1>
         <span className="muted">{ring?.churchFunction}</span>
       </div>
+      {declarations && <Link to="/declaraties" className="glass panel row between"><strong>Declaraties</strong><span aria-hidden>›</span></Link>}
       {loading && !data && <Spinner />}
       {error && <ErrorState error={error} onRetry={reload} />}
       {data && (
