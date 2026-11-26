@@ -78,6 +78,9 @@ async function blockersFor(tx: Prisma.TransactionClient, userId: string): Promis
   if (rounds) issues.push({ kind: "ACTIVE_ROUNDS", count: rounds });
   const confidential = await tx.ontheffing.count({ where: { status: { not: "PROCESSED" }, OR: [{ persons: { some: { userId } } }, { voters: { some: { userId } } }] } });
   if (confidential) issues.push({ kind: "ACTIVE_CONFIDENTIAL_PROCESSES", count: confidential });
+  // Declaraties die nog niet administratief zijn afgehandeld: eerst afronden, anders kan de administrateur niet meer terugkoppelen.
+  const openDeclarations = await tx.declaration.count({ where: { ownerId: userId, status: { notIn: ["PROCESSED", "REJECTED"] } } });
+  if (openDeclarations) issues.push({ kind: "OPEN_DECLARATIONS", count: openDeclarations });
   return issues;
 }
 /** Compleet account wissen. Open verantwoordelijkheid moet eerst via de bestaande workflow worden overgedragen. */
@@ -127,6 +130,10 @@ export async function completeAccountDeletion(actorId: string, requestId: string
         await tx.$executeRawUnsafe(`UPDATE "${table}" SET "${column}"=array_replace("${column}", $1, $2) WHERE $1=ANY("${column}")`, userId, audit.id);
       }
     }
+    // Afgehandelde declaraties blijven (administratie, bewaartermijn) maar zonder koppeling aan het account; de rechtstreekse naam wordt
+    // vervangen. NIET anoniem: omschrijving, begunstigde en bonnen kunnen nog persoonsgegevens bevatten (docs/DECLARATIES.md).
+    await tx.declaration.updateMany({ where: { ownerId: userId }, data: { ownerName: "Verwijderde gebruiker", ownerId: null } });
+    await tx.declarationProfile.deleteMany({ where: { userId } });
     await tx.callingDraft.deleteMany({ where: { createdById: userId } });
     for (const field of ["roepenAssigneeId", "ondersteunenAssigneeId", "aanstellenAssigneeId", "roepenDoneById", "ondersteunenDoneById", "aanstellenDoneById", "processedById", "hogeraadReleasedById", "procedureConfirmedById", "executionReleasedById"] as const) {
       await tx.calling.updateMany({ where: { [field]: userId }, data: { [field]: null } });

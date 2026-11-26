@@ -10,6 +10,8 @@ on:
       - "shared/**"
       # Mobiele backend: wijzigingen hier mogen nooit buiten de native regressietests blijven.
       - "src/lib/api/**"
+      - "src/lib/declarations/**"
+      - "src/lib/registration.ts"
       - "src/lib/actions/auth.actions.ts"
       - "src/lib/auth.ts"
       - "src/lib/reviewAuth.ts"
@@ -75,6 +77,8 @@ on:
       - "shared/**"
       # Mobiele backend: wijzigingen hier mogen nooit buiten de native regressietests blijven.
       - "src/lib/api/**"
+      - "src/lib/declarations/**"
+      - "src/lib/registration.ts"
       - "src/lib/actions/auth.actions.ts"
       - "src/lib/auth.ts"
       - "src/lib/reviewAuth.ts"
@@ -181,7 +185,7 @@ jobs:
           tests/simpleLogin.test.ts tests/nativeTotpLogin.test.ts tests/webTotp.test.ts
           tests/trustedDevices.test.ts tests/deviceLogin.test.ts tests/deviceLoginConcurrency.test.ts
           tests/deviceEnrollment.test.ts tests/deviceAuthorization.test.ts
-          tests/webCookieAuth.test.ts tests/webAppRedirect.test.ts tests/ios112Compat.test.ts tests/devGuard.test.ts
+          tests/declarations.test.ts tests/webCookieAuth.test.ts tests/webAppRedirect.test.ts tests/ios112Compat.test.ts tests/devGuard.test.ts
 
   client:
     name: Client en native configuratie

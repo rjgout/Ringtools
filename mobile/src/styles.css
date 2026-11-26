@@ -463,3 +463,6 @@ summary { cursor: pointer; min-height: var(--touch); display: list-item; }
   :root[data-platform="web"][data-keyboard="open"] .tabbar { display: flex; }
   :root[data-platform="web"] .navbar-title { max-width: 40vw; }
 }
+
+/* Declaraties: miniatuur van een toegevoegde bon */
+.thumb { object-fit: cover; border-radius: var(--radius-sm, 6px); }

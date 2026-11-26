@@ -49,6 +49,7 @@ Bestand: **`docker-compose.dev.yml`** (plakken in Portainer, stacknaam `ringtool
 | `DEV_POSTGRES_PASSWORD` | ja | nieuw, lang, willekeurig; niet gelijk aan productie |
 | `DEV_BOOTSTRAP_ADMIN_PASSWORD` | ja | wachtwoord van het webmin-account van dev (daarna verplicht TOTP-inschrijving bij eerste aanmelding) |
 | `DEV_SETTINGS_ENCRYPTION_KEY` | ja | nieuwe sleutel (bijv. `openssl rand -base64 32`); niet wijzigen na eerste gebruik zonder de dev-database te resetten |
+| `DECLARATIONS_ENABLED` | optioneel | `true` zet de declaratiemodule aan (alleen dev; productie blijft uit tot akkoord eigenaar) |
 | `DEV_MAIL_ALLOWLIST` | aanbevolen | toegestane testadressen/-domeinen; leeg = geen e-mail/push |
 | `DEV_APP_BASE_URL` | nee | standaard `https://dev.ringapeldoorn.nl` (moet exact de publieke URL zijn: cookies, Origin-controle, links) |
 | `DEV_HTTP_PORT` | nee | hostpoort op de NAS, standaard `2819` (productie gebruikt 2809) |

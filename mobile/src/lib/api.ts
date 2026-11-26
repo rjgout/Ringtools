@@ -12,6 +12,11 @@ import type {
   InvitationSendResult,
   InvitationPreview,
   ApiMeta,
+  DeclarationContext,
+  DeclarationDetail,
+  DeclarationListItem,
+  DeclarationSubmitInput,
+  FinanceOverview,
   AppNotification,
   CallingDetail,
   CallingItem,
@@ -417,6 +422,19 @@ export class ApiClient {
   deleteCalling(id: string, confirmed: boolean) {
     return this.request<{ ok: boolean }>("POST", `/callings/${encodeURIComponent(id)}/delete`, { confirmed });
   }
+  // Declaraties (alleen beschikbaar als /meta declarations meldt)
+  declarationContext() { return this.request<DeclarationContext>("GET", "/declarations/context"); }
+  saveDeclarationProfile(body: { name: string; ringId: string; unitId: string | null }) { return this.request<{ ok: boolean }>("POST", "/declarations/profile", body); }
+  myDeclarations() { return this.request<{ items: DeclarationListItem[] }>("GET", "/declarations"); }
+  officialDeclarations(status?: string) { return this.request<{ items: DeclarationListItem[]; roles: { administer: boolean; president: boolean } }>("GET", `/declarations/official${status ? `?status=${encodeURIComponent(status)}` : ""}`); }
+  declaration(id: string) { return this.request<DeclarationDetail>("GET", `/declarations/${encodeURIComponent(id)}`); }
+  submitDeclaration(body: DeclarationSubmitInput) { return this.request<{ id: string; created: boolean }>("POST", "/declarations", body); }
+  setDeclarationStatus(id: string, status: string, note?: string) { return this.request<{ status: string }>("POST", `/declarations/${encodeURIComponent(id)}/status`, { status, note }); }
+  declarationAttachment(id: string, attachmentId: string) { return this.request<{ fileName: string; mimeType: string; dataBase64: string }>("GET", `/declarations/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`); }
+  financeOverview(ringId: string) { return this.request<FinanceOverview>("GET", `/rings/${encodeURIComponent(ringId)}/finance`); }
+  assignFinance(ringId: string, body: { email: string; role: string; unitId: string | null }) { return this.request<{ ok: boolean }>("POST", `/rings/${encodeURIComponent(ringId)}/finance`, body); }
+  revokeFinance(id: string, pending: boolean) { return this.request<{ ok: boolean }>("POST", `/finance/${encodeURIComponent(id)}/revoke`, { pending }); }
+
   notifications(ringId: string) {
     return this.request<{ notifications: AppNotification[]; unreadCount: number }>("GET", `/notifications?ring=${encodeURIComponent(ringId)}`);
   }

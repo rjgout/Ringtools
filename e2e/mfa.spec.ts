@@ -219,8 +219,31 @@ test("een gebruiker kan passkey-verificatie zelf inschakelen; daarna is de passk
 
   await page.goto("/app");
   await logoutFromApp(page);
+  // Tweede aanmelding in een pagina ZONDER virtuele authenticator: de passkeystap kan dan niet worden afgerond. Alleen zo is de
+  // tussenstap betrouwbaar waarneembaar (met een authenticator start de pagina de ceremonie automatisch en kan de browser binnen
+  // milliseconden doorlopen naar /app, waardoor een URL-controle op /mfa/passkey een race is).
   const { rawToken: second } = await createMagicLinkToken(user.id);
-  await page.goto(`/auth/magic/${second}`);
+  const plain = await page.context().newPage();
+  await plain.goto(`/auth/magic/${second}`);
+  await plain.getByRole("button", { name: "Inloggen" }).click();
+  await expect(plain).toHaveURL(/\/mfa\/passkey/);
+  // Beveiligingsgrens: de sessie na alleen de magic link is een wachtsessie (geen mfaAt, geen bewezen factor) en geeft geen API-toegang.
+  const pending = await prisma.session.findFirstOrThrow({ where: { userId: user.id }, orderBy: { createdAt: "desc" } });
+  expect(pending.mfaAt).toBeNull();
+  expect(pending.factorProvedAt).toBeNull();
+  const denied = await plain.request.get("/api/mobile/v1/me", { headers: { "X-Ringtools-Web": "1" } });
+  expect(denied.status()).toBeGreaterThanOrEqual(401);
+  await plain.close();
+
+  // Mét authenticator volgt een volledige sessie uitsluitend na een door de server geverifieerde passkey-assertion.
+  const before = await prisma.webAuthnCredential.findFirstOrThrow({ where: { userId: user.id } });
+  const { rawToken: third } = await createMagicLinkToken(user.id);
+  await page.goto(`/auth/magic/${third}`);
   await page.getByRole("button", { name: "Inloggen" }).click();
-  await expect(page).toHaveURL(/\/mfa\/passkey/);
+  await expect(page).toHaveURL(/\/app/);
+  const full = await prisma.session.findFirstOrThrow({ where: { userId: user.id, mfaAt: { not: null } }, orderBy: { createdAt: "desc" } });
+  expect(full.id).not.toBe(pending.id); // een nieuwe, volledige sessie: de wachtsessie is nooit stilzwijgend "opgewaardeerd"
+  const credential = await prisma.webAuthnCredential.findFirstOrThrow({ where: { userId: user.id } });
+  expect(credential.lastUsedAt).not.toBeNull();
+  expect(credential.lastUsedAt!.getTime()).toBeGreaterThan(before.lastUsedAt?.getTime() ?? 0); // de assertion is door de server verwerkt
 });

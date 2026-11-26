@@ -6,6 +6,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   RINGSECRETARIS: "Ringsecretaris",
   RINGADMINISTRATEUR: "Ringadministrateur",
   HOGERAAD: "Hoge raad",
+  KERKLID: "Kerklid",
 };
 
 export function formatDate(date: Date | string | null | undefined): string {

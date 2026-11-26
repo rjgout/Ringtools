@@ -9,6 +9,13 @@ export async function resetDatabase() {
   await prisma.accountDeletionRequest.deleteMany();
   await prisma.accountDeletionChallenge.deleteMany(); // nooit wissen op een database die niet ondubbelzinnig een testdatabase is
   // Volgorde belangrijk vanwege foreign keys zonder cascade op User/Ring.
+  await prisma.declarationAccessLog.deleteMany();
+  await prisma.declarationStatusEvent.deleteMany();
+  await prisma.declarationAttachment.deleteMany();
+  await prisma.declaration.deleteMany();
+  await prisma.declarationProfile.deleteMany();
+  await prisma.pendingFinanceAssignment.deleteMany();
+  await prisma.financeAssignment.deleteMany();
   await prisma.ontheffing.deleteMany();
   await prisma.callingDraft.deleteMany();
   await prisma.vote.deleteMany();

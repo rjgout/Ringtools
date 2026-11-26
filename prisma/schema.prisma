@@ -13,6 +13,8 @@ enum Role {
   RINGSECRETARIS
   RINGADMINISTRATEUR
   HOGERAAD
+  // Basisrol van een zelf geregistreerd kerklid (declaratiemodule). Geeft nergens roepingen- of ringrechten; alleen een ringlidmaatschap doet dat.
+  KERKLID
 }
 
 enum VoteStage {
@@ -179,6 +181,11 @@ model User {
   ontheffingDecisionsBy    OntheffingDecision[] @relation("OntheffingDecisionBy")
   ontheffingDecisionsPres  OntheffingDecision[] @relation("OntheffingDecisionPresiding")
   ontheffingAudits         OntheffingAudit[]    @relation("OntheffingAuditActor")
+
+  // Declaratiemodule (alleen actief met DECLARATIONS_ENABLED)
+  declarationProfile       DeclarationProfile?
+  declarations             Declaration[]        @relation("DeclarationOwner")
+  financeAssignments       FinanceAssignment[]  @relation("FinanceAssignee")
 
   @@index([role, active])
 }
@@ -602,6 +609,9 @@ model Ring {
   notifications  Notification[]
   callingDrafts  CallingDraft[]
   ontheffingen   Ontheffing[]
+  financeAssignments        FinanceAssignment[]
+  pendingFinanceAssignments PendingFinanceAssignment[]
+  declarations              Declaration[]
 }
 
 // Lidmaatschap van een gebruiker in een ring. `role` is de workflowrol binnen
@@ -693,6 +703,9 @@ model RingUnit {
   updatedAt                 DateTime @updatedAt
 
   callings Calling[]
+  financeAssignments        FinanceAssignment[]
+  pendingFinanceAssignments PendingFinanceAssignment[]
+  declarations              Declaration[]
 
   @@unique([ringId, name])
   @@index([ringId, active])
@@ -1081,6 +1094,8 @@ model DeviceEnrollment {
 // E-mailbewijs voor uitgenodigde personen die nog geen account hebben.
 model InvitationLoginCode {
   id String @id @default(cuid())
+  // "invitation" (uitnodiging zonder account) of "registration" (zelfregistratie kerklid, declaratiemodule)
+  purpose String @default("invitation")
   email String
   codeHash String
   expiresAt DateTime
@@ -1153,4 +1168,146 @@ model TaskNotification {
   notification Notification?
   @@unique([callingId, task, revision])
   @@index([state, createdAt])
+}
+
+
+// ---- Declaratiemodule (afzonderlijk van de roepingenmodule; alleen actief met DECLARATIONS_ENABLED) ----
+
+/// Financiële functies zijn onafhankelijk van roepingenrollen en geven nooit roepingenrechten.
+enum FinanceRole {
+  ADMIN // financiële administrateur: bekijkt en verwerkt declaraties in zijn scope
+  SUBADMIN // financiële subadministrateur (eerste versie: zelfde rechten als administrateur)
+  RING_PRESIDENT_READ // ringpresident: alleen leesrecht op de ring en alle onderliggende units
+  UNIT_LEADER // bisschop of gemeentepresident: nodig voor activering van de unit, geeft géén financiële rechten
+}
+
+enum DeclarationStatus {
+  SUBMITTED // Ingediend
+  SEEN // Gezien door administrateur
+  IN_PROGRESS // In behandeling
+  NEEDS_INFO // Aanvulling nodig
+  PROCESSED // Administratief verwerkt
+  REJECTED // Afgewezen
+}
+
+model FinanceAssignment {
+  id          String      @id @default(cuid())
+  ringId      String
+  ring        Ring        @relation(fields: [ringId], references: [id], onDelete: Cascade)
+  // Leeg = op ringniveau; gevuld = voor precies één wijk/gemeente van die ring.
+  unitId      String?
+  unit        RingUnit?   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User        @relation("FinanceAssignee", fields: [userId], references: [id], onDelete: Cascade)
+  role        FinanceRole
+  active      Boolean     @default(true)
+  createdById String?
+  createdAt   DateTime    @default(now())
+  revokedAt   DateTime?
+  revokedById String?
+
+  @@index([userId, active])
+  @@index([ringId, unitId, role, active])
+}
+
+/// Functie voor een e-mailadres zonder account; wordt na een geverifieerde registratie/aanmelding op exact dat adres toegekend.
+model PendingFinanceAssignment {
+  id          String      @id @default(cuid())
+  email       String
+  ringId      String
+  ring        Ring        @relation(fields: [ringId], references: [id], onDelete: Cascade)
+  unitId      String?
+  unit        RingUnit?   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  role        FinanceRole
+  createdById String?
+  createdAt   DateTime    @default(now())
+  expiresAt   DateTime
+  claimedAt   DateTime?
+
+  @@index([email, claimedAt])
+}
+
+model DeclarationProfile {
+  userId          String   @id
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preferredRingId String?
+  preferredUnitId String?
+  onboardedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Declaration {
+  id              String            @id @default(cuid())
+  // Idempotentiesleutel van de client: een herhaald verzoek (netwerk) maakt nooit een tweede declaratie.
+  clientRequestId String
+  ownerId         String?
+  owner           User?             @relation("DeclarationOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerName       String // momentopname; blijft bestaan als het account wordt verwijderd
+  ringId          String
+  ring            Ring              @relation(fields: [ringId], references: [id], onDelete: Restrict)
+  unitId          String?
+  unit            RingUnit?         @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  ringName        String // momentopname van de bestemming
+  unitName        String?
+  amountCents     Int
+  status          DeclarationStatus @default(SUBMITTED)
+  // Versleutelde inhoud (organisatie, goedkeurder, voor wie, begunstigde, omschrijving, notities): AES-256-GCM, gebonden aan het declaratie-ID.
+  sealed          Bytes
+  submittedAt     DateTime          @default(now())
+  seenAt          DateTime?
+  seenById        String?
+  processedAt     DateTime?
+  updatedAt       DateTime          @updatedAt
+
+  attachments DeclarationAttachment[]
+  events      DeclarationStatusEvent[]
+  accessLogs  DeclarationAccessLog[]
+
+  @@unique([ownerId, clientRequestId])
+  @@index([ringId, unitId, status])
+  @@index([ownerId, submittedAt])
+}
+
+model DeclarationAttachment {
+  id            String      @id @default(cuid())
+  declarationId String
+  declaration   Declaration @relation(fields: [declarationId], references: [id], onDelete: Cascade)
+  position      Int
+  fileName      String // gesaneerde naam
+  mimeType      String // door de server vastgesteld (magic bytes), niet door de client
+  sizeBytes     Int
+  sha256        String
+  // AES-256-GCM-ciphertext van het bestand (IV en tag vooraan), gebonden aan het bijlage-ID.
+  data          Bytes
+  createdAt     DateTime    @default(now())
+
+  @@index([declarationId, position])
+}
+
+model DeclarationStatusEvent {
+  id            String            @id @default(cuid())
+  declarationId String
+  declaration   Declaration       @relation(fields: [declarationId], references: [id], onDelete: Cascade)
+  fromStatus    DeclarationStatus?
+  toStatus      DeclarationStatus
+  actorId       String?
+  // Korte, niet-gevoelige toelichting van de administrateur (verplicht bij aanvulling nodig en afwijzen).
+  note          String?
+  createdAt     DateTime          @default(now())
+
+  @@index([declarationId, createdAt])
+}
+
+/// Beveiligd toegangslog: inzage door administrateurs en ringpresident, downloads. Wijzigt nooit de status.
+model DeclarationAccessLog {
+  id            String      @id @default(cuid())
+  declarationId String
+  declaration   Declaration @relation(fields: [declarationId], references: [id], onDelete: Cascade)
+  userId        String?
+  kind          String // VIEW_ADMIN | VIEW_PRESIDENT | DOWNLOAD
+  detail        String?
+  createdAt     DateTime    @default(now())
+
+  @@index([declarationId, createdAt])
 }

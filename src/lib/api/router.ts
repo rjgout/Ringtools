@@ -1,6 +1,7 @@
 import * as privacy from "../accountDeletion";
 import { loginReviewAccount } from "../reviewAuth";
 import { loginInvitedPerson } from "../invitationLogin";
+import { loginRegisteringPerson } from "../registration";
 import { createVerifiedSession, consumeLoginCode, rotateSessionIfDue, mfaRequired } from "../auth";
 import { rateLimit } from "../rateLimit";
 import { emailSchema } from "../validation";
@@ -20,6 +21,7 @@ import * as ontheffingen from "./ontheffingen";
 import * as trustedDevicesApi from "./trustedDevices";
 import * as deviceLoginApi from "./deviceLogin";
 import * as invitations from "./invitations";
+import * as declarationsApi from "./declarations";
 import * as nativeMfa from "./nativeMfa";
 import { env } from "../env";
 
@@ -67,7 +69,7 @@ publicRoute("POST", "/auth/login", async ({ body }) => {
   }
   const user = await consumeLoginCode(email.data, code);
   if (!user) {
-    const invited = await loginInvitedPerson(email.data, code, "Ringtools-app");
+    const invited = (await loginInvitedPerson(email.data, code, "Ringtools-app")) ?? (await loginRegisteringPerson(email.data, code, "Ringtools-app"));
     if (!invited) throw invalid;
     return { token: invited.token, expiresAt: invited.expiresAt.toISOString(), ...(await svc.getMe(invited.userId)) };
   }
@@ -123,7 +125,20 @@ publicRoute("POST", "/trusted-devices/pair/claim", async ({ request, body }) => 
 publicRoute("POST", "/trusted-devices/pair/complete", async ({ request, body }) => trustedDevicesApi.completePairingApi(body, clientKeyOf(request)));
 
 // Versie en capaciteiten van de API; de app controleert hiermee of ze nog compatibel is.
-publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION, nativePasskeys: env.nativePasskeysEnabled, nativeTotpLogin: env.nativeTotpLoginEnabled, trustedDevices: env.trustedDevicesEnabled, deviceLogin: env.nativeDeviceLoginEnabled, deviceAutoEnroll: env.nativeDeviceAutoEnrollEnabled, ...(isDevelopmentEnvironment() ? { environment: "development" as const } : {}) }));
+publicRoute("GET", "/meta", async () => ({ apiVersion: API_VERSION, minAppVersion: MIN_APP_VERSION, declarations: env.declarationsEnabled, nativePasskeys: env.nativePasskeysEnabled, nativeTotpLogin: env.nativeTotpLoginEnabled, trustedDevices: env.trustedDevicesEnabled, deviceLogin: env.nativeDeviceLoginEnabled, deviceAutoEnroll: env.nativeDeviceAutoEnrollEnabled, ...(isDevelopmentEnvironment() ? { environment: "development" as const } : {}) }));
+
+// ---- Declaraties (functievlag DECLARATIONS_ENABLED; zonder vlag bestaan deze routes niet) ----
+authedRoute("GET", "/declarations/context", async ({ auth }) => declarationsApi.context(auth));
+authedRoute("POST", "/declarations/profile", async ({ auth, body }) => declarationsApi.saveProfile(auth, body));
+authedRoute("GET", "/declarations", async ({ auth }) => declarationsApi.listMine(auth));
+authedRoute("POST", "/declarations", async ({ auth, body }) => declarationsApi.submit(auth, body));
+authedRoute("GET", "/declarations/official", async ({ auth, query }) => declarationsApi.listOfficial(auth, query.get("status")));
+authedRoute("GET", "/declarations/:id", async ({ auth, params }) => declarationsApi.detail(auth, params.id));
+authedRoute("POST", "/declarations/:id/status", async ({ auth, params, body }) => declarationsApi.setStatus(auth, params.id, body));
+authedRoute("GET", "/declarations/:id/attachments/:attachmentId", async ({ auth, params }) => declarationsApi.download(auth, params.id, params.attachmentId));
+authedRoute("GET", "/rings/:id/finance", async ({ auth, params }) => declarationsApi.listAssignments(auth, params.id));
+authedRoute("POST", "/rings/:id/finance", async ({ auth, params, body }) => declarationsApi.assign(auth, params.id, body));
+authedRoute("POST", "/finance/:id/revoke", async ({ auth, params, body }) => declarationsApi.revoke(auth, params.id, body.pending === true));
 
 // Het pushtoken is een geheim van het toestel; wie het kent mag het afmelden. Zo kan de app het
 // ook afmelden als de sessie al is verlopen of ingetrokken (401).

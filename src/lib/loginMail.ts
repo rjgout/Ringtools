@@ -1,4 +1,5 @@
 import { sendInvitationLoginCode } from "./invitationLogin";
+import { sendRegistrationCode } from "./registration";
 import { env } from "./env";
 import type { User } from "@prisma/client";
 import { createMagicLinkToken, findUserByLoginEmail } from "./auth";
@@ -25,7 +26,7 @@ export async function sendLoginMail(email: string, redirectTo: string | null, op
 
   const user = await findUserByLoginEmail(email);
   if (!user) {
-    await sendInvitationLoginCode(email);
+    if (!(await sendInvitationLoginCode(email))) await sendRegistrationCode(email);
     return generic;
   }
   if (!user.active || user.accountKind !== "NORMAL" || user.role === "ADMIN") {
